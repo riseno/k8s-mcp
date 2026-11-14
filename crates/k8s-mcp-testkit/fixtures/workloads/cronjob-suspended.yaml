@@ -1,0 +1,15 @@
+# A suspended CronJob.
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: cleanup, namespace: shop}
+spec:
+  schedule: "0 * * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers: [{name: cleanup, image: busybox:1.36}]
+status:
+  lastScheduleTime: "2026-11-12T09:00:00Z"

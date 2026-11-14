@@ -47,7 +47,8 @@ use k8s_openapi::api::core::v1::{Event, Node, Pod};
 use serde_json::Value;
 
 use crate::evidence::{
-    ContainerLog, PodEvidence, RefCheck, RefKind, Unavailable, Workload, WorkloadEvidence,
+    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
+    WorkloadEvidence,
 };
 
 /// Load a pod fixture into a [`PodEvidence`].
@@ -159,6 +160,23 @@ pub fn workload_fixture(name: &str) -> WorkloadEvidence {
         pods: pod_evidences,
         quotas: fx.all("ResourceQuota"),
         hpa: fx.first("HorizontalPodAutoscaler"),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load a node fixture into a [`NodeEvidence`].
+pub fn node_fixture(name: &str) -> NodeEvidence {
+    let fx = load(name);
+    let pods: Vec<Pod> = fx.all("Pod");
+    let version = |o: &Value, k: &str| u32::try_from(o[k].as_u64().unwrap()).unwrap();
+    NodeEvidence {
+        node: fx.one("Node"),
+        events: fx.all("Event"),
+        pods: (!pods.is_empty()).then_some(pods),
+        server_version: pseudo(&fx, "ServerVersion")
+            .next()
+            .map(|o| (version(o, "major"), version(o, "minor"))),
         unavailable: unavailable(&fx),
         now: now(),
     }

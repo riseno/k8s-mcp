@@ -16,7 +16,7 @@ use crate::{CONTEXT, kubeconfig, kubectl, output, root, run, verify_context};
 const PROTOCOL_VERSION: &str = "2025-11-25";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Scenario {
     id: String,
@@ -29,7 +29,7 @@ struct Scenario {
     forbidden: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Expected {
     primary: String,
@@ -69,12 +69,10 @@ struct Response {
 }
 
 struct Outcome {
-    dir: String,
     score: Score,
     response: Result<Response>,
 }
 
-#[derive(Debug, PartialEq)]
 struct Summary {
     total: usize,
     top1: usize,
@@ -165,11 +163,7 @@ pub fn main(args: &[String]) -> Result<()> {
                 .as_ref()
                 .map(|r| score(s, &r.ids))
                 .unwrap_or_default();
-            Outcome {
-                dir: dir.clone(),
-                score,
-                response,
-            }
+            Outcome { score, response }
         })
         .collect();
 
@@ -184,8 +178,9 @@ pub fn main(args: &[String]) -> Result<()> {
     let report = render(&scenarios, &outcomes, &summary)?;
     println!("{report}");
     if only.is_none() {
-        let path = root().join(format!("evals/results/{}.md", env!("CARGO_PKG_VERSION")));
-        std::fs::create_dir_all(root().join("evals/results"))?;
+        let dir = root().join("evals/results");
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}.md", env!("CARGO_PKG_VERSION")));
         std::fs::write(&path, &report)?;
         println!("wrote {}", path.display());
     }
@@ -370,7 +365,7 @@ fn render(scenarios: &[(String, Scenario)], outcomes: &[Outcome], sum: &Summary)
          |---|---|---|---|---|---|---|---|---|\n",
         env!("CARGO_PKG_VERSION")
     );
-    for ((_, s), o) in scenarios.iter().zip(outcomes) {
+    for ((dir, s), o) in scenarios.iter().zip(outcomes) {
         let (found, bytes, ms) = match &o.response {
             Ok(r) => (
                 r.ids.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
@@ -385,8 +380,7 @@ fn render(scenarios: &[(String, Scenario)], outcomes: &[Outcome], sum: &Summary)
         };
         writeln!(
             md,
-            "| {} | {} | {} | {found} | {} | {} | {} | {bytes} | {ms} |",
-            o.dir,
+            "| {dir} | {} | {} | {found} | {} | {} | {} | {bytes} | {ms} |",
             s.tool,
             s.expected.primary,
             mark(o.score.top1),
@@ -437,11 +431,7 @@ mod tests {
             bytes,
             latency: Duration::from_millis(ms),
         });
-        Outcome {
-            dir: String::new(),
-            score,
-            response,
-        }
+        Outcome { score, response }
     }
 
     #[test]
@@ -531,7 +521,6 @@ mod tests {
         );
 
         outcomes[0] = Outcome {
-            dir: String::new(),
             score: Score::default(),
             response: Err(anyhow::anyhow!("x")),
         };

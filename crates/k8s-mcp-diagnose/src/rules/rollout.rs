@@ -1,0 +1,11 @@
+//! TODO: rules for this area (PROPOSAL §9.2).
+
+use k8s_mcp_core::finding::{Finding, RuleMeta};
+
+use crate::evidence::WorkloadEvidence;
+
+/// Rules emitted by this module.
+pub const RULES: &[RuleMeta] = &[];
+
+/// Run the checks.
+pub fn check(_ev: &WorkloadEvidence, _out: &mut Vec<Finding>) {}

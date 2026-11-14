@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata: {name: oneshot-7f9c4-l9d2m, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  nodeName: node-1
+  restartPolicy: Always
+  containers:
+    - name: task
+      image: busybox:1.36
+      command: [sh, -c, "echo migrated"]
+status:
+  phase: Running
+  containerStatuses:
+    - name: task
+      ready: false
+      restartCount: 6
+      image: busybox:1.36
+      imageID: ""
+      state: {waiting: {reason: CrashLoopBackOff}}
+      lastState: {terminated: {exitCode: 0, reason: Completed, startedAt: "2026-11-14T11:58:00Z", finishedAt: "2026-11-14T11:58:01Z"}}

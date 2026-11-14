@@ -21,8 +21,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::common::{
-    Scope, check_name, clean, envelope, event_time, events_for, list_scoped, retain_recent, scope,
-    soft,
+    Scope, check_name, clean, envelope, event_time, events_for, fallback_namespaces, list_scoped,
+    retain_recent, scope, soft,
 };
 use crate::discovery::{api_resource, resolve, resources};
 use crate::rows::{self, node_pool, pod_row, provider_from_nodes, unhealthy};
@@ -136,7 +136,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
         .iter()
         .filter_map(|p| unhealthy(p, now).map(|s| (p, s)))
         .collect();
-    bad.sort_by_key(|(p, _)| std::cmp::Reverse(restarts(p)));
+    bad.sort_by_key(|(p, _)| std::cmp::Reverse(rows::restarts(p)));
 
     // Quick scan: pod rules on unhealthy pods (with their events, no logs) and node rules.
     let mut findings = Vec::new();
@@ -257,13 +257,6 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
         "list every broken object with findings",
     ));
     Ok(e)
-}
-
-fn restarts(p: &Pod) -> i32 {
-    p.status
-        .as_ref()
-        .and_then(|s| s.container_statuses.as_ref())
-        .map_or(0, |c| c.iter().map(|c| c.restart_count).sum())
 }
 
 /// Append an "UNAVAILABLE EVIDENCE" section listing what could not be read.
@@ -467,19 +460,7 @@ async fn list_dynamic(
             if !namespaced || !err.is_forbidden() {
                 return Err(err);
             }
-            let mut namespaces = ctx.policy.literal_namespaces();
-            if ctx.policy.namespace_allowed(&sc.target.namespace)
-                && !namespaces.contains(&sc.target.namespace)
-            {
-                namespaces.push(sc.target.namespace.clone());
-            }
-            notes.push(Unavailable {
-                what: format!("cluster-wide list of {}", ar.plural),
-                reason: format!(
-                    "forbidden by RBAC; listed namespaces {} instead",
-                    namespaces.join(", ")
-                ),
-            });
+            let namespaces = fallback_namespaces(ctx, sc, &ar.plural, notes);
             let mut out = Vec::new();
             for ns in namespaces {
                 match Api::<DynamicObject>::namespaced_with(client.clone(), &ns, ar)

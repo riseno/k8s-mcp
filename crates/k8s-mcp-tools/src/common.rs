@@ -114,19 +114,7 @@ where
             if !err.is_forbidden() {
                 return Err(err);
             }
-            let mut namespaces = ctx.policy.literal_namespaces();
-            if ctx.policy.namespace_allowed(&scope.target.namespace)
-                && !namespaces.contains(&scope.target.namespace)
-            {
-                namespaces.push(scope.target.namespace.clone());
-            }
-            notes.push(Unavailable {
-                what: format!("cluster-wide list of {what}"),
-                reason: format!(
-                    "forbidden by RBAC; listed namespaces {} instead",
-                    namespaces.join(", ")
-                ),
-            });
+            let namespaces = fallback_namespaces(ctx, scope, what, notes);
             let mut out = Vec::new();
             for ns in namespaces {
                 let api: Api<K> = Api::namespaced(client.clone(), &ns);
@@ -142,6 +130,30 @@ where
             Ok(out)
         }
     }
+}
+
+/// Namespaces to list one by one when RBAC forbids a cluster-wide list: the allow-list's
+/// literal names plus the context's namespace. Records the fallback in `notes`.
+pub fn fallback_namespaces(
+    ctx: &Ctx,
+    scope: &Scope,
+    what: &str,
+    notes: &mut Vec<Unavailable>,
+) -> Vec<String> {
+    let mut namespaces = ctx.policy.literal_namespaces();
+    if ctx.policy.namespace_allowed(&scope.target.namespace)
+        && !namespaces.contains(&scope.target.namespace)
+    {
+        namespaces.push(scope.target.namespace.clone());
+    }
+    notes.push(Unavailable {
+        what: format!("cluster-wide list of {what}"),
+        reason: format!(
+            "forbidden by RBAC; listed namespaces {} instead",
+            namespaces.join(", ")
+        ),
+    });
+    namespaces
 }
 
 /// Fetch something, turning failures into an [`Unavailable`] note instead of an error.

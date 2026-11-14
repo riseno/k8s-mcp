@@ -277,7 +277,8 @@ pub fn unhealthy(p: &Pod, now: Timestamp) -> Option<String> {
     }
 }
 
-fn restarts(p: &Pod) -> i32 {
+/// Total restarts across a pod's containers.
+pub fn restarts(p: &Pod) -> i32 {
     p.status
         .as_ref()
         .and_then(|s| s.container_statuses.as_ref())

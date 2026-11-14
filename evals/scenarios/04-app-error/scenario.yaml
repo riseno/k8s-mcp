@@ -1,0 +1,9 @@
+id: app-error
+symptom: The orders deployment in eval-app-error is crash looping after a deploy. Find the root cause.
+tool: diagnose_workload
+args: {kind: Deployment, name: orders, namespace: eval-app-error}
+settle_seconds: 60
+expected:
+  primary: pod.crashloop.app_error
+  acceptable: []
+forbidden: [pod.crashloop.command_not_found, pod.crashloop.exit_zero, pod.oom.container]

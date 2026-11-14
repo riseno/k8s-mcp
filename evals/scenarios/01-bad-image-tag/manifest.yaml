@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-bad-image-tag}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: web, namespace: eval-bad-image-tag}
+spec:
+  containers:
+    - name: web
+      image: nginx:doesnotexist

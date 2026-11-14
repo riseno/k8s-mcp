@@ -1,0 +1,9 @@
+id: insufficient-cpu
+symptom: The batch pod in eval-insufficient-cpu has been Pending for a while. Why will it not schedule?
+tool: diagnose_pod
+args: {name: batch, namespace: eval-insufficient-cpu}
+settle_seconds: 20
+expected:
+  primary: pod.pending.insufficient_resources
+  acceptable: []
+forbidden: [pod.pending.node_selector_affinity, pod.pending.taints, pod.pending.quota]

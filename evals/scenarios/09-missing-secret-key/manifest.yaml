@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-missing-secret-key}
+---
+# Synthetic test credential; the pod asks for a key the Secret does not have.
+apiVersion: v1
+kind: Secret
+metadata: {name: db-credentials, namespace: eval-missing-secret-key}
+stringData: {username: eval-user}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: payments, namespace: eval-missing-secret-key}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: payments}}
+  template:
+    metadata: {labels: {app: payments}}
+    spec:
+      containers:
+        - name: payments
+          image: busybox:1.38
+          command: ["sh", "-c", "sleep 3600"]
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: db-credentials, key: password}

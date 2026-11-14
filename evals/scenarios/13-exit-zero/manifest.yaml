@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-exit-zero}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: migrate, namespace: eval-exit-zero}
+spec:
+  restartPolicy: Always
+  containers:
+    - name: migrate
+      image: busybox:1.38
+      command: ["sh", "-c", "echo migrations applied"]

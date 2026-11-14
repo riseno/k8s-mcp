@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-quota-exceeded}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: compute, namespace: eval-quota-exceeded}
+spec:
+  hard: {requests.cpu: 250m}
+---
+# Two replicas of 200m each: the quota admits only the first pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: eval-quota-exceeded}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.31-alpine
+          resources:
+            requests: {cpu: 200m}

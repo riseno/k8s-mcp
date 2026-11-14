@@ -1,0 +1,9 @@
+id: readiness-failing
+symptom: The catalog deployment in eval-readiness-failing is running but never becomes ready. Why?
+tool: diagnose_workload
+args: {kind: Deployment, name: catalog, namespace: eval-readiness-failing}
+settle_seconds: 30
+expected:
+  primary: pod.probe.readiness_failing
+  acceptable: []
+forbidden: [pod.probe.liveness_failing, pod.probe.port_mismatch, pod.crashloop.exit_zero]

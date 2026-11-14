@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-command-not-found}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: worker, namespace: eval-command-not-found}
+spec:
+  containers:
+    - name: worker
+      image: busybox:1.38
+      command: ["sh", "-c", "missing-cmd"]

@@ -1,0 +1,30 @@
+# Eval scenario 11: nodeSelector disktype=ssd and no node carries that label.
+apiVersion: v1
+kind: Pod
+metadata: {name: ssd-app-5g6h7-k3l4m, namespace: eval-x, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeSelector: {disktype: ssd}
+  containers:
+    - name: app
+      image: nginx:1.27
+      resources: {requests: {cpu: 100m, memory: 64Mi}}
+status:
+  phase: Pending
+  conditions:
+    - {type: PodScheduled, status: "False", reason: Unschedulable}
+---
+apiVersion: v1
+kind: Node
+metadata: {name: k8s-mcp-dev-control-plane, labels: {kubernetes.io/arch: amd64, topology.kubernetes.io/zone: zone-a}}
+status:
+  allocatable: {cpu: "4", memory: 8Gi, pods: "110"}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: ssd-app.1, namespace: eval-x}
+involvedObject: {kind: Pod, name: ssd-app-5g6h7-k3l4m, namespace: eval-x}
+reason: FailedScheduling
+type: Warning
+message: "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling."
+count: 2
+lastTimestamp: "2026-11-14T11:55:00Z"

@@ -1113,12 +1113,15 @@ dependencies = [
 name = "k8s-mcp-testkit"
 version = "0.1.0"
 dependencies = [
+ "http",
  "jiff",
  "k8s-openapi",
  "kube",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "tokio",
+ "tower-test",
 ]
 
 [[package]]

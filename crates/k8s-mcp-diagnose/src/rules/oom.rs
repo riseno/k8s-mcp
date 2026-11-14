@@ -67,8 +67,8 @@ pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
                     f = f.evidence(
                         Source::Spec,
                         format!(
-                            "heap flag {flag} in {src} is {} of the {} limit",
-                            if heap >= l { "above" } else { "close to" },
+                            "heap flag {flag} in {src} {} the {} limit",
+                            if heap >= l { "exceeds" } else { "is close to" },
                             fmt_bytes(l)
                         ),
                     );
@@ -162,11 +162,10 @@ mod tests {
         let f = &out[0];
         assert_eq!(f.id, "pod.oom.container");
         assert!(f.title.contains("128Mi"), "{}", f.title);
-        assert!(
-            f.evidence
-                .iter()
-                .any(|e| e.text.contains("-Xmx256m in env JAVA_OPTS is above"))
-        );
+        assert!(f.evidence.iter().any(|e| {
+            e.text
+                .contains("-Xmx256m in env JAVA_OPTS exceeds the 128Mi limit")
+        }));
         assert!(f.fix.contains("MaxRAMPercentage"));
     }
 

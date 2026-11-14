@@ -1,0 +1,13 @@
+---
+source: crates/k8s-mcp-tools/tests/mock_api.rs
+expression: env.render()
+---
+[context: test, namespace: shop]
+3 log lines from 1 container(s) in 1 pod(s).
+
+LOGS web-1/app (3 lines)
+<<untrusted source="log" pod="web-1" container="app">>
+  ok
+  [×2] retry
+  Authorization: «redacted»
+<</untrusted>>

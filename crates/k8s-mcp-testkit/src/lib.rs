@@ -4,6 +4,8 @@
 //! Fixtures for k8s-mcp tests: multi-document YAML files under `fixtures/` loaded into
 //! k8s-openapi types, and a fixed clock.
 
+pub mod mock;
+
 use std::path::PathBuf;
 
 use jiff::Timestamp;

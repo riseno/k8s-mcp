@@ -1,0 +1,11 @@
+---
+source: crates/k8s-mcp-tools/tests/mock_api.rs
+expression: env.render()
+---
+[context: test, namespace: shop]
+2 pods in namespace shop.
+
+ITEMS (2)
+NAME   READY  STATUS            RESTARTS  AGE  NODE
+web-1  1/1    Running           0         2h   node-1
+web-2  0/1    CrashLoopBackOff  7         2h   node-1

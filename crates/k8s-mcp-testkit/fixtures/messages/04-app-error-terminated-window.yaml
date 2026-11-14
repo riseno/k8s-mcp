@@ -1,0 +1,569 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/04-app-error, captured while the container sits in state.terminated between restarts (no CrashLoopBackOff waiting reason yet; previous logs already garbage-collected). Synthetic test workloads, no real credentials.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"orders","namespace":"eval-app-error"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"orders"}},"template":{"metadata":{"labels":{"app":"orders"}},"spec":{"containers":[{"command":["python","-c","def connect(url):\n    raise ConnectionError(f\"could not connect to database at {url}\")\nprint(\"orders service starting\", flush=True)\nconnect(\"postgres://db.eval-app-error.svc:5432/orders\")\n"],"image":"python:3.14-alpine","name":"orders"}]}}}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: orders
+  namespace: eval-app-error
+  resourceVersion: "2149"
+  uid: 5de828d7-1445-4508-9711-3287e53c91d5
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: orders
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: orders
+    spec:
+      containers:
+      - command:
+        - python
+        - -c
+        - |
+          def connect(url):
+              raise ConnectionError(f"could not connect to database at {url}")
+          print("orders service starting", flush=True)
+          connect("postgres://db.eval-app-error.svc:5432/orders")
+        image: python:3.14-alpine
+        imagePullPolicy: IfNotPresent
+        name: orders
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  conditions:
+  - lastTransitionTime: "2026-11-14T23:34:56Z"
+    lastUpdateTime: "2026-11-14T23:35:03Z"
+    message: ReplicaSet "orders-9b6764f5" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  - lastTransitionTime: "2026-11-14T23:40:32Z"
+    lastUpdateTime: "2026-11-14T23:40:32Z"
+    message: Deployment does not have minimum availability.
+    reason: MinimumReplicasUnavailable
+    status: "False"
+    type: Available
+  observedGeneration: 1
+  replicas: 1
+  terminatingReplicas: 0
+  unavailableReplicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/desired-replicas: "1"
+    deployment.kubernetes.io/max-replicas: "2"
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  labels:
+    app: orders
+    pod-template-hash: 9b6764f5
+  name: orders-9b6764f5
+  namespace: eval-app-error
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: orders
+    uid: 5de828d7-1445-4508-9711-3287e53c91d5
+  resourceVersion: "2148"
+  uid: 7f4d084d-b04e-4404-9041-cd3e26105c22
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders
+      pod-template-hash: 9b6764f5
+  template:
+    metadata:
+      labels:
+        app: orders
+        pod-template-hash: 9b6764f5
+    spec:
+      containers:
+      - command:
+        - python
+        - -c
+        - |
+          def connect(url):
+              raise ConnectionError(f"could not connect to database at {url}")
+          print("orders service starting", flush=True)
+          connect("postgres://db.eval-app-error.svc:5432/orders")
+        image: python:3.14-alpine
+        imagePullPolicy: IfNotPresent
+        name: orders
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  replicas: 1
+  terminatingReplicas: 0
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generateName: orders-9b6764f5-
+  generation: 1
+  labels:
+    app: orders
+    pod-template-hash: 9b6764f5
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: orders-9b6764f5
+    uid: 7f4d084d-b04e-4404-9041-cd3e26105c22
+  resourceVersion: "2147"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+spec:
+  containers:
+  - command:
+    - python
+    - -c
+    - |
+      def connect(url):
+          raise ConnectionError(f"could not connect to database at {url}")
+      print("orders service starting", flush=True)
+      connect("postgres://db.eval-app-error.svc:5432/orders")
+    image: python:3.14-alpine
+    imagePullPolicy: IfNotPresent
+    name: orders
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-kxfj5
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-kxfj5
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:32Z"
+    message: 'containers with unready status: [orders]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:32Z"
+    message: 'containers with unready status: [orders]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://3f397081a6c9f923e458857d7306a20178797a47eb5d94a63a72bf147c9597b9
+    image: docker.io/library/python:3.14-alpine
+    imageID: docker.io/library/python@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67
+    lastState:
+      terminated:
+        containerID: containerd://6d0d54f0786e281abfd6eedf2adde99802c068bee7aca1f612038df4fafb9bdd
+        exitCode: 1
+        finishedAt: "2026-11-14T23:37:51Z"
+        reason: Error
+        startedAt: "2026-11-14T23:37:51Z"
+    name: orders
+    ready: false
+    resources: {}
+    restartCount: 6
+    started: false
+    state:
+      terminated:
+        containerID: containerd://3f397081a6c9f923e458857d7306a20178797a47eb5d94a63a72bf147c9597b9
+        exitCode: 1
+        finishedAt: "2026-11-14T23:40:32Z"
+        reason: Error
+        startedAt: "2026-11-14T23:40:32Z"
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 6
+        - 10
+        - 11
+        - 20
+        - 26
+        - 27
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-kxfj5
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.12
+  podIPs:
+  - ip: 10.244.0.12
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "862"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-app-error/orders-9b6764f5-gb6gt to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: orders-9b6764f5-gb6gt.18e80d805caccb37
+  namespace: eval-app-error
+  resourceVersion: "870"
+  uid: 58d87177-1111-45c5-9444-b97ea5e6c073
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{orders}
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "865"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Pulling image "python:3.14-alpine"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: orders-9b6764f5-gb6gt.18e80d80724d2317
+  namespace: eval-app-error
+  resourceVersion: "952"
+  uid: 5fa02685-026f-48fb-813f-c0486e4a777a
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:03Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{orders}
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "865"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:35:03Z"
+message: 'Successfully pulled image "python:3.14-alpine" in 662ms (6.58s including
+  waiting). Image size: 18284668 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:03Z"
+  name: orders-9b6764f5-gb6gt.18e80d81fa9135f2
+  namespace: eval-app-error
+  resourceVersion: "1061"
+  uid: ea8b9c87-e94b-400d-88bc-d80d0e068b4d
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:03Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{orders}
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "865"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:40:32Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:35:03Z"
+  name: orders-9b6764f5-gb6gt.18e80d81fb63a463
+  namespace: eval-app-error
+  resourceVersion: "2141"
+  uid: 034f77be-fcd1-4729-b208-503271694842
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:03Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{orders}
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "865"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:40:32Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:35:03Z"
+  name: orders-9b6764f5-gb6gt.18e80d81fe2f59e8
+  namespace: eval-app-error
+  resourceVersion: "2142"
+  uid: 8d7d2c55-1d82-4729-9f2e-6e0e27212471
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:03Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{orders}
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "865"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:40:32Z"
+message: Container image "python:3.14-alpine" already present on machine and can be
+  accessed by the pod
+metadata:
+  creationTimestamp: "2026-11-14T23:35:03Z"
+  name: orders-9b6764f5-gb6gt.18e80d8213b7e4ae
+  namespace: eval-app-error
+  resourceVersion: "2140"
+  uid: 2b135148-3aea-49ac-b7e4-dcdaf84df185
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 9
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:04Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{orders}
+  kind: Pod
+  name: orders-9b6764f5-gb6gt
+  namespace: eval-app-error
+  resourceVersion: "865"
+  uid: ee039a2d-4f8b-460d-a7f4-ffe7b0127258
+kind: Event
+lastTimestamp: "2026-11-14T23:40:32Z"
+message: Back-off restarting failed container orders in pod orders-9b6764f5-gb6gt_eval-app-error(ee039a2d-4f8b-460d-a7f4-ffe7b0127258)
+metadata:
+  creationTimestamp: "2026-11-14T23:35:04Z"
+  name: orders-9b6764f5-gb6gt.18e80d824f90323e
+  namespace: eval-app-error
+  resourceVersion: "2146"
+  uid: 7c5b94e9-ab52-4cfb-a108-b4d202155302
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: orders-9b6764f5
+  namespace: eval-app-error
+  resourceVersion: "853"
+  uid: 7f4d084d-b04e-4404-9041-cd3e26105c22
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: 'Created pod: orders-9b6764f5-gb6gt'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: orders-9b6764f5.18e80d805c7ad6ce
+  namespace: eval-app-error
+  resourceVersion: "863"
+  uid: ada34a60-9fc6-48b7-a970-f53f8fdd344f
+reason: SuccessfulCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: orders
+  namespace: eval-app-error
+  resourceVersion: "852"
+  uid: 5de828d7-1445-4508-9711-3287e53c91d5
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Scaled up replica set orders-9b6764f5 from 0 to 1
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: orders.18e80d80572846e3
+  namespace: eval-app-error
+  resourceVersion: "855"
+  uid: 4801f54b-1a2f-4f5f-9e0c-f9f3b01511fa
+reason: ScalingReplicaSet
+reportingComponent: deployment-controller
+reportingInstance: ""
+source:
+  component: deployment-controller
+type: Normal
+---
+kind: ContainerLog
+container: orders
+previous: false
+lines:
+  - orders service starting
+  - 'Traceback (most recent call last):'
+  - '  File "<string>", line 4, in <module>'
+  - '    connect("postgres://db.eval-app-error.svc:5432/orders")'
+  - '    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'
+  - '  File "<string>", line 2, in connect'
+  - '    raise ConnectionError(f"could not connect to database at {url}")'
+  - 'ConnectionError: could not connect to database at postgres://db.eval-app-error.svc:5432/orders'

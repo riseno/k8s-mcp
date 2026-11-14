@@ -1,0 +1,280 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/08-missing-configmap. Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"name":"billing","namespace":"eval-missing-configmap"},"spec":{"containers":[{"command":["sh","-c","echo log level $LOG_LEVEL; sleep 3600"],"env":[{"name":"LOG_LEVEL","valueFrom":{"configMapKeyRef":{"key":"log_level","name":"billing-config"}}}],"image":"busybox:1.38","name":"billing"}]}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: billing
+  namespace: eval-missing-configmap
+  resourceVersion: "1128"
+  uid: eb585d8c-287a-4a83-90f9-e2d8f3355518
+spec:
+  containers:
+  - command:
+    - sh
+    - -c
+    - echo log level $LOG_LEVEL; sleep 3600
+    env:
+    - name: LOG_LEVEL
+      valueFrom:
+        configMapKeyRef:
+          key: log_level
+          name: billing-config
+    image: busybox:1.38
+    imagePullPolicy: IfNotPresent
+    name: billing
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-599b8
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-599b8
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: 'containers with unready status: [billing]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: 'containers with unready status: [billing]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - image: busybox:1.38
+    imageID: ""
+    lastState: {}
+    name: billing
+    ready: false
+    restartCount: 0
+    started: false
+    state:
+      waiting:
+        message: configmap "billing-config" not found
+        reason: CreateContainerConfigError
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-599b8
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Pending
+  podIP: 10.244.0.14
+  podIPs:
+  - ip: 10.244.0.14
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: billing
+  namespace: eval-missing-configmap
+  resourceVersion: "896"
+  uid: eb585d8c-287a-4a83-90f9-e2d8f3355518
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-missing-configmap/billing to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: billing.18e80d8062beae76
+  namespace: eval-missing-configmap
+  resourceVersion: "912"
+  uid: 623ee1f4-4621-4540-aece-a16d3234a799
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{billing}
+  kind: Pod
+  name: billing
+  namespace: eval-missing-configmap
+  resourceVersion: "901"
+  uid: eb585d8c-287a-4a83-90f9-e2d8f3355518
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Pulling image "busybox:1.38"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: billing.18e80d807947bbe8
+  namespace: eval-missing-configmap
+  resourceVersion: "965"
+  uid: 375489f4-8a28-4204-9cce-3fbb27fec123
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:07Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{billing}
+  kind: Pod
+  name: billing
+  namespace: eval-missing-configmap
+  resourceVersion: "901"
+  uid: eb585d8c-287a-4a83-90f9-e2d8f3355518
+kind: Event
+lastTimestamp: "2026-11-14T23:35:07Z"
+message: 'Successfully pulled image "busybox:1.38" in 680ms (10.376s including waiting).
+  Image size: 1926012 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:07Z"
+  name: billing.18e80d82e3d05bfd
+  namespace: eval-missing-configmap
+  resourceVersion: "1125"
+  uid: 7e7ea501-bacf-419d-8657-8774eb43ffbf
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 26
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:07Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{billing}
+  kind: Pod
+  name: billing
+  namespace: eval-missing-configmap
+  resourceVersion: "901"
+  uid: eb585d8c-287a-4a83-90f9-e2d8f3355518
+kind: Event
+lastTimestamp: "2026-11-14T23:40:21Z"
+message: 'Error: configmap "billing-config" not found'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:07Z"
+  name: billing.18e80d82e46feb28
+  namespace: eval-missing-configmap
+  resourceVersion: "2124"
+  uid: f1f5781d-6529-416c-a122-84ed9bbbf18a
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 24
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:07Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{billing}
+  kind: Pod
+  name: billing
+  namespace: eval-missing-configmap
+  resourceVersion: "901"
+  uid: eb585d8c-287a-4a83-90f9-e2d8f3355518
+kind: Event
+lastTimestamp: "2026-11-14T23:40:08Z"
+message: Container image "busybox:1.38" already present on machine and can be accessed
+  by the pod
+metadata:
+  creationTimestamp: "2026-11-14T23:35:07Z"
+  name: billing.18e80d83030fe38c
+  namespace: eval-missing-configmap
+  resourceVersion: "2097"
+  uid: 4eba95b7-7093-4b8e-b566-3e2f8b03f158
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal

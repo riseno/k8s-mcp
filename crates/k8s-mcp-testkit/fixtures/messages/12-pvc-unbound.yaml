@@ -1,0 +1,165 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/12-pvc-unbound. Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"name":"db","namespace":"eval-pvc-unbound"},"spec":{"containers":[{"command":["sh","-c","sleep 3600"],"image":"busybox:1.38","name":"db","volumeMounts":[{"mountPath":"/data","name":"data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data"}}]}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: db
+  namespace: eval-pvc-unbound
+  resourceVersion: "958"
+  uid: 5afc7c0d-5902-406e-8ee5-092fc0642606
+spec:
+  containers:
+  - command:
+    - sh
+    - -c
+    - sleep 3600
+    image: busybox:1.38
+    imagePullPolicy: IfNotPresent
+    name: db
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /data
+      name: data
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-dm9x5
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: data
+  - name: kube-api-access-dm9x5
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: '0/1 nodes are available: pod has unbound immediate PersistentVolumeClaims.
+      not found'
+    observedGeneration: 1
+    reason: Unschedulable
+    status: "False"
+    type: PodScheduled
+  phase: Pending
+  qosClass: BestEffort
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"name":"data","namespace":"eval-pvc-unbound"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"1Gi"}},"storageClassName":"does-not-exist"}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  finalizers:
+  - kubernetes.io/pvc-protection
+  name: data
+  namespace: eval-pvc-unbound
+  resourceVersion: "954"
+  uid: 6635b32e-dcd8-4cb1-b61d-2e16604abc2c
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: does-not-exist
+  volumeMode: Filesystem
+status:
+  phase: Pending
+---
+apiVersion: v1
+count: 26
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  name: data
+  namespace: eval-pvc-unbound
+  resourceVersion: "954"
+  uid: 6635b32e-dcd8-4cb1-b61d-2e16604abc2c
+kind: Event
+lastTimestamp: "2026-11-14T23:41:11Z"
+message: storageclass.storage.k8s.io "does-not-exist" not found
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: data.18e80d807472a103
+  namespace: eval-pvc-unbound
+  resourceVersion: "2241"
+  uid: 36cc3353-837b-4465-8053-bf3dedaa0106
+reason: ProvisioningFailed
+reportingComponent: persistentvolume-controller
+reportingInstance: ""
+source:
+  component: persistentvolume-controller
+type: Warning
+---
+apiVersion: v1
+count: 2
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: db
+  namespace: eval-pvc-unbound
+  resourceVersion: "955"
+  uid: 5afc7c0d-5902-406e-8ee5-092fc0642606
+kind: Event
+lastTimestamp: "2026-11-14T23:40:07Z"
+message: '0/1 nodes are available: pod has unbound immediate PersistentVolumeClaims.
+  not found'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: db.18e80d8074b4bc30
+  namespace: eval-pvc-unbound
+  resourceVersion: "2094"
+  uid: 98131f30-13f9-4eaa-9567-87a0297ebe4d
+reason: FailedScheduling
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Warning

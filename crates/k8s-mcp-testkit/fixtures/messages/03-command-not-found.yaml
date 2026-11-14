@@ -1,0 +1,353 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/03-command-not-found. Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"name":"worker","namespace":"eval-command-not-found"},"spec":{"containers":[{"command":["sh","-c","missing-cmd"],"image":"busybox:1.38","name":"worker"}]}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "2297"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+spec:
+  containers:
+  - command:
+    - sh
+    - -c
+    - missing-cmd
+    image: busybox:1.38
+    imagePullPolicy: IfNotPresent
+    name: worker
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-th244
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-th244
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:45Z"
+    message: 'containers with unready status: [worker]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:45Z"
+    message: 'containers with unready status: [worker]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://953284c96ae18d444e97a943299de4f5b8e1c2e4aebe65fd5748a50e3d3d4f4a
+    image: docker.io/library/busybox:1.38
+    imageID: docker.io/library/busybox@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+    lastState:
+      terminated:
+        containerID: containerd://953284c96ae18d444e97a943299de4f5b8e1c2e4aebe65fd5748a50e3d3d4f4a
+        exitCode: 127
+        finishedAt: "2026-11-14T23:40:45Z"
+        reason: Error
+        startedAt: "2026-11-14T23:40:45Z"
+    name: worker
+    ready: false
+    resources: {}
+    restartCount: 6
+    started: false
+    state:
+      waiting:
+        message: back-off 5m0s restarting failed container=worker pod=worker_eval-command-not-found(66184f37-02f2-47be-88bc-e267c61d05d2)
+        reason: CrashLoopBackOff
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 10
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-th244
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.10
+  podIPs:
+  - ip: 10.244.0.10
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "845"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-command-not-found/worker to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: worker.18e80d80569fc857
+  namespace: eval-command-not-found
+  resourceVersion: "848"
+  uid: 3bc359f2-cbd8-4437-a22c-d3a676da2367
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{worker}
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "846"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Pulling image "busybox:1.38"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: worker.18e80d806c1f8c89
+  namespace: eval-command-not-found
+  resourceVersion: "942"
+  uid: e8ccbcdb-c200-4851-85e0-b619e02245b7
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:59Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{worker}
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "846"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:34:59Z"
+message: 'Successfully pulled image "busybox:1.38" in 2.165s (3.216s including waiting).
+  Image size: 1926012 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:59Z"
+  name: worker.18e80d812bd7cd76
+  namespace: eval-command-not-found
+  resourceVersion: "1032"
+  uid: 9bded9e3-5e7a-48aa-bbd2-c7389aa14311
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:59Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{worker}
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "846"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:40:45Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:34:59Z"
+  name: worker.18e80d812c497195
+  namespace: eval-command-not-found
+  resourceVersion: "2175"
+  uid: 3e05dacb-38fc-4893-bc27-8986479b9ae3
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:59Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{worker}
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "846"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:40:45Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:34:59Z"
+  name: worker.18e80d812e71e3da
+  namespace: eval-command-not-found
+  resourceVersion: "2176"
+  uid: 35801d79-3d6f-4a84-bb1a-24fcb8453a25
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:00Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{worker}
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "846"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:40:45Z"
+message: Container image "busybox:1.38" already present on machine and can be accessed
+  by the pod
+metadata:
+  creationTimestamp: "2026-11-14T23:35:00Z"
+  name: worker.18e80d8160a577c3
+  namespace: eval-command-not-found
+  resourceVersion: "2174"
+  uid: d7ef84cf-4e46-477b-b2fc-2bb3877c9d7a
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 10
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:01Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{worker}
+  kind: Pod
+  name: worker
+  namespace: eval-command-not-found
+  resourceVersion: "846"
+  uid: 66184f37-02f2-47be-88bc-e267c61d05d2
+kind: Event
+lastTimestamp: "2026-11-14T23:41:47Z"
+message: Back-off restarting failed container worker in pod worker_eval-command-not-found(66184f37-02f2-47be-88bc-e267c61d05d2)
+metadata:
+  creationTimestamp: "2026-11-14T23:35:01Z"
+  name: worker.18e80d819c39e311
+  namespace: eval-command-not-found
+  resourceVersion: "2296"
+  uid: 988a58d6-bac3-4832-82cf-1c9337a622ab
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+kind: ContainerLog
+container: worker
+previous: true
+lines:
+  - 'sh: line 0: missing-cmd: not found'

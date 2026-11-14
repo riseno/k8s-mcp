@@ -1,0 +1,46 @@
+# Evals
+
+The eval suite measures whether the diagnosis tools name the right root cause. Each
+scenario under `evals/scenarios/<NN-id>/` deploys a broken workload to the local kind
+cluster in its own `eval-<id>` namespace.
+
+```yaml
+# evals/scenarios/06-liveness-wrong-port/scenario.yaml
+id: liveness-wrong-port
+symptom: The frontend deployment keeps restarting but nginx logs look clean. Why?
+tool: diagnose_workload
+args: {kind: Deployment, name: frontend, namespace: eval-liveness-wrong-port}
+settle_seconds: 90
+expected:
+  primary: pod.probe.port_mismatch          # must rank first
+  acceptable: [pod.probe.liveness_failing]  # allowed in the top 3
+forbidden: [pod.crashloop.exit_zero]        # must not appear
+```
+
+## Running
+
+```bash
+cargo xtask kind-up                   # once
+cargo xtask eval                      # all scenarios
+cargo xtask eval --scenario oom-killed --keep
+```
+
+The runner builds `k8s-mcp`, applies every manifest, waits for the longest
+`settle_seconds`, then calls each scenario's tool over stdio MCP and reports:
+
+| Metric | v0.1 gate |
+|---|---|
+| Top-1 accuracy (primary ranked first) | ≥ 85% |
+| Top-3 accuracy | 100% |
+| Forbidden-finding rate | 0 |
+| Median response bytes, p95 latency | reported |
+
+Results are written to `evals/results/<version>.md`; the command exits non-zero when a gate
+fails. Scenario objects' real statuses and events are kept as a test corpus in
+`crates/k8s-mcp-testkit/fixtures/messages/`.
+
+## Manual LLM-in-the-loop check
+
+Not run in CI: point Claude Code (headless) or Grok Build at the kind cluster, invoke the
+`investigate-incident` prompt with a scenario's `symptom`, and check that the final answer
+names the expected root cause and fix.

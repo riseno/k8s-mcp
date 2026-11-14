@@ -1,0 +1,792 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/14-quota-exceeded. Synthetic test workloads, no real credentials.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"web","namespace":"eval-quota-exceeded"},"spec":{"replicas":2,"selector":{"matchLabels":{"app":"web"}},"template":{"metadata":{"labels":{"app":"web"}},"spec":{"containers":[{"image":"nginx:1.31-alpine","name":"web","resources":{"requests":{"cpu":"200m"}}}]}}}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: web
+  namespace: eval-quota-exceeded
+  resourceVersion: "1161"
+  uid: 83f2db8b-edab-49fa-9d25-2ffc5dad89f7
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: web
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - image: nginx:1.31-alpine
+        imagePullPolicy: IfNotPresent
+        name: web
+        resources:
+          requests:
+            cpu: 200m
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-11-14T23:34:56Z"
+    lastUpdateTime: "2026-11-14T23:34:56Z"
+    message: Deployment does not have minimum availability.
+    reason: MinimumReplicasUnavailable
+    status: "False"
+    type: Available
+  - lastTransitionTime: "2026-11-14T23:34:57Z"
+    lastUpdateTime: "2026-11-14T23:34:57Z"
+    message: 'pods "web-5bd78f9588-cfjh4" is forbidden: exceeded quota: compute, requested:
+      requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+    reason: FailedCreate
+    status: "True"
+    type: ReplicaFailure
+  - lastTransitionTime: "2026-11-14T23:34:56Z"
+    lastUpdateTime: "2026-11-14T23:35:09Z"
+    message: ReplicaSet "web-5bd78f9588" is progressing.
+    reason: ReplicaSetUpdated
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  unavailableReplicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/desired-replicas: "2"
+    deployment.kubernetes.io/max-replicas: "3"
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  labels:
+    app: web
+    pod-template-hash: 5bd78f9588
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: web
+    uid: 83f2db8b-edab-49fa-9d25-2ffc5dad89f7
+  resourceVersion: "1159"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+      pod-template-hash: 5bd78f9588
+  template:
+    metadata:
+      labels:
+        app: web
+        pod-template-hash: 5bd78f9588
+    spec:
+      containers:
+      - image: nginx:1.31-alpine
+        imagePullPolicy: IfNotPresent
+        name: web
+        resources:
+          requests:
+            cpu: 200m
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-11-14T23:34:57Z"
+    message: 'pods "web-5bd78f9588-cfjh4" is forbidden: exceeded quota: compute, requested:
+      requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+    reason: FailedCreate
+    status: "True"
+    type: ReplicaFailure
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  generateName: web-5bd78f9588-
+  generation: 1
+  labels:
+    app: web
+    pod-template-hash: 5bd78f9588
+  name: web-5bd78f9588-r5srf
+  namespace: eval-quota-exceeded
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: web-5bd78f9588
+    uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+  resourceVersion: "1472"
+  uid: cf87ef3a-b129-48a7-a3c0-f93c852311e5
+spec:
+  containers:
+  - image: nginx:1.31-alpine
+    imagePullPolicy: IfNotPresent
+    name: web
+    resources:
+      requests:
+        cpu: 200m
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-wpldb
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-wpldb
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  allocatedResources:
+    cpu: 200m
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:35:09Z"
+    observedGeneration: 1
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:35:09Z"
+    observedGeneration: 1
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - allocatedResources:
+      cpu: 200m
+    containerID: containerd://457e242d407c7218fb8911682cd02735ab78e60680d20fa30edda97479b81b13
+    image: docker.io/library/nginx:1.31-alpine
+    imageID: docker.io/library/nginx@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
+    lastState: {}
+    name: web
+    ready: true
+    resources:
+      requests:
+        cpu: 200m
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-11-14T23:35:09Z"
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 6
+        - 10
+        - 11
+        - 20
+        - 26
+        - 27
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-wpldb
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.19
+  podIPs:
+  - ip: 10.244.0.19
+  qosClass: Burstable
+  resources:
+    requests:
+      cpu: 181m
+  startTime: "2026-11-14T23:34:57Z"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"ResourceQuota","metadata":{"annotations":{},"name":"compute","namespace":"eval-quota-exceeded"},"spec":{"hard":{"requests.cpu":"250m"}}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: compute
+  namespace: eval-quota-exceeded
+  resourceVersion: "988"
+  uid: da721b17-818f-4b81-9155-28aaccc48706
+spec:
+  hard:
+    requests.cpu: 250m
+status:
+  hard:
+    requests.cpu: 250m
+  used:
+    requests.cpu: 200m
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: web-5bd78f9588-r5srf
+  namespace: eval-quota-exceeded
+  resourceVersion: "989"
+  uid: cf87ef3a-b129-48a7-a3c0-f93c852311e5
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: Successfully assigned eval-quota-exceeded/web-5bd78f9588-r5srf to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588-r5srf.18e80d8080a046b0
+  namespace: eval-quota-exceeded
+  resourceVersion: "997"
+  uid: 9f515eb8-51cf-403c-aaa8-9f63806eafe5
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web-5bd78f9588-r5srf
+  namespace: eval-quota-exceeded
+  resourceVersion: "992"
+  uid: cf87ef3a-b129-48a7-a3c0-f93c852311e5
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: Pulling image "nginx:1.31-alpine"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588-r5srf.18e80d80965adcd3
+  namespace: eval-quota-exceeded
+  resourceVersion: "1013"
+  uid: b77353a5-968e-45c2-84a9-907b314d5d8b
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web-5bd78f9588-r5srf
+  namespace: eval-quota-exceeded
+  resourceVersion: "992"
+  uid: cf87ef3a-b129-48a7-a3c0-f93c852311e5
+kind: Event
+lastTimestamp: "2026-11-14T23:35:09Z"
+message: 'Successfully pulled image "nginx:1.31-alpine" in 599ms (11.748s including
+  waiting). Image size: 26294634 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: web-5bd78f9588-r5srf.18e80d8352a730b3
+  namespace: eval-quota-exceeded
+  resourceVersion: "1155"
+  uid: cbe557ae-7e41-4c08-a53c-4402f994b5c9
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web-5bd78f9588-r5srf
+  namespace: eval-quota-exceeded
+  resourceVersion: "992"
+  uid: cf87ef3a-b129-48a7-a3c0-f93c852311e5
+kind: Event
+lastTimestamp: "2026-11-14T23:35:09Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: web-5bd78f9588-r5srf.18e80d83531521e2
+  namespace: eval-quota-exceeded
+  resourceVersion: "1156"
+  uid: 55d699fa-afe1-4dca-a9de-f3e080858b07
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web-5bd78f9588-r5srf
+  namespace: eval-quota-exceeded
+  resourceVersion: "992"
+  uid: cf87ef3a-b129-48a7-a3c0-f93c852311e5
+kind: Event
+lastTimestamp: "2026-11-14T23:35:09Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: web-5bd78f9588-r5srf.18e80d8355982c0c
+  namespace: eval-quota-exceeded
+  resourceVersion: "1157"
+  uid: 52d98db5-2fbe-4089-9420-3ff89a90c8bc
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "978"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Created pod: web-5bd78f9588-r5srf'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d8080808381
+  namespace: eval-quota-exceeded
+  resourceVersion: "991"
+  uid: 6b933a55-239e-4ede-8a69-96d69e70a4d1
+reason: SuccessfulCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "978"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-cfjh4" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d80809311fe
+  namespace: eval-quota-exceeded
+  resourceVersion: "996"
+  uid: b0d01cc2-5de7-4872-b5d5-887ffc429335
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "995"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-wcdwf" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d8080d27728
+  namespace: eval-quota-exceeded
+  resourceVersion: "999"
+  uid: c24544ed-848d-491f-80a0-a6dd61378288
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-vm6nq" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d8081080983
+  namespace: eval-quota-exceeded
+  resourceVersion: "1003"
+  uid: 278f7b97-53ec-40e7-8467-7b6861a80997
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-w78xj" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d8081265b8f
+  namespace: eval-quota-exceeded
+  resourceVersion: "1005"
+  uid: 28c80b56-2717-4c4f-97dc-6e863cc0ce04
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-zg78r" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d808137d0a2
+  namespace: eval-quota-exceeded
+  resourceVersion: "1006"
+  uid: 990b99c2-ec1d-4265-a029-25a7ee3997a5
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-qp8d7" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d80839e26d1
+  namespace: eval-quota-exceeded
+  resourceVersion: "1007"
+  uid: 7df76bb9-2f5d-40cf-b9c1-4d57ed42e2e1
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-h8ck6" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d808d3d81a1
+  namespace: eval-quota-exceeded
+  resourceVersion: "1010"
+  uid: 8e601b21-083f-4b6c-a8ff-0c4517a646f8
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-ktsnc" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d80969667d3
+  namespace: eval-quota-exceeded
+  resourceVersion: "1016"
+  uid: 9c7d2f85-9dd3-44e8-8583-a949f41812ff
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: 'Error creating: pods "web-5bd78f9588-m2llt" is forbidden: exceeded quota:
+  compute, requested: requests.cpu=200m, used: requests.cpu=200m, limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web-5bd78f9588.18e80d80a06d87d2
+  namespace: eval-quota-exceeded
+  resourceVersion: "1018"
+  uid: f3ddb7d8-8bce-40cf-8686-03f25df245ba
+reason: FailedCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 9
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:58Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: web-5bd78f9588
+  namespace: eval-quota-exceeded
+  resourceVersion: "1001"
+  uid: 35160c4c-2071-44c4-a80b-26fc5c621012
+kind: Event
+lastTimestamp: "2026-11-14T23:42:06Z"
+message: '(combined from similar events): Error creating: pods "web-5bd78f9588-6nn52"
+  is forbidden: exceeded quota: compute, requested: requests.cpu=200m, used: requests.cpu=200m,
+  limited: requests.cpu=250m'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:58Z"
+  name: web-5bd78f9588.18e80d80eceb6cfe
+  namespace: eval-quota-exceeded
+  resourceVersion: "2327"
+  uid: 02e90849-d9f5-4a3d-a438-3af0c914de7a
+reason: FailedCreate
+reportingComponent: ""
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: web
+  namespace: eval-quota-exceeded
+  resourceVersion: "977"
+  uid: 83f2db8b-edab-49fa-9d25-2ffc5dad89f7
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Scaled up replica set web-5bd78f9588 from 0 to 2
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: web.18e80d807b1fd5a7
+  namespace: eval-quota-exceeded
+  resourceVersion: "979"
+  uid: df3d89e6-4962-45c5-a5a0-db4a0adb9e4e
+reason: ScalingReplicaSet
+reportingComponent: deployment-controller
+reportingInstance: ""
+source:
+  component: deployment-controller
+type: Normal

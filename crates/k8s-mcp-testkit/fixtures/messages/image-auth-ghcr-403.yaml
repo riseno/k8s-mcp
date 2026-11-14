@@ -1,0 +1,305 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from a pod pulling a private ghcr.io image without imagePullSecrets (anonymous token request is refused with 403). Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  generation: 1
+  labels:
+    run: api
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "2263"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+spec:
+  containers:
+  - image: ghcr.io/k8s-mcp-eval/private-app:1.0
+    imagePullPolicy: IfNotPresent
+    name: api
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-9vzfg
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Never
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-9vzfg
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    message: 'containers with unready status: [api]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    message: 'containers with unready status: [api]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - image: ghcr.io/k8s-mcp-eval/private-app:1.0
+    imageID: ""
+    lastState: {}
+    name: api
+    ready: false
+    restartCount: 0
+    started: false
+    state:
+      waiting:
+        message: 'Back-off pulling image "ghcr.io/k8s-mcp-eval/private-app:1.0": ErrImagePull:
+          failed to pull and unpack image "ghcr.io/k8s-mcp-eval/private-app:1.0":
+          failed to resolve reference "ghcr.io/k8s-mcp-eval/private-app:1.0": failed
+          to authorize: failed to fetch anonymous token: unexpected status from GET
+          request to https://ghcr.io/token?scope=repository%3Ak8s-mcp-eval%2Fprivate-app%3Apull&service=ghcr.io:
+          403 Forbidden'
+        reason: ImagePullBackOff
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-9vzfg
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Pending
+  podIP: 10.244.0.18
+  podIPs:
+  - ip: 10.244.0.18
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:57Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "987"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: Successfully assigned eval-ghcr-auth/api to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: api.18e80d8080927b9a
+  namespace: eval-ghcr-auth
+  resourceVersion: "993"
+  uid: ec651c7b-f0da-4d01-a35e-a809d8d283e3
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 5
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{api}
+  kind: Pod
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "990"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+kind: Event
+lastTimestamp: "2026-11-14T23:38:11Z"
+message: Pulling image "ghcr.io/k8s-mcp-eval/private-app:1.0"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: api.18e80d80965e4780
+  namespace: eval-ghcr-auth
+  resourceVersion: "1825"
+  uid: b6225f2d-28af-4456-953d-5e057fc8f8df
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 5
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{api}
+  kind: Pod
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "990"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+kind: Event
+lastTimestamp: "2026-11-14T23:38:11Z"
+message: 'Failed to pull image "ghcr.io/k8s-mcp-eval/private-app:1.0": failed to pull
+  and unpack image "ghcr.io/k8s-mcp-eval/private-app:1.0": failed to resolve reference
+  "ghcr.io/k8s-mcp-eval/private-app:1.0": failed to authorize: failed to fetch anonymous
+  token: unexpected status from GET request to https://ghcr.io/token?scope=repository%3Ak8s-mcp-eval%2Fprivate-app%3Apull&service=ghcr.io:
+  403 Forbidden'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: api.18e80d83601ed1a3
+  namespace: eval-ghcr-auth
+  resourceVersion: "1827"
+  uid: df6fa037-0d19-4e5e-80f0-2bcda5faf7cd
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 5
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{api}
+  kind: Pod
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "990"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+kind: Event
+lastTimestamp: "2026-11-14T23:38:11Z"
+message: 'Error: ErrImagePull'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: api.18e80d8360201b63
+  namespace: eval-ghcr-auth
+  resourceVersion: "1828"
+  uid: cd790060-da51-491b-99e0-2dc58780e2d6
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 21
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{api}
+  kind: Pod
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "990"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+kind: Event
+lastTimestamp: "2026-11-14T23:40:14Z"
+message: Back-off pulling image "ghcr.io/k8s-mcp-eval/private-app:1.0"
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: api.18e80d837a8ea135
+  namespace: eval-ghcr-auth
+  resourceVersion: "2109"
+  uid: 06b0d7e9-f17f-4a04-9a68-4997b2d6c4a2
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 21
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{api}
+  kind: Pod
+  name: api
+  namespace: eval-ghcr-auth
+  resourceVersion: "990"
+  uid: 95f99e1f-419f-44a6-aa04-6a49c0df5132
+kind: Event
+lastTimestamp: "2026-11-14T23:40:14Z"
+message: 'Error: ImagePullBackOff'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: api.18e80d837a8f1a4d
+  namespace: eval-ghcr-auth
+  resourceVersion: "2110"
+  uid: d58dafff-defb-4514-95b4-09cbd5ec74e1
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning

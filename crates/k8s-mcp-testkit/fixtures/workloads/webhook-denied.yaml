@@ -1,0 +1,24 @@
+# A Kyverno policy rejects every pod of the Deployment (no pods exist).
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: shop}
+spec:
+  replicas: 3
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers: [{name: api, image: ghcr.io/acme/api:2.0.1}]
+status:
+  conditions:
+    - {type: ReplicaFailure, status: "True", reason: FailedCreate}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: api-rs.1, namespace: shop}
+involvedObject: {kind: ReplicaSet, name: api-6d9f7c8b5, namespace: shop}
+reason: FailedCreate
+type: Warning
+message: "Error creating: admission webhook \"require-labels.kyverno.svc\" denied the request: resource Pod/shop/api-6d9f7c8b5-q2w3e was blocked due to the following policies require-labels: check-team: 'validation error: label team is required. rule check-team failed at path /metadata/labels/team/'"
+count: 9
+lastTimestamp: "2026-11-14T11:57:00Z"

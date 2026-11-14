@@ -1,0 +1,37 @@
+# concurrencyPolicy Forbid with a run that never finishes: new runs are skipped.
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: sync, namespace: shop}
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers: [{name: sync, image: ghcr.io/acme/sync:0.4}]
+status:
+  lastScheduleTime: "2026-11-14T09:00:00Z"
+  active: [{kind: Job, name: sync-29871540, namespace: shop}]
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: sync-29871540, namespace: shop}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers: [{name: sync, image: ghcr.io/acme/sync:0.4}]
+status:
+  active: 1
+---
+apiVersion: v1
+kind: Event
+metadata: {name: sync.1, namespace: shop}
+involvedObject: {kind: CronJob, name: sync, namespace: shop}
+reason: JobAlreadyActive
+type: Normal
+message: "Not starting job because prior execution is running and concurrency policy is Forbid"
+count: 36
+lastTimestamp: "2026-11-14T11:55:00Z"

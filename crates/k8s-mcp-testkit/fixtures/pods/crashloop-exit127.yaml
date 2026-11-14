@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata: {name: worker-5c8d9-qq2zt, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: worker
+      image: busybox:1.36
+      command: [sh, -c, "run-worker --queue orders"]
+status:
+  phase: Running
+  containerStatuses:
+    - name: worker
+      ready: false
+      restartCount: 5
+      image: busybox:1.36
+      imageID: ""
+      state: {waiting: {reason: CrashLoopBackOff, message: back-off 2m40s restarting failed container}}
+      lastState: {terminated: {exitCode: 127, reason: Error, startedAt: "2026-11-14T11:57:00Z", finishedAt: "2026-11-14T11:57:00Z"}}
+---
+kind: ContainerLog
+container: worker
+previous: true
+lines: ["sh: run-worker: not found"]

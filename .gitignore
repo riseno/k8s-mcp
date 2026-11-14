@@ -1,0 +1,7 @@
+.kube/
+.grok-task.md
+grok-build.log
+/target
+/.dev/
+*.pending-snap
+*.snap.new

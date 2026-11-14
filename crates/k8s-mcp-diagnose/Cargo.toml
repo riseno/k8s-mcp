@@ -1,0 +1,23 @@
+[package]
+name = "k8s-mcp-diagnose"
+description = "Pure, I/O-free diagnosis rule engine for k8s-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+k8s-mcp-core.workspace = true
+k8s-openapi.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+jiff.workspace = true
+
+[dev-dependencies]
+k8s-mcp-testkit.workspace = true

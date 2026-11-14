@@ -1,0 +1,29 @@
+[package]
+name = "k8s-mcp-tools"
+description = "Kubernetes read and diagnose tool implementations for k8s-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+k8s-mcp-core.workspace = true
+k8s-mcp-diagnose.workspace = true
+k8s-openapi.workspace = true
+kube.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+regex.workspace = true
+jiff.workspace = true
+
+[dev-dependencies]
+k8s-mcp-testkit.workspace = true
+insta.workspace = true

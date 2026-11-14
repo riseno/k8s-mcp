@@ -1,0 +1,41 @@
+[package]
+name = "k8s-mcp-server"
+description = "Safe, read-only-by-default MCP server for troubleshooting any Kubernetes cluster"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["kubernetes", "mcp", "ai", "troubleshooting", "k8s"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "k8s-mcp"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+k8s-mcp-core.workspace = true
+k8s-mcp-tools.workspace = true
+k8s-mcp-diagnose.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rmcp.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+tempfile.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-child-process"] }

@@ -1,2 +1,6 @@
 [alias]
 xtask = "run --package xtask --"
+
+# Profile `dist` builds release artifacts with: the release profile unchanged (fat LTO).
+[profile.dist]
+inherits = "release"

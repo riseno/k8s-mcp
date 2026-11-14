@@ -1,0 +1,41 @@
+# Liveness gets connection refused, no containerPorts declared and no startup probe.
+apiVersion: v1
+kind: Pod
+metadata: {name: legacy-0a1b2-r9t0y, namespace: shop, creationTimestamp: "2026-11-14T11:30:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: legacy
+      image: ghcr.io/acme/legacy:4.2
+      livenessProbe:
+        tcpSocket: {port: 7000}
+        initialDelaySeconds: 5
+status:
+  phase: Running
+  containerStatuses:
+    - name: legacy
+      ready: false
+      restartCount: 8
+      image: ghcr.io/acme/legacy:4.2
+      state: {running: {startedAt: "2026-11-14T11:59:20Z"}}
+      lastState: {terminated: {exitCode: 143, reason: Error, startedAt: "2026-11-14T11:58:40Z", finishedAt: "2026-11-14T11:59:18Z"}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: legacy.1, namespace: shop}
+involvedObject: {kind: Pod, name: legacy-0a1b2-r9t0y, namespace: shop, fieldPath: "spec.containers{legacy}"}
+reason: Unhealthy
+type: Warning
+message: "Liveness probe failed: dial tcp 10.244.0.12:7000: connect: connection refused"
+count: 24
+lastTimestamp: "2026-11-14T11:59:15Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: legacy.2, namespace: shop}
+involvedObject: {kind: Pod, name: legacy-0a1b2-r9t0y, namespace: shop, fieldPath: "spec.containers{legacy}"}
+reason: Killing
+type: Normal
+message: "Container legacy failed liveness probe, will be restarted"
+count: 8
+lastTimestamp: "2026-11-14T11:59:15Z"

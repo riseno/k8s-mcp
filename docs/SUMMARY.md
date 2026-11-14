@@ -1,0 +1,15 @@
+# Summary
+
+- [Install](install.md)
+- [MCP clients](clients.md)
+- [Tools](tools.md)
+- [Output format](output.md)
+- [Detection rules](rules.md)
+- [Security and threat model](security.md)
+- [Evals](evals.md)
+- [FAQ](faq.md)
+- [Progress](progress.md)
+- [Architecture decisions](adr/0001-crypto-provider.md)
+  - [0002 Server in the bin crate](adr/0002-merge-server-into-bin-crate.md)
+  - [0003 YAML and time crates](adr/0003-yaml-and-time-crates.md)
+  - [0004 Deferred cache and provider crates](adr/0004-defer-list-cache-and-provider-crates.md)

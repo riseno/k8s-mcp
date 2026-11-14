@@ -1,0 +1,8 @@
+[book]
+title = "k8s-mcp"
+authors = ["Ryan Chan"]
+language = "en"
+src = "."
+
+[build]
+build-dir = "../target/book"

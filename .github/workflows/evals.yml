@@ -1,0 +1,18 @@
+name: evals
+
+# Nightly and on demand. On release tags, release.yml calls this as a dist plan job, and the
+# release builds wait for it, so a release below the eval gates never ships.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    # release.yml also runs `dist plan` on pull requests; integration.yml already covers those.
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/integration.yml

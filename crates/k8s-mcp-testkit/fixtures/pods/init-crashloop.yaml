@@ -1,0 +1,34 @@
+# A migration init container that exits 1 (Init:CrashLoopBackOff).
+apiVersion: v1
+kind: Pod
+metadata: {name: orders-6c7d8-b2n3m, namespace: shop, creationTimestamp: "2026-11-14T11:30:00Z"}
+spec:
+  nodeName: node-1
+  initContainers:
+    - name: migrate
+      image: ghcr.io/acme/orders-migrate:5.0
+  containers:
+    - name: orders
+      image: ghcr.io/acme/orders:5.0
+status:
+  phase: Pending
+  initContainerStatuses:
+    - name: migrate
+      ready: false
+      restartCount: 6
+      image: ghcr.io/acme/orders-migrate:5.0
+      state: {waiting: {reason: CrashLoopBackOff, message: "back-off 2m40s restarting failed container=migrate"}}
+      lastState: {terminated: {exitCode: 1, reason: Error, startedAt: "2026-11-14T11:56:00Z", finishedAt: "2026-11-14T11:56:03Z"}}
+  containerStatuses:
+    - name: orders
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/orders:5.0
+      state: {waiting: {reason: PodInitializing}}
+---
+kind: ContainerLog
+container: migrate
+previous: true
+lines:
+  - "applying migration 0042_add_index"
+  - "ERROR: relation \"orders\" does not exist"

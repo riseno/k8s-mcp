@@ -1,0 +1,42 @@
+# A RWO volume still attached to the node of the previous pod.
+apiVersion: v1
+kind: Pod
+metadata: {name: db-7f8g9-d1f2g, namespace: shop, creationTimestamp: "2026-11-14T11:45:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: db
+      image: postgres:17
+      volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+  volumes:
+    - name: data
+      persistentVolumeClaim: {claimName: data}
+status:
+  phase: Pending
+  startTime: "2026-11-14T11:45:00Z"
+  containerStatuses:
+    - name: db
+      ready: false
+      restartCount: 0
+      image: postgres:17
+      state: {waiting: {reason: ContainerCreating}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: db.1, namespace: shop}
+involvedObject: {kind: Pod, name: db-7f8g9-d1f2g, namespace: shop}
+reason: FailedAttachVolume
+type: Warning
+message: "Multi-Attach error for volume \"pvc-5f1c2d3e\" Volume is already exclusively attached to one node and can't be attached to another"
+count: 1
+lastTimestamp: "2026-11-14T11:45:05Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: db.2, namespace: shop}
+involvedObject: {kind: Pod, name: db-7f8g9-d1f2g, namespace: shop}
+reason: FailedMount
+type: Warning
+message: "Unable to attach or mount volumes: unmounted volumes=[data], unattached volumes=[data kube-api-access-7xk2p]: timed out waiting for the condition"
+count: 6
+lastTimestamp: "2026-11-14T11:59:00Z"

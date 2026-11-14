@@ -20,11 +20,11 @@ schemars.workspace = true
 thiserror.workspace = true
 regex.workspace = true
 globset.workspace = true
-moka.workspace = true
 jiff.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
 tempfile.workspace = true

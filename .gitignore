@@ -5,3 +5,4 @@ grok-build.log
 /.dev/
 *.pending-snap
 *.snap.new
+.claude/worktrees/

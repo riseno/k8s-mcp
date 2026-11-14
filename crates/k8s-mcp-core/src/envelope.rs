@@ -196,7 +196,7 @@ impl Envelope {
         if self.truncated {
             let _ = writeln!(
                 out,
-                "\n(truncated: {} items and {} log lines omitted to fit the size cap; narrow the query, lower tail/limit, or use the continue cursor)",
+                "\n(truncated: {} items and {} log lines omitted; narrow the query (namespace, selector, since), adjust limit/tail, or use the continue cursor)",
                 self.omitted.items, self.omitted.log_lines
             );
         }

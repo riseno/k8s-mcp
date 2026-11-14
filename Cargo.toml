@@ -33,9 +33,9 @@ thiserror = "2"
 anyhow = "1"
 regex = "1.13"
 globset = "0.4"
-moka = { version = "0.12", features = ["future"] }
 jiff = "0.2"
 tower-test = "0.4"
+http = "1"
 insta = { version = "1.49", features = ["json"] }
 proptest = "1.12"
 assert_cmd = "2.2"
@@ -54,6 +54,7 @@ module_name_repetitions = "allow" # crate-prefixed names read better at call sit
 missing_errors_doc = "allow"      # errors are self-describing thiserror enums
 must_use_candidate = "allow"      # too noisy for small getters
 too_many_lines = "allow"          # rule tables and renderers are long by nature
+similar_names = "allow"           # short names like ns/sc/cm are idiomatic in Kubernetes code
 doc_markdown = "allow"            # Kubernetes kind names (ConfigMap, OOMKilled) read better without backticks
 
 [profile.release]

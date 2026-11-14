@@ -1,0 +1,30 @@
+# An app that exits 1 because it cannot resolve its dependencies: the crash loop is the
+# root cause finding, DNS errors are the supporting medium-confidence one.
+apiVersion: v1
+kind: Pod
+metadata: {name: gateway-9h0j1-l5k6j, namespace: shop, creationTimestamp: "2026-11-14T11:30:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: gateway
+      image: ghcr.io/acme/gateway:3.1
+status:
+  phase: Running
+  containerStatuses:
+    - name: gateway
+      ready: false
+      restartCount: 6
+      image: ghcr.io/acme/gateway:3.1
+      state: {waiting: {reason: CrashLoopBackOff}}
+      lastState: {terminated: {exitCode: 1, reason: Error, startedAt: "2026-11-14T11:57:00Z", finishedAt: "2026-11-14T11:57:10Z"}}
+---
+kind: ContainerLog
+container: gateway
+previous: true
+lines:
+  - "starting gateway"
+  - "dial tcp: lookup orders.shop.svc.cluster.local on 10.96.0.10:53: no such host"
+  - "retrying in 1s"
+  - "dial tcp: lookup orders.shop.svc.cluster.local on 10.96.0.10:53: no such host"
+  - "Error: getaddrinfo ENOTFOUND payments"
+  - "fatal: upstream unavailable"

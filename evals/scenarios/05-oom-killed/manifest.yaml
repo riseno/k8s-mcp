@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-oom-killed}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: cache, namespace: eval-oom-killed}
+spec:
+  containers:
+    - name: cache
+      image: python:3.14-alpine
+      # Writes 256 MiB, far over the 32Mi limit.
+      command: ["python", "-c", "data = b'x' * (256 * 1024 * 1024)"]
+      resources:
+        requests: {memory: 32Mi}
+        limits: {memory: 32Mi}

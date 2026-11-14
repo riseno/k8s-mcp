@@ -1,0 +1,9 @@
+id: exit-zero
+symptom: The migrate pod in eval-exit-zero finishes successfully but shows CrashLoopBackOff. Why?
+tool: diagnose_pod
+args: {name: migrate, namespace: eval-exit-zero}
+settle_seconds: 60
+expected:
+  primary: pod.crashloop.exit_zero
+  acceptable: []
+forbidden: [pod.crashloop.app_error, pod.crashloop.command_not_found, pod.oom.container]

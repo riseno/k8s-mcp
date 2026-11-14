@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-private-image-no-secret}
+---
+# A repository anonymous clients may not pull; no imagePullSecrets on the pod or its SA.
+apiVersion: v1
+kind: Pod
+metadata: {name: api, namespace: eval-private-image-no-secret}
+spec:
+  containers:
+    - name: api
+      image: docker.io/k8smcpeval/private-app:1.0

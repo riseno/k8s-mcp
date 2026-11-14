@@ -1,0 +1,9 @@
+id: oom-killed
+symptom: The cache pod in eval-oom-killed restarts every few seconds. Why?
+tool: diagnose_pod
+args: {name: cache, namespace: eval-oom-killed}
+settle_seconds: 60
+expected:
+  primary: pod.oom.container
+  acceptable: []
+forbidden: [pod.crashloop.sigkill, pod.crashloop.app_error, pod.crashloop.exit_zero]

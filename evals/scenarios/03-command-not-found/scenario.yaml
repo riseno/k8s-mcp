@@ -1,0 +1,9 @@
+id: command-not-found
+symptom: The worker pod in eval-command-not-found keeps restarting. What is going on?
+tool: diagnose_pod
+args: {name: worker, namespace: eval-command-not-found}
+settle_seconds: 60
+expected:
+  primary: pod.crashloop.command_not_found
+  acceptable: []
+forbidden: [pod.crashloop.app_error, pod.crashloop.exit_zero, pod.crashloop.not_executable, pod.oom.container]

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-readiness-failing}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: catalog, namespace: eval-readiness-failing}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: catalog}}
+  template:
+    metadata: {labels: {app: catalog}}
+    spec:
+      containers:
+        - name: catalog
+          image: nginx:1.31-alpine
+          ports: [{containerPort: 80}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 80}
+            periodSeconds: 2

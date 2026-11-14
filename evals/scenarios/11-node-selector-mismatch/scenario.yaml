@@ -1,0 +1,9 @@
+id: node-selector-mismatch
+symptom: The indexer pod in eval-node-selector-mismatch stays Pending even though the cluster has free capacity. Why?
+tool: diagnose_pod
+args: {name: indexer, namespace: eval-node-selector-mismatch}
+settle_seconds: 20
+expected:
+  primary: pod.pending.node_selector_affinity
+  acceptable: []
+forbidden: [pod.pending.insufficient_resources, pod.pending.taints]

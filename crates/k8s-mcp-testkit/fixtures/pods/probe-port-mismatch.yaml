@@ -1,0 +1,55 @@
+# Eval scenario 6: liveness probe on 8080, nginx listens on 80. nginx exits 0 on the
+# kubelet's SIGTERM, so lastState is a clean exit (crashloop.exit_zero must NOT fire).
+apiVersion: v1
+kind: Pod
+metadata: {name: web-probe-7c8d9-z1x2c, namespace: eval-x, creationTimestamp: "2026-11-14T11:45:00Z"}
+spec:
+  nodeName: node-1
+  restartPolicy: Always
+  containers:
+    - name: web
+      image: nginx:1.27
+      ports: [{containerPort: 80, name: http}]
+      livenessProbe:
+        httpGet: {path: /, port: 8080}
+        periodSeconds: 5
+        failureThreshold: 3
+status:
+  phase: Running
+  containerStatuses:
+    - name: web
+      ready: false
+      restartCount: 5
+      image: nginx:1.27
+      state: {waiting: {reason: CrashLoopBackOff, message: "back-off 1m20s restarting failed container=web"}}
+      lastState: {terminated: {exitCode: 0, reason: Completed, startedAt: "2026-11-14T11:57:00Z", finishedAt: "2026-11-14T11:57:16Z"}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.1, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-probe-7c8d9-z1x2c, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: Unhealthy
+type: Warning
+message: "Liveness probe failed: Get \"http://10.244.0.7:8080/\": dial tcp 10.244.0.7:8080: connect: connection refused"
+count: 18
+lastTimestamp: "2026-11-14T11:57:15Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.2, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-probe-7c8d9-z1x2c, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: Killing
+type: Normal
+message: "Container web failed liveness probe, will be restarted"
+count: 6
+lastTimestamp: "2026-11-14T11:57:15Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.3, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-probe-7c8d9-z1x2c, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: BackOff
+type: Warning
+message: "Back-off restarting failed container web in pod web-probe-7c8d9-z1x2c_eval-x(u1)"
+count: 7
+lastTimestamp: "2026-11-14T11:59:00Z"

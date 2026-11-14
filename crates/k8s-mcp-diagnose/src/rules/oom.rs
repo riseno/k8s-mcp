@@ -9,9 +9,7 @@ use k8s_openapi::api::core::v1::Container;
 use regex::Regex;
 use serde_json::json;
 
-use super::{
-    containers, describe_termination, docs, init_containers, last_termination, logs_args, pod_ref,
-};
+use super::{all_containers, describe_termination, docs, last_termination, logs_args, pod_ref};
 use crate::evidence::PodEvidence;
 
 /// Rules emitted by this module.
@@ -29,10 +27,7 @@ static NODE_HEAP: LazyLock<Regex> =
 
 /// Check main and init containers.
 pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
-    for (c, st) in init_containers(&ev.pod)
-        .into_iter()
-        .chain(containers(&ev.pod))
-    {
+    for (c, st) in all_containers(&ev.pod) {
         let Some(st) = st else { continue };
         let Some(t) = last_termination(st) else {
             continue;

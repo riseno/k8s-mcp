@@ -8,7 +8,7 @@ use k8s_openapi::api::core::v1::{Container, ContainerStatus};
 
 use super::{
     containers, describe_termination, docs, error_lines, events_with, last_termination, logs_args,
-    probe_killed, quote_event, restart_policy, waiting_reason,
+    probe_killed, quote_event, restart_policy, rule_docs, waiting_reason,
 };
 use crate::evidence::PodEvidence;
 
@@ -159,12 +159,7 @@ pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option
         )
         .evidence(Source::Status, format!("restartCount={}", st.restart_count))
         .fix(fix)
-        .docs(
-            RULES
-                .iter()
-                .find(|r| r.id == id)
-                .map_or(docs::DEBUG_PODS, |r| r.docs),
-        )
+        .docs(rule_docs(RULES, id))
         .next(
             "get_logs",
             logs_args(&ev.pod, name, true),

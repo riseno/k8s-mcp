@@ -216,7 +216,7 @@ async fn gather_pod(
     let mut logs = Vec::new();
     if let Some(tail) = log_tail {
         let api: Api<Pod> = Api::namespaced(client.clone(), &ns);
-        // (container, previous?) for containers that have run at least once.
+        // (container, read previous instance?) for containers that have run at least once.
         let wanted: Vec<(String, bool)> = pod
             .status
             .iter()
@@ -233,11 +233,12 @@ async fn gather_pod(
                         .as_ref()
                         .and_then(|s| s.terminated.as_ref())
                         .is_some();
-                let started = st
-                    .state
-                    .as_ref()
-                    .is_some_and(|s| s.running.is_some() || s.terminated.is_some());
-                (restarted || started).then(|| (st.name.clone(), restarted))
+                let terminated_now = st.state.as_ref().is_some_and(|s| s.terminated.is_some());
+                let running = st.state.as_ref().is_some_and(|s| s.running.is_some());
+                // A container that just crashed sits in `terminated` for a while; its own
+                // logs hold the crash output and the previous instance may already be gone.
+                let previous = restarted && !terminated_now;
+                (restarted || running || terminated_now).then(|| (st.name.clone(), previous))
             })
             .collect();
         for (container, previous) in wanted {

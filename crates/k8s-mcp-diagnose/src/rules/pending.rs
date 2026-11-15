@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 use k8s_mcp_core::finding::{Confidence, Finding, RuleMeta, Severity, Source};
 use k8s_mcp_core::text::truncate;
-use k8s_openapi::api::core::v1::{Node, Pod};
+use k8s_openapi::api::core::v1::Node;
 use serde_json::json;
 
 use super::{
@@ -435,7 +435,14 @@ fn spread(ev: &PodEvidence, mut f: Finding) -> Finding {
 
 fn claims(ev: &PodEvidence, mut f: Finding) -> Finding {
     let (_, ns) = pod_ref(&ev.pod);
-    let names: Vec<&str> = claim_names(&ev.pod);
+    let names: Vec<&str> = ev
+        .pod
+        .spec
+        .iter()
+        .flat_map(|s| s.volumes.iter().flatten())
+        .filter_map(|v| v.persistent_volume_claim.as_ref())
+        .map(|c| c.claim_name.as_str())
+        .collect();
     if let [only] = names.as_slice() {
         f.title = format!("{} ({only:?})", f.title);
     }
@@ -471,21 +478,6 @@ fn claims(ev: &PodEvidence, mut f: Finding) -> Finding {
         );
     }
     f
-}
-
-/// Claim names of the pod's PVC volumes.
-fn claim_names(pod: &Pod) -> Vec<&str> {
-    pod.spec
-        .as_ref()
-        .and_then(|s| s.volumes.as_ref())
-        .into_iter()
-        .flatten()
-        .filter_map(|v| {
-            v.persistent_volume_claim
-                .as_ref()
-                .map(|c| c.claim_name.as_str())
-        })
-        .collect()
 }
 
 fn label<'a>(n: &'a Node, key: &str) -> Option<&'a str> {

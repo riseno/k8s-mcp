@@ -15,7 +15,8 @@ use serde_json::json;
 
 use super::{
     about_container, all_containers, docs, events_with, last_seen, msg, pod_events_args, pod_ref,
-    quote_event, resource_args, rule_docs, service_account_name, waiting_message, waiting_reason,
+    quote_event, re, resource_args, rule_docs, service_account_name, waiting_message,
+    waiting_reason,
 };
 use crate::evidence::{PodEvidence, RefKind};
 
@@ -68,11 +69,6 @@ const PULL_REASONS: &[&str] = &[
     "ErrRegistryUnavailable",
     "ImageInspectError",
 ];
-
-fn re(pattern: &str) -> Regex {
-    #[allow(clippy::unwrap_used)] // constant patterns, covered by tests
-    Regex::new(pattern).unwrap()
-}
 
 /// (rule id, pattern), in match order.
 static PATTERNS: LazyLock<Vec<(&str, Regex)>> = LazyLock::new(|| {
@@ -151,15 +147,13 @@ fn finding(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Finding {
     let event = event.or_else(|| failed.first().copied());
 
     let image = c.image.as_deref().unwrap_or("");
-    let shown = if safe_image(image) {
-        format!("image {image:?}")
+    let (shown, host) = if safe_image(image) {
+        (format!("image {image:?}"), registry_host(image))
     } else {
-        format!("the image of container {:?}", c.name)
-    };
-    let host = if safe_image(image) {
-        registry_host(image)
-    } else {
-        "the registry"
+        (
+            format!("the image of container {:?}", c.name),
+            "the registry",
+        )
     };
     let (title, explanation, fix) = match id {
         "pod.image.not_found" => (

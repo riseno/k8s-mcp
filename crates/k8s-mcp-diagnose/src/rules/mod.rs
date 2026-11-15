@@ -287,6 +287,13 @@ pub fn dns_name(s: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
 }
 
+/// Compile a constant pattern for a `LazyLock` static. Panics on an invalid pattern, which
+/// the tests of every module that uses one would catch.
+#[allow(clippy::unwrap_used)]
+pub(crate) fn re(pattern: &str) -> regex::Regex {
+    regex::Regex::new(pattern).unwrap()
+}
+
 /// Lines of `log` matching an application error pattern, last `n` of them.
 pub fn error_lines(lines: &[String], n: usize) -> Vec<String> {
     static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {

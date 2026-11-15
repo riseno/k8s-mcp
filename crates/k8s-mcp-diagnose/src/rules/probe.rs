@@ -16,7 +16,7 @@ use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use regex::Regex;
 
 use super::{
-    about_container, containers, docs, latest, logs_args, msg, pod_events_args, quote_event,
+    about_container, containers, docs, latest, logs_args, msg, pod_events_args, quote_event, re,
     reason, rule_docs,
 };
 use crate::evidence::PodEvidence;
@@ -50,9 +50,10 @@ pub const RULES: &[RuleMeta] = &[
     },
 ];
 
-#[allow(clippy::unwrap_used)] // constant pattern
 static TIMEOUT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)context deadline exceeded|client\.timeout exceeded|timed out|timeout: failed to connect|i/o timeout").unwrap()
+    re(
+        r"(?i)context deadline exceeded|client\.timeout exceeded|timed out|timeout: failed to connect|i/o timeout",
+    )
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -30,8 +30,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::common::{
-    Scope, check_name, envelope, events_for, list_scoped, retain_recent, scope, selector_string,
-    soft,
+    Scope, check_name, envelope, events_for, list_scoped, retain_recent, scope, selector_matches,
+    selector_string, soft,
 };
 use crate::read::{add_notes, events_section};
 use crate::rows::{node_row, pod_row, pod_status, unhealthy};
@@ -559,6 +559,18 @@ pub async fn workload_pods(sc: &Scope, kind: &str, name: &str) -> Result<(Worklo
     Ok((wl, pods))
 }
 
+/// The label selector a workload uses for its pods (CronJobs select through their Jobs).
+fn workload_selector(w: &Workload) -> Option<&LabelSelector> {
+    match w {
+        Workload::Deployment(d) => d.spec.as_ref().map(|s| &s.selector),
+        Workload::StatefulSet(s) => s.spec.as_ref().map(|s| &s.selector),
+        Workload::DaemonSet(d) => d.spec.as_ref().map(|s| &s.selector),
+        Workload::ReplicaSet(r) => r.spec.as_ref().map(|s| &s.selector),
+        Workload::Job(j) => j.spec.as_ref().and_then(|s| s.selector.as_ref()),
+        Workload::CronJob(_) => None,
+    }
+}
+
 /// Objects of type K in `ns` owned by `owner_kind/owner`, newest first.
 async fn owned<K>(client: &kube::Client, ns: &str, owner_kind: &str, owner: &str) -> Result<Vec<K>>
 where
@@ -719,7 +731,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
         jobs,
         events,
         pods: pod_evidence,
-        pod_count: pods.len(),
+        pod_count: Some(pods.len()),
         quotas,
         hpa,
         unavailable: un,
@@ -962,6 +974,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     };
     let mut findings: Vec<Finding> = Vec::new();
     let mut scanned = Vec::new();
+    let mut listed_pods: Option<Vec<Pod>> = None;
 
     if want("pods") {
         let pods: Vec<Pod> = list_scoped(ctx, &sc, &ListParams::default(), "pods", &mut un).await?;
@@ -981,6 +994,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                 findings.push(f.object(ObjectRef::new("Pod", Some(&ns), &name)));
             }
         }
+        listed_pods = Some(pods);
     }
     if want("workloads") {
         let mut wls: Vec<(Workload, String, String)> = Vec::new();
@@ -1017,9 +1031,20 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             let prefix = format!("{name}-");
             let mut events = events_about(kind, &ns, &|n| n == name);
             events.extend(events_about("ReplicaSet", &ns, &|n| n.starts_with(&prefix)));
+            // Count the workload's pods only when they were listed; never guess 0.
+            let pod_count = listed_pods
+                .as_ref()
+                .zip(workload_selector(&wl))
+                .map(|(pods, sel)| {
+                    pods.iter()
+                        .filter(|p| p.metadata.namespace.as_deref() == Some(ns.as_str()))
+                        .filter(|p| selector_matches(sel, p.metadata.labels.as_ref()))
+                        .count()
+                });
             let ev = WorkloadEvidence {
                 workload: wl,
                 events,
+                pod_count,
                 now,
                 ..WorkloadEvidence::default()
             };

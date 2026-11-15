@@ -362,3 +362,75 @@ async fn discovery_skips_an_api_group_that_never_answers() {
         .collect();
     assert_eq!(kinds, ["Pod", "Deployment"]);
 }
+
+/// riseno/k8s-mcp#7: find_problems counts a workload's pods from the pods it listed, and leaves
+/// the count out (instead of claiming 0) when it did not list pods.
+#[tokio::test]
+async fn find_problems_counts_existing_pods_for_workload_findings() {
+    let deploy = json!({
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": {"name": "api", "namespace": "shop", "creationTimestamp": "2026-11-14T10:00:00Z"},
+        "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "api"}}, "template": {"metadata": {"labels": {"app": "api"}}, "spec": {"containers": [{"name": "app", "image": "nginx:1.27"}]}}},
+        "status": {"replicas": 1, "availableReplicas": 0, "unavailableReplicas": 1}
+    });
+    let mut p = pod(
+        "shop",
+        "api-7d9f8c6b5-x2k4q",
+        "Running",
+        Some("CrashLoopBackOff"),
+        700,
+    );
+    p["metadata"]["labels"] = json!({"app": "api"});
+    let other = pod("shop", "unrelated", "Running", None, 0);
+    let mock = || {
+        MockApi::new()
+            .list("/api/v1/events", vec![])
+            .list("/api/v1/pods", vec![p.clone(), other.clone()])
+            .list("/apis/apps/v1/deployments", vec![deploy.clone()])
+            .start()
+    };
+    let unavailable = |env: &k8s_mcp_tools::Envelope| {
+        env.findings
+            .iter()
+            .find(|f| f.id == "workload.replicas.unavailable")
+            .map(|f| {
+                f.evidence
+                    .iter()
+                    .map(|e| e.text.clone())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            })
+            .unwrap()
+    };
+    let m = mock();
+    let env = k8s_mcp_tools::find_problems(
+        &ctx(&m, Policy::permissive()),
+        FindProblemsInput {
+            kinds: Some(vec!["pods".into(), "workloads".into()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        unavailable(&env).contains("(pods seen: 1)"),
+        "{}",
+        unavailable(&env)
+    );
+
+    let m = mock();
+    let env = k8s_mcp_tools::find_problems(
+        &ctx(&m, Policy::permissive()),
+        FindProblemsInput {
+            kinds: Some(vec!["workloads".into()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        !unavailable(&env).contains("pods seen"),
+        "{}",
+        unavailable(&env)
+    );
+}

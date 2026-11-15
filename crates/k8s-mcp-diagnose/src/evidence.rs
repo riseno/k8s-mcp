@@ -120,8 +120,8 @@ pub struct WorkloadEvidence {
     pub events: Vec<Event>,
     /// Evidence for representative pods (failing pods first).
     pub pods: Vec<PodEvidence>,
-    /// Total pods selected by the workload.
-    pub pod_count: usize,
+    /// Pods selected by the workload, when known (`None` when they were not listed).
+    pub pod_count: Option<usize>,
     /// ResourceQuotas in the namespace.
     pub quotas: Vec<ResourceQuota>,
     /// HPA targeting the workload, if any.

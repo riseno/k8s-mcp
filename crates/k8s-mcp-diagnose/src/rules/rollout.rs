@@ -414,13 +414,12 @@ fn replicas(w: &Workload) -> Option<(i32, i32)> {
     }
 }
 
-/// `matchLabels` of the pod selector as a label selector string.
-/// `desired=N available=M (pods seen: K)`.
+/// `desired=N available=M`, plus `(pods seen: K)` when the pods were counted.
 fn replica_counts(ev: &WorkloadEvidence, desired: i32, available: i32) -> String {
-    format!(
-        "desired={desired} available={available} (pods seen: {})",
-        ev.pod_count
-    )
+    match ev.pod_count {
+        Some(n) => format!("desired={desired} available={available} (pods seen: {n})"),
+        None => format!("desired={desired} available={available}"),
+    }
 }
 
 /// Suggest listing the workload's pods, when it has a label selector.
@@ -435,6 +434,7 @@ fn with_pods_next(f: Finding, w: &Workload, ns: &str) -> Finding {
     }
 }
 
+/// `matchLabels` of the pod selector as a label selector string.
 fn selector(w: &Workload) -> Option<String> {
     let sel: &LabelSelector = match w {
         Workload::Deployment(d) => &d.spec.as_ref()?.selector,

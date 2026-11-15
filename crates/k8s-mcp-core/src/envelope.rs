@@ -159,6 +159,9 @@ impl Envelope {
 
         for s in &self.sections {
             let _ = writeln!(out, "\n{}", s.title);
+            if s.lines.is_empty() {
+                continue;
+            }
             match &s.untrusted {
                 Some(attrs) => {
                     let attrs: Vec<(&str, &str)> = attrs
@@ -228,8 +231,10 @@ impl Envelope {
                 let n = drop_count(s.lines.len(), bytes, over);
                 s.lines.drain(..n);
                 self.omitted.log_lines += n;
+                // Mark the heading instead of adding a placeholder line: an emptied section is
+                // never selected again, so every pass shrinks something and the loop ends.
                 if s.lines.is_empty() {
-                    s.lines.push("(omitted to fit the size cap)".into());
+                    s.title.push_str(" (omitted to fit the size cap)");
                 }
                 continue;
             }
@@ -319,7 +324,7 @@ fn cell(v: Option<&Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::finding::{Confidence, Severity};
+    use crate::finding::{Confidence, Severity, Source};
     use serde_json::json;
 
     fn sample() -> Envelope {
@@ -374,6 +379,69 @@ mod tests {
         assert!(e.truncated);
         assert_eq!(e.omitted.items + e.items.len(), 500);
         assert!(e.render().contains("(truncated:"));
+    }
+
+    /// Regression: when findings alone exceed the cap, draining a section used to re-add a
+    /// placeholder line that was selected again forever (cluster_overview hung on GKE).
+    #[test]
+    fn fit_terminates_when_findings_exceed_the_cap_after_sections_are_drained() {
+        let mut e = Envelope::new("overview");
+        e.sections.push(Section {
+            title: "NODE POOLS".into(),
+            lines: (0..30)
+                .map(|i| format!("pool-{i}: 3 Ready, 0 NotReady"))
+                .collect(),
+            untrusted: None,
+        });
+        for i in 0..10 {
+            e.findings.push(
+                Finding::new(
+                    "pod.crashloop.app_error",
+                    Severity::Critical,
+                    Confidence::High,
+                    format!("finding {i}"),
+                )
+                .explain("x".repeat(400))
+                .evidence(Source::Event, "y".repeat(400))
+                .fix("z".repeat(400)),
+            );
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            e.fit(4_000);
+            let _ = tx.send(e);
+        });
+        let e = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("fit did not terminate");
+        assert!(e.size() <= 4_000, "size {}", e.size());
+        assert!(e.truncated);
+        assert!(
+            e.render()
+                .contains("NODE POOLS (omitted to fit the size cap)"),
+            "{}",
+            e.render()
+        );
+    }
+
+    proptest::proptest! {
+        /// `fit` always terminates and never exceeds the cap unless only the summary is left.
+        #[test]
+        fn fit_always_terminates(sections in 0usize..4, lines in 0usize..60, items in 0usize..80, findings in 0usize..15, text in 0usize..600, cap in 2_000usize..30_000) {
+            let mut e = Envelope::new("s".repeat(text));
+            e.columns = vec!["name"];
+            e.items = (0..items).map(|i| json!({"name": format!("item-{i}-{}", "n".repeat(text / 10))})).collect();
+            for s in 0..sections {
+                e.sections.push(Section { title: format!("S{s}"), lines: (0..lines).map(|l| format!("{l} {}", "l".repeat(text / 5))).collect(), untrusted: None });
+            }
+            for i in 0..findings {
+                e.findings.push(Finding::new("a.b", Severity::High, Confidence::High, format!("f{i}")).evidence(Source::Log, "e".repeat(text)).fix("x".repeat(text)));
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || { e.fit(cap); let _ = tx.send(e); });
+            let e = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("fit did not terminate");
+            proptest::prop_assert!(e.size() <= cap || (e.findings.is_empty() && e.items.is_empty() && e.sections.is_empty()));
+        }
     }
 
     #[test]

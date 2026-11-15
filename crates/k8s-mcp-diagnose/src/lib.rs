@@ -89,6 +89,153 @@ pub fn catalogue() -> Vec<RuleMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{node_fixture, pod_fixture, workload_fixture};
+
+    /// Every fixture under `dir`, sorted, as `dir/<file>` names.
+    fn fixtures(dir: &str) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(k8s_mcp_testkit::path(dir))
+            .unwrap()
+            .map(|e| format!("{dir}/{}", e.unwrap().file_name().to_string_lossy()))
+            .filter(|n| {
+                std::path::Path::new(n)
+                    .extension()
+                    .is_some_and(|e| e == "yaml")
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn every_emitted_id_is_catalogued() {
+        let known: Vec<&str> = catalogue().iter().map(|r| r.id).collect();
+        let check = |fixture: &str, findings: Vec<Finding>| {
+            for f in findings {
+                let ok = known.contains(&f.id.as_str())
+                    || f.id.strip_prefix("node.npd.").is_some_and(|rest| {
+                        !rest.is_empty()
+                            && rest
+                                .chars()
+                                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                    });
+                assert!(ok, "{fixture}: uncatalogued id {}", f.id);
+                assert!(
+                    !f.title.is_empty() && f.docs.is_some(),
+                    "{fixture}: {} lacks title/docs",
+                    f.id
+                );
+            }
+        };
+        let (pods, workloads, nodes) = (fixtures("pods"), fixtures("workloads"), fixtures("nodes"));
+        assert!(!pods.is_empty() && !workloads.is_empty() && !nodes.is_empty());
+        for f in &pods {
+            check(f, diagnose_pod(&pod_fixture(f)));
+        }
+        for f in &workloads {
+            check(f, diagnose_workload(&workload_fixture(f)));
+        }
+        for f in &nodes {
+            check(f, diagnose_node(&node_fixture(f)));
+        }
+    }
+
+    /// The eval scenarios (PROPOSAL §13): the root cause must rank first, forbidden ids must
+    /// not appear at all.
+    #[test]
+    fn eval_scenarios_rank_root_cause_first() {
+        let cases: &[(&str, &str, &[&str])] = &[
+            (
+                "pods/image-not-found.yaml",
+                "pod.image.not_found",
+                &["pod.image.auth"],
+            ),
+            (
+                "pods/image-auth.yaml",
+                "pod.image.auth",
+                &["pod.image.not_found"],
+            ),
+            (
+                "pods/crashloop-exit127.yaml",
+                "pod.crashloop.command_not_found",
+                &[],
+            ),
+            ("pods/crashloop-exit1.yaml", "pod.crashloop.app_error", &[]),
+            (
+                "pods/oom-memory-hog.yaml",
+                "pod.oom.container",
+                &["pod.crashloop.sigkill"],
+            ),
+            (
+                "pods/probe-port-mismatch.yaml",
+                "pod.probe.port_mismatch",
+                &["pod.crashloop.exit_zero"],
+            ),
+            (
+                "pods/probe-readiness-404.yaml",
+                "pod.probe.readiness_failing",
+                &[],
+            ),
+            (
+                "pods/config-missing-configmap.yaml",
+                "pod.config.missing_configmap",
+                &[],
+            ),
+            (
+                "pods/config-missing-key.yaml",
+                "pod.config.missing_key",
+                &["pod.config.missing_secret"],
+            ),
+            (
+                "pods/pending-insufficient-cpu.yaml",
+                "pod.pending.insufficient_resources",
+                &[],
+            ),
+            (
+                "pods/pending-node-selector.yaml",
+                "pod.pending.node_selector_affinity",
+                &[],
+            ),
+            (
+                "pods/pending-pvc-unbound.yaml",
+                "pod.pending.pvc_unbound",
+                &[],
+            ),
+            ("pods/crashloop-exit0.yaml", "pod.crashloop.exit_zero", &[]),
+            (
+                "workloads/quota-exceeded.yaml",
+                "pod.pending.quota",
+                &["workload.create_failed"],
+            ),
+            // Beyond the eval set: symptoms and log hints never outrank the root cause.
+            ("pods/dns-errors.yaml", "pod.crashloop.app_error", &[]),
+            ("workloads/rollout-stuck.yaml", "pod.image.not_found", &[]),
+            ("workloads/job-backoff.yaml", "job.backoff_limit", &[]),
+        ];
+        for (fixture, primary, forbidden) in cases {
+            let findings = if fixture.starts_with("workloads/") {
+                diagnose_workload(&workload_fixture(fixture))
+            } else {
+                diagnose_pod(&pod_fixture(fixture))
+            };
+            let ids: Vec<&str> = findings.iter().map(|f| f.id.as_str()).collect();
+            assert_eq!(ids.first(), Some(primary), "{fixture}: {ids:?}");
+            for bad in *forbidden {
+                assert!(!ids.contains(bad), "{fixture}: forbidden {bad} in {ids:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn dns_hint_ranks_below_the_crash() {
+        let ids: Vec<String> = diagnose_pod(&pod_fixture("pods/dns-errors.yaml"))
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
+        assert_eq!(
+            ids,
+            ["pod.crashloop.app_error", "dns.app_resolution_errors"]
+        );
+    }
 
     #[test]
     fn rule_ids_are_unique_and_dotted() {

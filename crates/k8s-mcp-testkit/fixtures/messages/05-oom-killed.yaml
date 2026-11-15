@@ -1,0 +1,377 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/05-oom-killed. Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"name":"cache","namespace":"eval-oom-killed"},"spec":{"containers":[{"command":["python","-c","data = b'x' * (256 * 1024 * 1024)"],"image":"python:3.14-alpine","name":"cache","resources":{"limits":{"memory":"32Mi"},"requests":{"memory":"32Mi"}}}]}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "2333"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+spec:
+  containers:
+  - command:
+    - python
+    - -c
+    - data = b'x' * (256 * 1024 * 1024)
+    image: python:3.14-alpine
+    imagePullPolicy: IfNotPresent
+    name: cache
+    resources:
+      limits:
+        memory: 32Mi
+      requests:
+        memory: 32Mi
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-n427z
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-n427z
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  allocatedResources:
+    memory: 32Mi
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:49Z"
+    message: 'containers with unready status: [cache]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:49Z"
+    message: 'containers with unready status: [cache]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - allocatedResources:
+      memory: 32Mi
+    containerID: containerd://a8f09cb6a4ec1b032249ca8a4d1bf265c0851aa7b7d982308ecd92a310927a26
+    image: docker.io/library/python:3.14-alpine
+    imageID: docker.io/library/python@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67
+    lastState:
+      terminated:
+        containerID: containerd://a8f09cb6a4ec1b032249ca8a4d1bf265c0851aa7b7d982308ecd92a310927a26
+        exitCode: 137
+        finishedAt: "2026-11-14T23:40:49Z"
+        reason: OOMKilled
+        startedAt: "2026-11-14T23:40:49Z"
+    name: cache
+    ready: false
+    resources:
+      limits:
+        memory: 32Mi
+      requests:
+        memory: 32Mi
+    restartCount: 6
+    started: false
+    state:
+      waiting:
+        message: back-off 5m0s restarting failed container=cache pod=cache_eval-oom-killed(ac5c6640-378b-4786-b7a7-35da71d94376)
+        reason: CrashLoopBackOff
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 6
+        - 10
+        - 11
+        - 20
+        - 26
+        - 27
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-n427z
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.11
+  podIPs:
+  - ip: 10.244.0.11
+  qosClass: Burstable
+  resources:
+    limits:
+      memory: 32Mi
+    requests:
+      memory: 32Mi
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "861"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-oom-killed/cache to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: cache.18e80d805c9f69ec
+  namespace: eval-oom-killed
+  resourceVersion: "867"
+  uid: 34295b83-55ba-4716-add6-85387f66457a
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{cache}
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "864"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Pulling image "python:3.14-alpine"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: cache.18e80d80721efd9d
+  namespace: eval-oom-killed
+  resourceVersion: "950"
+  uid: 6860bb12-a58a-42fb-93d6-dd6169d5e5bd
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:02Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{cache}
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "864"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:35:02Z"
+message: 'Successfully pulled image "python:3.14-alpine" in 2.805s (5.921s including
+  waiting). Image size: 18284668 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:02Z"
+  name: cache.18e80d81d30e5ccc
+  namespace: eval-oom-killed
+  resourceVersion: "1055"
+  uid: 58c8c73c-c77d-4830-bb7d-1824db65b2e3
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:02Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{cache}
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "864"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:40:49Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:35:02Z"
+  name: cache.18e80d81d3731383
+  namespace: eval-oom-killed
+  resourceVersion: "2187"
+  uid: 4e464a60-72da-488c-bfc5-fed179641e35
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:02Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{cache}
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "864"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:40:49Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:35:02Z"
+  name: cache.18e80d81d56b4802
+  namespace: eval-oom-killed
+  resourceVersion: "2188"
+  uid: 579eb10a-ceed-4b3e-a376-58d56e8dd787
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:03Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{cache}
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "864"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:40:49Z"
+message: Container image "python:3.14-alpine" already present on machine and can be
+  accessed by the pod
+metadata:
+  creationTimestamp: "2026-11-14T23:35:03Z"
+  name: cache.18e80d8213bef37c
+  namespace: eval-oom-killed
+  resourceVersion: "2186"
+  uid: 1803dade-5870-48cd-aa5f-51100259c9e3
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 10
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:04Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{cache}
+  kind: Pod
+  name: cache
+  namespace: eval-oom-killed
+  resourceVersion: "864"
+  uid: ac5c6640-378b-4786-b7a7-35da71d94376
+kind: Event
+lastTimestamp: "2026-11-14T23:42:09Z"
+message: Back-off restarting failed container cache in pod cache_eval-oom-killed(ac5c6640-378b-4786-b7a7-35da71d94376)
+metadata:
+  creationTimestamp: "2026-11-14T23:35:04Z"
+  name: cache.18e80d824fa8c377
+  namespace: eval-oom-killed
+  resourceVersion: "2332"
+  uid: f4807a07-ec3b-4c01-9ec6-34689adfa6f2
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+kind: ContainerLog
+container: cache
+previous: true
+lines: []

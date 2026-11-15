@@ -1,0 +1,353 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/13-exit-zero. Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"name":"migrate","namespace":"eval-exit-zero"},"spec":{"containers":[{"command":["sh","-c","echo migrations applied"],"image":"busybox:1.38","name":"migrate"}],"restartPolicy":"Always"}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "2316"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+spec:
+  containers:
+  - command:
+    - sh
+    - -c
+    - echo migrations applied
+    image: busybox:1.38
+    imagePullPolicy: IfNotPresent
+    name: migrate
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-txw82
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-txw82
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:57Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:56Z"
+    message: 'containers with unready status: [migrate]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:40:56Z"
+    message: 'containers with unready status: [migrate]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://b08a4a4a14d927a43b127d1851d85209c56735a7cc2d8d64b6eb108cb75f7054
+    image: docker.io/library/busybox:1.38
+    imageID: docker.io/library/busybox@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+    lastState:
+      terminated:
+        containerID: containerd://b08a4a4a14d927a43b127d1851d85209c56735a7cc2d8d64b6eb108cb75f7054
+        exitCode: 0
+        finishedAt: "2026-11-14T23:40:56Z"
+        reason: Completed
+        startedAt: "2026-11-14T23:40:56Z"
+    name: migrate
+    ready: false
+    resources: {}
+    restartCount: 6
+    started: false
+    state:
+      waiting:
+        message: back-off 5m0s restarting failed container=migrate pod=migrate_eval-exit-zero(467ea436-12bb-44a5-83e8-e38f60018934)
+        reason: CrashLoopBackOff
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 10
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-txw82
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.17
+  podIPs:
+  - ip: 10.244.0.17
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "968"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-exit-zero/migrate to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: migrate.18e80d807a7f1167
+  namespace: eval-exit-zero
+  resourceVersion: "970"
+  uid: 8635bc6d-cd74-43da-a52c-296bdfe707c5
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{migrate}
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "969"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:34:57Z"
+message: Pulling image "busybox:1.38"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: migrate.18e80d80912c4591
+  namespace: eval-exit-zero
+  resourceVersion: "1011"
+  uid: 410ba1b9-8056-44d9-8431-b3679d675c13
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:08Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{migrate}
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "969"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:35:08Z"
+message: 'Successfully pulled image "busybox:1.38" in 648ms (11.235s including waiting).
+  Image size: 1926012 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:08Z"
+  name: migrate.18e80d832eeae387
+  namespace: eval-exit-zero
+  resourceVersion: "1137"
+  uid: c7bd2e79-3374-4957-aed9-4d2ba03a5dfe
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:08Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{migrate}
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "969"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:40:56Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:35:08Z"
+  name: migrate.18e80d832f632e73
+  namespace: eval-exit-zero
+  resourceVersion: "2203"
+  uid: 0ad35b4d-94ee-44bc-ab26-2b62036811b1
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:08Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{migrate}
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "969"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:40:56Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:35:08Z"
+  name: migrate.18e80d83317623e8
+  namespace: eval-exit-zero
+  resourceVersion: "2204"
+  uid: 2fc60087-aed1-4758-bdaf-a9cd831463c2
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:08Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{migrate}
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "969"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:40:56Z"
+message: Container image "busybox:1.38" already present on machine and can be accessed
+  by the pod
+metadata:
+  creationTimestamp: "2026-11-14T23:35:08Z"
+  name: migrate.18e80d833ebf397a
+  namespace: eval-exit-zero
+  resourceVersion: "2201"
+  uid: 74746eae-d712-4a44-a42c-827fde6cb3bf
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 9
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:09Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{migrate}
+  kind: Pod
+  name: migrate
+  namespace: eval-exit-zero
+  resourceVersion: "969"
+  uid: 467ea436-12bb-44a5-83e8-e38f60018934
+kind: Event
+lastTimestamp: "2026-11-14T23:42:00Z"
+message: Back-off restarting failed container migrate in pod migrate_eval-exit-zero(467ea436-12bb-44a5-83e8-e38f60018934)
+metadata:
+  creationTimestamp: "2026-11-14T23:35:09Z"
+  name: migrate.18e80d837a8a544c
+  namespace: eval-exit-zero
+  resourceVersion: "2315"
+  uid: 5495a687-44d4-4c79-a083-a8954b27231d
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+kind: ContainerLog
+container: migrate
+previous: true
+lines:
+  - migrations applied

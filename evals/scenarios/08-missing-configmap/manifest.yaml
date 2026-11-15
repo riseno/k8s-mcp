@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-missing-configmap}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: billing, namespace: eval-missing-configmap}
+spec:
+  containers:
+    - name: billing
+      image: busybox:1.38
+      command: ["sh", "-c", "echo log level $LOG_LEVEL; sleep 3600"]
+      env:
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef: {name: billing-config, key: log_level}

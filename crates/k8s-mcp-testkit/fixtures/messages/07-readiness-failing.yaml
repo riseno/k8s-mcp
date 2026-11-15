@@ -1,0 +1,559 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/07-readiness-failing. Synthetic test workloads, no real credentials.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"catalog","namespace":"eval-readiness-failing"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"catalog"}},"template":{"metadata":{"labels":{"app":"catalog"}},"spec":{"containers":[{"image":"nginx:1.31-alpine","name":"catalog","ports":[{"containerPort":80}],"readinessProbe":{"httpGet":{"path":"/healthz","port":80},"periodSeconds":2}}]}}}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: catalog
+  namespace: eval-readiness-failing
+  resourceVersion: "911"
+  uid: 7959a465-11a6-4f7f-bf73-cfffec8377a6
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: catalog
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+      - image: nginx:1.31-alpine
+        imagePullPolicy: IfNotPresent
+        name: catalog
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 80
+            scheme: HTTP
+          periodSeconds: 2
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  conditions:
+  - lastTransitionTime: "2026-11-14T23:34:56Z"
+    lastUpdateTime: "2026-11-14T23:34:56Z"
+    message: Deployment does not have minimum availability.
+    reason: MinimumReplicasUnavailable
+    status: "False"
+    type: Available
+  - lastTransitionTime: "2026-11-14T23:34:56Z"
+    lastUpdateTime: "2026-11-14T23:34:56Z"
+    message: ReplicaSet "catalog-5bb847d6f6" is progressing.
+    reason: ReplicaSetUpdated
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  replicas: 1
+  terminatingReplicas: 0
+  unavailableReplicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/desired-replicas: "1"
+    deployment.kubernetes.io/max-replicas: "2"
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  labels:
+    app: catalog
+    pod-template-hash: 5bb847d6f6
+  name: catalog-5bb847d6f6
+  namespace: eval-readiness-failing
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: catalog
+    uid: 7959a465-11a6-4f7f-bf73-cfffec8377a6
+  resourceVersion: "906"
+  uid: 85ae3e6a-0cee-4b44-89e3-ce4b21bcb040
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog
+      pod-template-hash: 5bb847d6f6
+  template:
+    metadata:
+      labels:
+        app: catalog
+        pod-template-hash: 5bb847d6f6
+    spec:
+      containers:
+      - image: nginx:1.31-alpine
+        imagePullPolicy: IfNotPresent
+        name: catalog
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 80
+            scheme: HTTP
+          periodSeconds: 2
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  replicas: 1
+  terminatingReplicas: 0
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generateName: catalog-5bb847d6f6-
+  generation: 1
+  labels:
+    app: catalog
+    pod-template-hash: 5bb847d6f6
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: catalog-5bb847d6f6
+    uid: 85ae3e6a-0cee-4b44-89e3-ce4b21bcb040
+  resourceVersion: "1121"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+spec:
+  containers:
+  - image: nginx:1.31-alpine
+    imagePullPolicy: IfNotPresent
+    name: catalog
+    ports:
+    - containerPort: 80
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /healthz
+        port: 80
+        scheme: HTTP
+      periodSeconds: 2
+      successThreshold: 1
+      timeoutSeconds: 1
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-9mxqk
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-9mxqk
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: 'containers with unready status: [catalog]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: 'containers with unready status: [catalog]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://bcc2f8750e572a8b249e1f04607db786609e66486b79987828395f5dd5b65596
+    image: docker.io/library/nginx:1.31-alpine
+    imageID: docker.io/library/nginx@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
+    lastState: {}
+    name: catalog
+    ready: false
+    resources: {}
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-11-14T23:35:06Z"
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 6
+        - 10
+        - 11
+        - 20
+        - 26
+        - 27
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-9mxqk
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.15
+  podIPs:
+  - ip: 10.244.0.15
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "895"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-readiness-failing/catalog-5bb847d6f6-jd8gl to
+  k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d8062bce49e
+  namespace: eval-readiness-failing
+  resourceVersion: "910"
+  uid: dab53405-67d3-468d-8110-3ac7e7450163
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{catalog}
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "902"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Pulling image "nginx:1.31-alpine"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d80793f42a2
+  namespace: eval-readiness-failing
+  resourceVersion: "963"
+  uid: 43f9f3b5-23c0-41b6-8a50-69baf10ae35c
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{catalog}
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "902"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:35:06Z"
+message: 'Successfully pulled image "nginx:1.31-alpine" in 624ms (9.696s including
+  waiting). Image size: 26294634 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d82bb421997
+  namespace: eval-readiness-failing
+  resourceVersion: "1117"
+  uid: 6c0403b0-59cf-44c7-a6eb-e7fc8251ac4e
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{catalog}
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "902"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:35:06Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d82bbb1c64b
+  namespace: eval-readiness-failing
+  resourceVersion: "1118"
+  uid: 55bb7e81-44ee-4274-98c1-58849bc5ddf0
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{catalog}
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "902"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:35:06Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d82bddfac12
+  namespace: eval-readiness-failing
+  resourceVersion: "1119"
+  uid: db82ba4b-e5fc-46e6-8a21-287e788ec1ea
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{catalog}
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "902"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:35:06Z"
+message: 'Readiness probe failed: Get "http://10.244.0.15:80/healthz": dial tcp 10.244.0.15:80:
+  connect: connection refused'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d82bdfb7c84
+  namespace: eval-readiness-failing
+  resourceVersion: "1120"
+  uid: 9b66f8dd-b57d-494c-bffa-8953c05bba94
+reason: Unhealthy
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 155
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{catalog}
+  kind: Pod
+  name: catalog-5bb847d6f6-jd8gl
+  namespace: eval-readiness-failing
+  resourceVersion: "902"
+  uid: a96cc3f0-8419-473a-b326-49556e728f88
+kind: Event
+lastTimestamp: "2026-11-14T23:40:08Z"
+message: 'Readiness probe failed: HTTP probe failed with statuscode: 404'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: catalog-5bb847d6f6-jd8gl.18e80d82c72e6713
+  namespace: eval-readiness-failing
+  resourceVersion: "2096"
+  uid: 6052b848-05c1-4c06-bbd5-e8f8ab462f97
+reason: Unhealthy
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: catalog-5bb847d6f6
+  namespace: eval-readiness-failing
+  resourceVersion: "885"
+  uid: 85ae3e6a-0cee-4b44-89e3-ce4b21bcb040
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: 'Created pod: catalog-5bb847d6f6-jd8gl'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: catalog-5bb847d6f6.18e80d80627da948
+  namespace: eval-readiness-failing
+  resourceVersion: "897"
+  uid: 32ea0a38-c77f-4eec-9d94-19b311a09ca1
+reason: SuccessfulCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: catalog
+  namespace: eval-readiness-failing
+  resourceVersion: "884"
+  uid: 7959a465-11a6-4f7f-bf73-cfffec8377a6
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Scaled up replica set catalog-5bb847d6f6 from 0 to 1
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: catalog.18e80d805dddaf4c
+  namespace: eval-readiness-failing
+  resourceVersion: "887"
+  uid: 9a84214d-a41e-40ef-8a98-5bf571b31a20
+reason: ScalingReplicaSet
+reportingComponent: deployment-controller
+reportingInstance: ""
+source:
+  component: deployment-controller
+type: Normal

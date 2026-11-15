@@ -1,0 +1,9 @@
+id: quota-exceeded
+symptom: The web deployment in eval-quota-exceeded only has 1 of 2 replicas. Why is the second one missing?
+tool: diagnose_workload
+args: {kind: Deployment, name: web, namespace: eval-quota-exceeded}
+settle_seconds: 20
+expected:
+  primary: pod.pending.quota
+  acceptable: [workload.replicas.unavailable, workload.create_failed]
+forbidden: [pod.pending.insufficient_resources, pod.crashloop.other]

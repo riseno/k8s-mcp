@@ -1,0 +1,9 @@
+id: missing-secret-key
+symptom: The payments deployment in eval-missing-secret-key has no running pods. What is wrong with its config?
+tool: diagnose_workload
+args: {kind: Deployment, name: payments, namespace: eval-missing-secret-key}
+settle_seconds: 30
+expected:
+  primary: pod.config.missing_key
+  acceptable: []
+forbidden: [pod.config.missing_secret, pod.config.missing_configmap]

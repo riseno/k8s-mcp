@@ -626,3 +626,33 @@ async fn list_events_groups_one_cause_across_pods() {
         "per-object rows when an object is named (the mock ignores the field selector)"
     );
 }
+
+/// riseno/k8s-mcp#12: a workload summary shows its pod-template containers, redacted.
+#[tokio::test]
+async fn workload_summary_shows_template_containers() {
+    let cronjob = json!({"apiVersion": "batch/v1", "kind": "CronJob", "metadata": {"name": "report", "namespace": "shop"},
+    "spec": {"schedule": "0 * * * *", "jobTemplate": {"spec": {"template": {"spec": {"restartPolicy": "Never", "containers": [{
+        "name": "job", "image": "registry.example/report:3",
+        "env": [{"name": "API_TOKEN", "value": "tok-123"}, {"name": "MODE", "value": "prod"}],
+        "resources": {"limits": {"memory": "256Mi"}},
+        "livenessProbe": {"httpGet": {"path": "/healthz", "port": 8080}}
+    }]}}}}}});
+    let mock = MockApi::new()
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [{"name": "events", "singularName": "", "kind": "Event", "namespaced": true, "verbs": ["list"]}]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [{"name": "batch", "versions": [{"groupVersion": "batch/v1", "version": "v1"}], "preferredVersion": {"groupVersion": "batch/v1", "version": "v1"}}]}))
+        .get("/apis/batch/v1", json!({"kind": "APIResourceList", "groupVersion": "batch/v1", "resources": [{"name": "cronjobs", "singularName": "", "kind": "CronJob", "namespaced": true, "shortNames": ["cj"], "verbs": ["get"]}]}))
+        .get("/apis/batch/v1/namespaces/shop/cronjobs/report", cronjob)
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input: GetResourceInput =
+        serde_json::from_value(json!({"kind": "cj", "name": "report"})).unwrap();
+    let env = k8s_mcp_tools::get_resource(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let c = &env.items[0]["containers"][0];
+    assert_eq!(c["image"], "registry.example/report:3");
+    assert_eq!(c["resources"]["limits"]["memory"], "256Mi");
+    assert_eq!(c["livenessProbe"]["httpGet"]["path"], "/healthz");
+    let all = env.to_json().to_string();
+    assert!(!all.contains("tok-123") && all.contains("prod"), "{all}");
+}

@@ -571,7 +571,10 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
     };
     let shown = match view {
         View::Summary if info.kind == "Pod" => prune(pod_summary(&cleaned, now)),
-        View::Summary => prune(depth_limited(&cleaned, 0)),
+        View::Summary => prune(with_template_containers(
+            depth_limited(&cleaned, 0),
+            &cleaned,
+        )),
         View::Yaml | View::Full => cleaned.clone(),
     };
     let mut e = envelope(
@@ -717,6 +720,49 @@ fn prune(v: Value) -> Value {
         Value::Array(a) => Value::Array(a.into_iter().map(prune).collect()),
         other => other,
     }
+}
+
+/// Workloads keep their pod template deep in the object, where the depth limit hides it: add
+/// its containers (already redacted) at the top level of the summary.
+fn with_template_containers(mut summary: Value, cleaned: &Value) -> Value {
+    const FIELDS: &[&str] = &[
+        "name",
+        "image",
+        "command",
+        "args",
+        "ports",
+        "env",
+        "envFrom",
+        "resources",
+        "livenessProbe",
+        "readinessProbe",
+        "startupProbe",
+    ];
+    let Some(spec) = [
+        "/spec/template/spec",
+        "/spec/jobTemplate/spec/template/spec",
+    ]
+    .iter()
+    .find_map(|p| cleaned.pointer(p)) else {
+        return summary;
+    };
+    for key in ["initContainers", "containers"] {
+        if let Some(cs) = spec.get(key).and_then(Value::as_array) {
+            let picked: Vec<Value> = cs
+                .iter()
+                .map(|c| {
+                    Value::Object(
+                        FIELDS
+                            .iter()
+                            .filter_map(|f| c.get(*f).map(|v| ((*f).to_owned(), v.clone())))
+                            .collect(),
+                    )
+                })
+                .collect();
+            summary[key] = Value::Array(picked);
+        }
+    }
+    summary
 }
 
 /// Replace values nested deeper than 4 levels or long arrays with short placeholders.

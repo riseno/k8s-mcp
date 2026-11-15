@@ -383,7 +383,8 @@ fn kind_meta(w: &Workload) -> (&'static str, &ObjectMeta) {
 }
 
 /// (desired, available) replicas for workloads that keep pods running.
-fn replicas(w: &Workload) -> Option<(i32, i32)> {
+/// `(desired, available)` replicas, for workloads that have a replica count (not Jobs/CronJobs).
+pub fn replicas(w: &Workload) -> Option<(i32, i32)> {
     match w {
         Workload::Deployment(d) => Some((
             d.spec.as_ref()?.replicas.unwrap_or(1),

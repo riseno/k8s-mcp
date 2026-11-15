@@ -124,7 +124,13 @@ pub fn check(ev: &NodeEvidence, out: &mut Vec<Finding>) {
                 .docs(docs::NETWORK),
             _ => npd(name, c),
         };
-        out.push(with_pods(ev, f.evidence(Source::Status, describe(c, ev))));
+        // Only conditions known to hurt pods may claim the node's pods are affected.
+        let affects_pods = STANDARD.contains(&t) || NPD_FAULTS.contains(&t);
+        out.push(with_pods(
+            ev,
+            f.evidence(Source::Status, describe(c, ev)),
+            affects_pods,
+        ));
     }
     if let Some(e) = latest(events_with(&ev.events, &["EvictionThresholdMet"]))
         && let Some(f) = out.iter_mut().find(|f| f.id.starts_with("node.pressure."))
@@ -176,7 +182,7 @@ fn describe(c: &NodeCondition, ev: &NodeEvidence) -> String {
 }
 
 /// Add the number of pods on the node and a `list_resources` call for them.
-fn with_pods(ev: &NodeEvidence, f: Finding) -> Finding {
+fn with_pods(ev: &NodeEvidence, f: Finding, affects_pods: bool) -> Finding {
     let name = node_name(&ev.node);
     let f = match &ev.pods {
         Some(pods) => {
@@ -184,10 +190,12 @@ fn with_pods(ev: &NodeEvidence, f: Finding) -> Finding {
                 .iter()
                 .filter(|p| !matches!(phase(p), "Succeeded" | "Failed"))
                 .count();
-            f.evidence(
-                Source::Related,
-                format!("{live} pod(s) on this node are affected"),
-            )
+            let text = if affects_pods {
+                format!("{live} pod(s) on this node are affected")
+            } else {
+                format!("{live} pod(s) run on this node")
+            };
+            f.evidence(Source::Related, text)
         }
         None => f,
     };
@@ -454,6 +462,35 @@ mod tests {
             [("node.npd.vendor_maintenance_scheduled", Severity::Medium)]
         );
         assert!(!out[0].fix.contains("drain the node"), "{}", out[0].fix);
+    }
+
+    /// riseno/k8s-mcp#32: only conditions known to hurt pods claim the pods are affected.
+    #[test]
+    fn unknown_conditions_do_not_claim_pods_are_affected() {
+        let mut ev = node_fixture("nodes/healthy.yaml");
+        let conditions = ev
+            .node
+            .status
+            .as_mut()
+            .unwrap()
+            .conditions
+            .as_mut()
+            .unwrap();
+        let mut c = conditions[0].clone();
+        c.type_ = "VendorWidgetProblem".into();
+        c.status = "True".into();
+        conditions.push(c);
+        let out = run(&ev);
+        let f = out
+            .iter()
+            .find(|f| f.id == "node.npd.vendor_widget_problem")
+            .unwrap();
+        let texts: Vec<&str> = f.evidence.iter().map(|e| e.text.as_str()).collect();
+        assert!(
+            texts.iter().any(|t| t.ends_with("pod(s) run on this node")),
+            "{texts:?}"
+        );
+        assert!(!texts.iter().any(|t| t.contains("affected")), "{texts:?}");
     }
 
     #[test]

@@ -313,7 +313,9 @@ impl Envelope {
     }
 
     /// Shrink the envelope until text + JSON fit in `max_bytes`: drop the oldest lines of the
-    /// largest section first, then trailing items, then findings beyond the first.
+    /// largest section first, then cut findings beyond the first to their headlines, then drop
+    /// findings beyond the top few, trailing items, findings beyond the first, and finally the
+    /// first finding's detail.
     pub fn fit(&mut self, max_bytes: usize) {
         loop {
             let size = self.size();
@@ -344,6 +346,10 @@ impl Envelope {
                 }
                 continue;
             }
+            // Shrink before dropping: cut the lowest-ranked findings (not the first) to headlines.
+            if self.findings.iter_mut().skip(1).rev().any(compact) {
+                continue;
+            }
             // Keep the top findings, then the table, then the first finding.
             if self.findings.len() > KEEP_FINDINGS {
                 self.findings.pop();
@@ -362,11 +368,8 @@ impl Envelope {
                 self.omitted.findings += 1;
                 continue;
             }
-            // Last resort: cut evidence and the summary.
-            if let Some(f) = self.findings.first_mut()
-                && !f.evidence.is_empty()
-            {
-                f.evidence.clear();
+            // Last resort: cut the first finding to its headline, then everything but the summary.
+            if self.findings.first_mut().is_some_and(compact) {
                 continue;
             }
             self.summary = crate::text::truncate(&self.summary, max_bytes / 4);
@@ -389,6 +392,20 @@ fn defang(v: &mut Value) {
         Value::Object(m) => m.values_mut().for_each(defang),
         _ => {}
     }
+}
+
+/// Cut a finding to its headline: drop the explanation, evidence and docs, and cap the fix at 200
+/// bytes (title, object and follow-ups stay). False when there was nothing left to cut.
+fn compact(f: &mut Finding) -> bool {
+    let fix = crate::text::truncate(&f.fix, 200);
+    if f.explanation.is_empty() && f.evidence.is_empty() && f.docs.is_none() && fix == f.fix {
+        return false;
+    }
+    f.explanation.clear();
+    f.evidence.clear();
+    f.docs = None;
+    f.fix = fix;
+    true
 }
 
 /// How many of `count` entries totalling `bytes` to drop to save `over` bytes (at least 1).
@@ -569,6 +586,41 @@ mod tests {
             let e = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("fit did not terminate");
             proptest::prop_assert!(e.size() <= cap || (e.findings.is_empty() && e.items.is_empty() && e.sections.is_empty()));
         }
+    }
+
+    /// riseno/k8s-mcp#32: a small cap shrinks findings to their headlines before dropping them,
+    /// instead of reducing a cluster_overview-sized result to its summary.
+    #[test]
+    fn small_caps_shrink_findings_before_dropping_them() {
+        let mut e = Envelope::new(format!("cluster: 3 nodes Ready. {}", "s".repeat(200)));
+        e.columns = vec!["name", "status"];
+        e.items = (0..20)
+            .map(|i| json!({"name": format!("web-{i}"), "status": "CrashLoopBackOff"}))
+            .collect();
+        for i in 0..6 {
+            e.findings.push(
+                Finding::new(
+                    "pod.crashloop.app_error",
+                    Severity::Critical,
+                    Confidence::High,
+                    format!("finding {i}"),
+                )
+                .explain("x".repeat(600))
+                .evidence(Source::Event, "y".repeat(200))
+                .fix("z".repeat(600))
+                .docs("https://kubernetes.io/docs/tasks/debug/")
+                .next(
+                    "diagnose_pod",
+                    json!({"name": format!("web-{i}")}),
+                    "see why",
+                ),
+            );
+        }
+        e.fit(3_000);
+        assert!(e.size() <= 3_000, "size {}", e.size());
+        assert!(!e.findings.is_empty(), "{}", e.render());
+        assert_eq!(e.findings[0].title, "finding 0");
+        assert!(!e.findings[0].next.is_empty(), "follow-ups survive");
     }
 
     /// riseno/k8s-mcp#4: findings beyond the top few go before table rows, and are counted.

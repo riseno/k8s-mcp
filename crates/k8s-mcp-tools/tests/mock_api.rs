@@ -692,3 +692,37 @@ async fn workload_logs_drop_markers_and_merge_identical_pods() {
     assert_eq!(env.items[1]["same_as"], first["pod"]);
     assert_eq!(env.items[1]["lines"], json!([]));
 }
+
+/// riseno/k8s-mcp#22: standard verbs collapse to "all", and the summary names every group so a
+/// truncated listing can be narrowed.
+#[tokio::test]
+async fn api_resources_compacts_verbs_and_names_groups() {
+    let mock = with_discovery(MockApi::new()).start();
+    let env = k8s_mcp_tools::api_resources(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::ApiResourcesInput::default(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        env.summary.contains("in 2 API groups") && env.summary.contains("apps, core"),
+        "{}",
+        env.summary
+    );
+    // The testkit discovery serves get/list/watch, which is not the full standard set.
+    assert_eq!(env.items[0]["verbs"], json!(["get", "list", "watch"]));
+
+    let full = json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [{"name": "configmaps", "singularName": "", "kind": "ConfigMap", "namespaced": true,
+        "verbs": ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]}]});
+    let mock = MockApi::new()
+        .get("/api/v1", full)
+        .get("/apis", json!({"kind": "APIGroupList", "groups": []}))
+        .start();
+    let env = k8s_mcp_tools::api_resources(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::ApiResourcesInput::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.items[0]["verbs"], "all");
+}

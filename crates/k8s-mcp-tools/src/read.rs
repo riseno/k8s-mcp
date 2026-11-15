@@ -300,13 +300,52 @@ pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelo
         .group
         .as_deref()
         .map(|g| if g == "core" { "" } else { g });
-    let items: Vec<Value> = all
+    /// The verbs every ordinary resource supports; shown as `all` to save output.
+    const STANDARD_VERBS: [&str; 8] = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch",
+    ];
+    let shown: Vec<_> = all
         .iter()
         .filter(|r| group.is_none_or(|g| r.group == g))
         .filter(|r| input.namespaced.is_none_or(|n| r.namespaced == n))
-        .map(|r| json!({"kind": r.kind, "api_version": r.api_version(), "namespaced": r.namespaced, "short_names": r.short_names, "verbs": r.verbs}))
         .collect();
-    let mut e = envelope(&sc, format!("{} resource kinds.", items.len()));
+    let items: Vec<Value> = shown
+        .iter()
+        .map(|r| {
+            let mut verbs = r.verbs.clone();
+            verbs.sort();
+            let verbs = if verbs == STANDARD_VERBS { json!("all") } else { json!(verbs) };
+            json!({"kind": r.kind, "api_version": r.api_version(), "namespaced": r.namespaced, "short_names": r.short_names, "verbs": verbs})
+        })
+        .collect();
+    let mut summary = format!("{} resource kinds.", items.len());
+    if group.is_none() {
+        // Name every group, so a truncated table can always be narrowed with `group`.
+        let groups: BTreeSet<&str> = shown
+            .iter()
+            .map(|r| {
+                if r.group.is_empty() {
+                    "core"
+                } else {
+                    r.group.as_str()
+                }
+            })
+            .collect();
+        summary = format!(
+            "{} resource kinds in {} API groups; pass group=<name> to list one group: {}.",
+            items.len(),
+            groups.len(),
+            groups.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    let mut e = envelope(&sc, summary);
     e.columns = vec!["kind", "api_version", "namespaced", "short_names", "verbs"];
     e.items = items;
     Ok(e)

@@ -682,6 +682,16 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
             ("kind".into(), info.kind.clone()),
         ]),
     });
+    if view == View::Summary {
+        let lines = related(&sc, &info.kind, &input.name, &cleaned, now).await;
+        if !lines.is_empty() {
+            e.sections.push(Section {
+                title: "RELATED".into(),
+                lines,
+                untrusted: None,
+            });
+        }
+    }
     if input.include_events.unwrap_or(true) {
         let ns = if info.namespaced {
             sc.namespace.clone().unwrap_or_default()
@@ -706,6 +716,224 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
     }
     add_alternatives(&mut e, &resolved, "get_resource", &args);
     Ok(e)
+}
+
+/// Rows shown per related list.
+const RELATED_ROWS: usize = 5;
+
+/// Objects that explain this one (PROPOSAL §8.1, riseno/k8s-mcp#30): a Service's matching pods
+/// and endpoints, a workload's pods and revisions, a Pod's owner chain and node, a PVC's volume
+/// and StorageClass. Lists are capped; failed reads are reported as lines.
+async fn related(
+    sc: &Scope,
+    kind: &str,
+    name: &str,
+    obj: &Value,
+    now: jiff::Timestamp,
+) -> Vec<String> {
+    use k8s_openapi::api::apps::v1::ReplicaSet;
+    use k8s_openapi::api::batch::v1::Job;
+    use k8s_openapi::api::core::v1::PersistentVolume;
+    use k8s_openapi::api::discovery::v1::EndpointSlice;
+    use k8s_openapi::api::storage::v1::StorageClass;
+
+    let client = sc.target.client.clone();
+    let ns = sc.namespace.clone().unwrap_or_default();
+    let mut out = Vec::new();
+    let failed =
+        |what: &str, e: &kube::Error| format!("{what}: {}", Error::kube(format!("read {what}"), e));
+    let pod_rows = |pods: &[Pod], out: &mut Vec<String>| {
+        let ready = pods.iter().filter(|p| unhealthy(p, now).is_none()).count();
+        out.push(format!("pods: {ready}/{} healthy", pods.len()));
+        for p in pods.iter().take(RELATED_ROWS) {
+            let r = pod_row(p);
+            out.push(format!(
+                "  pod {}: {} ready {} restarts {}",
+                p.metadata.name.as_deref().unwrap_or("?"),
+                r["status"].as_str().unwrap_or("?"),
+                r["ready"].as_str().unwrap_or("?"),
+                r["restarts"]
+            ));
+        }
+        if pods.len() > RELATED_ROWS {
+            out.push(format!("  … and {} more", pods.len() - RELATED_ROWS));
+        }
+    };
+    match kind {
+        "Service" => {
+            let selector: Vec<String> = obj
+                .pointer("/spec/selector")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("")))
+                .collect();
+            if selector.is_empty() {
+                out.push("no selector: endpoints are managed outside Kubernetes".into());
+            } else {
+                match Api::<Pod>::namespaced(client.clone(), &ns)
+                    .list(&ListParams::default().labels(&selector.join(",")))
+                    .await
+                {
+                    Ok(l) => pod_rows(&l.items, &mut out),
+                    Err(e) => out.push(failed("pods matching the selector", &e)),
+                }
+            }
+            match Api::<EndpointSlice>::namespaced(client, &ns)
+                .list(&ListParams::default().labels(&format!("kubernetes.io/service-name={name}")))
+                .await
+            {
+                Ok(l) => {
+                    let endpoints: Vec<_> =
+                        l.items.iter().flat_map(|s| s.endpoints.iter()).collect();
+                    let ready = endpoints
+                        .iter()
+                        .filter(|e| e.conditions.as_ref().and_then(|c| c.ready).unwrap_or(false))
+                        .count();
+                    out.push(format!(
+                        "endpointslices: {} with {ready}/{} ready endpoints",
+                        l.items.len(),
+                        endpoints.len()
+                    ));
+                }
+                Err(e) => out.push(failed("EndpointSlices", &e)),
+            }
+        }
+        "Deployment" | "StatefulSet" | "DaemonSet" | "ReplicaSet" | "Job" | "CronJob" => {
+            match crate::diagnose::workload_pods(sc, kind, name).await {
+                Ok((_, pods)) => pod_rows(&pods, &mut out),
+                Err(e) => out.push(format!("pods: {e}")),
+            }
+            if kind == "Deployment" {
+                match crate::diagnose::owned::<ReplicaSet>(&client, &ns, "Deployment", name).await {
+                    Ok(rss) => {
+                        for rs in rss.iter().take(RELATED_ROWS) {
+                            let rev = rs
+                                .metadata
+                                .annotations
+                                .as_ref()
+                                .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                                .map_or("?", String::as_str);
+                            let images: Vec<&str> = rs
+                                .spec
+                                .iter()
+                                .flat_map(|s| s.template.iter())
+                                .flat_map(|t| t.spec.iter())
+                                .flat_map(|s| s.containers.iter())
+                                .map(|c| c.image.as_deref().unwrap_or("?"))
+                                .collect();
+                            let st = rs.status.as_ref();
+                            out.push(format!(
+                                "replicaset {} (revision {rev}): {}/{} ready, images {}",
+                                rs.metadata.name.as_deref().unwrap_or("?"),
+                                st.and_then(|s| s.ready_replicas).unwrap_or(0),
+                                rs.spec.as_ref().and_then(|s| s.replicas).unwrap_or(0),
+                                images.join(", ")
+                            ));
+                        }
+                    }
+                    Err(e) => out.push(format!("replicasets: {e}")),
+                }
+            }
+            if kind == "CronJob" {
+                match crate::diagnose::owned::<Job>(&client, &ns, "CronJob", name).await {
+                    Ok(jobs) => {
+                        for j in jobs.iter().take(RELATED_ROWS) {
+                            let st = j.status.as_ref();
+                            out.push(format!(
+                                "job {}: {} succeeded, {} failed",
+                                j.metadata.name.as_deref().unwrap_or("?"),
+                                st.and_then(|s| s.succeeded).unwrap_or(0),
+                                st.and_then(|s| s.failed).unwrap_or(0)
+                            ));
+                        }
+                    }
+                    Err(e) => out.push(format!("jobs: {e}")),
+                }
+            }
+        }
+        "Pod" => {
+            let mut chain = vec![format!("Pod/{name}")];
+            let mut owner = obj.pointer("/metadata/ownerReferences/0").cloned();
+            for _ in 0..3 {
+                let Some(o) = owner.take() else { break };
+                let (ok, on) = (
+                    o["kind"].as_str().unwrap_or("?").to_owned(),
+                    o["name"].as_str().unwrap_or("?").to_owned(),
+                );
+                chain.push(format!("{ok}/{on}"));
+                if ok == "ReplicaSet" {
+                    owner = Api::<ReplicaSet>::namespaced(client.clone(), &ns)
+                        .get_opt(&on)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|rs| {
+                            rs.metadata
+                                .owner_references
+                                .and_then(|r| r.into_iter().next())
+                        })
+                        .map(|r| json!({"kind": r.kind, "name": r.name}));
+                }
+            }
+            chain.reverse();
+            out.push(format!("owner chain: {}", chain.join(" → ")));
+            if let Some(node) = obj.pointer("/spec/nodeName").and_then(Value::as_str) {
+                match Api::<Node>::all(client).get(node).await {
+                    Ok(n) => out.push(format!(
+                        "node {node}: {}",
+                        rows::node_row(&n)["status"].as_str().unwrap_or("?")
+                    )),
+                    Err(e) => out.push(failed(&format!("node {node}"), &e)),
+                }
+            }
+        }
+        "PersistentVolumeClaim" => {
+            if let Some(pv) = obj
+                .pointer("/spec/volumeName")
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+            {
+                match Api::<PersistentVolume>::all(client.clone()).get(pv).await {
+                    Ok(v) => out.push(format!(
+                        "volume {pv}: {}, capacity {}, reclaim {}",
+                        v.status
+                            .as_ref()
+                            .and_then(|s| s.phase.as_deref())
+                            .unwrap_or("?"),
+                        v.spec
+                            .as_ref()
+                            .and_then(|s| s.capacity.as_ref())
+                            .and_then(|c| c.get("storage"))
+                            .map_or("?", |q| q.0.as_str()),
+                        v.spec
+                            .as_ref()
+                            .and_then(|s| s.persistent_volume_reclaim_policy.as_deref())
+                            .unwrap_or("?")
+                    )),
+                    Err(e) => out.push(failed(&format!("PersistentVolume {pv}"), &e)),
+                }
+            } else {
+                out.push("volume: not bound yet".into());
+            }
+            if let Some(sc_name) = obj
+                .pointer("/spec/storageClassName")
+                .and_then(Value::as_str)
+            {
+                match Api::<StorageClass>::all(client).get_opt(sc_name).await {
+                    Ok(Some(c)) => out.push(format!(
+                        "storageclass {sc_name}: provisioner {}, binding {}",
+                        c.provisioner,
+                        c.volume_binding_mode.as_deref().unwrap_or("Immediate")
+                    )),
+                    Ok(None) => out.push(format!("storageclass {sc_name}: does not exist")),
+                    Err(e) => out.push(failed(&format!("StorageClass {sc_name}"), &e)),
+                }
+            }
+        }
+        _ => {}
+    }
+    out
 }
 
 /// Curated pod summary.

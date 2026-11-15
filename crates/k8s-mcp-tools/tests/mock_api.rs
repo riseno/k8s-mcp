@@ -927,3 +927,49 @@ async fn invalid_inputs_and_missing_namespaces_are_errors() {
         "{missing}"
     );
 }
+
+/// riseno/k8s-mcp#30: a Service summary shows that its selector matches no pods and that it
+/// has no ready endpoints.
+#[tokio::test]
+async fn service_summary_shows_matching_pods_and_endpoints() {
+    let svc = json!({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "web", "namespace": "shop"},
+        "spec": {"selector": {"app": "nothing-matches"}, "ports": [{"port": 80}]}});
+    let mock = MockApi::new()
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [{"name": "services", "singularName": "", "kind": "Service", "namespaced": true, "shortNames": ["svc"], "verbs": ["get"]}]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": []}))
+        .get("/api/v1/namespaces/shop/services/web", svc)
+        .list("/api/v1/namespaces/shop/pods", vec![])
+        .list("/apis/discovery.k8s.io/v1/namespaces/shop/endpointslices", vec![])
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input: GetResourceInput =
+        serde_json::from_value(json!({"kind": "svc", "name": "web"})).unwrap();
+    let env = k8s_mcp_tools::get_resource(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let related = env
+        .sections
+        .iter()
+        .find(|s| s.title == "RELATED")
+        .expect("RELATED section");
+    assert!(
+        related.lines.contains(&"pods: 0/0 healthy".to_owned()),
+        "{:?}",
+        related.lines
+    );
+    assert!(
+        related
+            .lines
+            .iter()
+            .any(|l| l == "endpointslices: 0 with 0/0 ready endpoints"),
+        "{:?}",
+        related.lines
+    );
+    assert!(env.to_json().to_string().contains("RELATED"));
+    let reqs = mock.requests.lock().unwrap();
+    assert!(
+        reqs.iter()
+            .any(|r| r.contains("labelSelector=app%3Dnothing-matches")),
+        "{reqs:?}"
+    );
+}

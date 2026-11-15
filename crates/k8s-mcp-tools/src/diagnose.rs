@@ -622,7 +622,12 @@ fn workload_selector(w: &Workload) -> Option<&LabelSelector> {
 }
 
 /// Objects of type K in `ns` owned by `owner_kind/owner`, newest first.
-async fn owned<K>(client: &kube::Client, ns: &str, owner_kind: &str, owner: &str) -> Result<Vec<K>>
+pub(crate) async fn owned<K>(
+    client: &kube::Client,
+    ns: &str,
+    owner_kind: &str,
+    owner: &str,
+) -> Result<Vec<K>>
 where
     K: Resource<Scope = k8s_openapi::NamespaceResourceScope>
         + Clone

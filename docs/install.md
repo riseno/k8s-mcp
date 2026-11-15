@@ -5,8 +5,8 @@ k8s-mcp is a single binary with no runtime, no `kubectl` and no config file.
 | Method | Command |
 |---|---|
 | Homebrew | `brew install riseno/tap/k8s-mcp` |
-| Shell installer | `curl -fsSL https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-installer.sh \| sh` |
-| PowerShell | `irm https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-installer.ps1 \| iex` |
+| Shell installer | `curl -fsSL https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-server-installer.sh \| sh` |
+| PowerShell | `irm https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-server-installer.ps1 \| iex` |
 | cargo | `cargo binstall k8s-mcp-server` or `cargo install k8s-mcp-server --locked` (the binary is `k8s-mcp`) |
 | Container | `docker run --rm -i -v ~/.kube:/home/nonroot/.kube:ro ghcr.io/riseno/k8s-mcp:latest` |
 

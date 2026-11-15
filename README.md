@@ -6,9 +6,9 @@
 
 1. Install (pick one):
 
-       brew install OWNER/tap/k8s-mcp
+       brew install riseno/tap/k8s-mcp
        # or
-       curl -fsSL https://github.com/OWNER/k8s-mcp/releases/latest/download/k8s-mcp-installer.sh | sh
+       curl -fsSL https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-installer.sh | sh
 
 2. Check it can see your cluster (uses your current kubeconfig context):
 
@@ -26,7 +26,7 @@
 k8s-mcp is read-only by default. It never returns Secret values and redacts
 credentials in logs and env vars. Nothing to configure.
 
-> Release artifacts (Homebrew tap, installer, images) are published from tagged releases. Until the first release, build from source: `cargo install --git https://github.com/OWNER/k8s-mcp k8s-mcp-server --locked`.
+> Release artifacts (Homebrew tap, installer, images) are published from tagged releases. Until the first release, build from source: `cargo install --git https://github.com/riseno/k8s-mcp k8s-mcp-server --locked`.
 
 ## Client setup
 

@@ -4,7 +4,7 @@ name: publish-container
 # multi-arch image from the release's musl binaries, pushes it to ghcr.io, signs it with
 # cosign keyless (GitHub OIDC), attests its provenance, and attaches SPDX SBOMs and a signed
 # checksum bundle to the release.
-# TODO(v0.2): package the Helm chart and push it to oci://ghcr.io/OWNER/charts.
+# TODO(v0.2): package the Helm chart and push it to oci://ghcr.io/riseno/charts.
 on:
   workflow_call:
     inputs:

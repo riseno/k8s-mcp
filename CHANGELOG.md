@@ -5,6 +5,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `pod.oom.container` now also fires (medium confidence) for exit 137 under a memory limit
+  when the runtime reports reason `Error` instead of `OOMKilled` and no probe kill, eviction
+  or preemption explains the SIGKILL; previously this was misread as `pod.crashloop.sigkill`.
+  Found by the eval suite on GitHub-hosted runners (kind 1.37).
+
 ### Added
 - stdio MCP server (`k8s-mcp`, crate `k8s-mcp-server`) built on rmcp 3.10 and kube 5.1.
 - Read tools: `list_contexts`, `cluster_overview`, `api_resources`, `list_resources`,

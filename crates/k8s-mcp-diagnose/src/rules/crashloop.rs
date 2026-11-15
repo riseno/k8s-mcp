@@ -73,7 +73,7 @@ pub fn is_crashlooping(st: &ContainerStatus) -> bool {
 pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option<Finding> {
     let t = last_termination(st)?;
     let term_reason = t.reason.as_deref().unwrap_or("");
-    if term_reason == "OOMKilled" || probe_killed(&ev.events, &c.name) {
+    if super::oom::oom_kind(ev, c, t).is_some() || probe_killed(&ev.events, &c.name) {
         return None;
     }
     let message = t.message.as_deref().unwrap_or("");

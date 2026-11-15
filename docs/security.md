@@ -1,9 +1,9 @@
 # Security and threat model
 
-The full threat model is PROPOSAL.md §12. This page summarises what v0.1 enforces and how
+The full threat model is PROPOSAL.md §12. This page summarises what is enforced and how
 it is tested.
 
-| Threat | v0.1 mitigation | Test |
+| Threat | Mitigation | Test |
 |---|---|---|
 | Prompt injection via cluster content | No write tools exist; untrusted text is delimited, neutralised and capped; server instructions and tool descriptions say it is data | `envelope`/`text` unit tests, `list_events` golden test |
 | Secret exfiltration | Secret values are never returned (keys and sizes only) in any mode, including `--redact off`; env/ConfigMap/annotation/log/audit redaction | `secrets_never_show_values_in_any_view`, redaction corpus (0 false negatives), kind canary test |
@@ -13,6 +13,7 @@ it is tested.
 | Resource exhaustion | List limits, log caps, output cap, 20 s API timeout, 30 s call timeout, 8 concurrent calls, client cancellation | envelope `fit` tests |
 | Credential leakage by the server | Kubeconfig never written or shown; exec plugin output never echoed; errors and audit args redacted; no telemetry | stdio tests |
 | Malicious arguments | Typed inputs with `deny_unknown_fields`; names validated; the kubeconfig path cannot be changed by the client; no shelling out | input tests |
+| Unauthorised HTTP access, DNS rebinding, CSRF (`--transport http`) | Bearer auth on `/mcp` (TokenReview, or a static token compared in constant time); `--auth none` refused unless the listen address is loopback; `Host` allow-list (loopback by default); any `Origin` not in `--allowed-origins` gets 403 (none by default, no CORS); 1 MiB request body cap; TLS terminates at an ingress or mesh | `http` unit tests (401, 403, TokenReview, loopback check), kind smoke test |
 | stdin hijack by exec plugins | Exec plugins forced to `interactiveMode: Never` | `cluster` unit test |
 
 ## Redaction levels
@@ -26,8 +27,8 @@ it is tested.
 
 ## Audit log
 
-One JSON line per tool call (timestamp, session, client, tool, tier, context, namespace,
-redacted args, result, findings, bytes, truncated, duration, server version) at
+One JSON line per tool call (timestamp, session, client, HTTP caller, tool, tier, context,
+namespace, redacted args, result, findings, bytes, truncated, duration, server version) at
 `$XDG_STATE_HOME/k8s-mcp/audit.jsonl` (`~/Library/Application Support/k8s-mcp/` on macOS),
 mode `0600`, rotated at 10 MB with 5 files kept. In-cluster it goes to stderr.
 `--audit-log off` logs a warning at startup.

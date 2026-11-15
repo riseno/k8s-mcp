@@ -111,6 +111,9 @@ tools! {
     "diagnose_pvc", "diagnose", t::DiagnosePvcInput,
         "Why is storage stuck? For a PersistentVolumeClaim: phase, StorageClass (exists, default, provisioner, volumeBindingMode), provisioning events, WaitForFirstConsumer, the bound PV, and attach/mount failures of the pods using it (Multi-Attach, attach limits).",
         |c, i| t::diagnose_pvc(c, i).await;
+    "diagnose_dns", "diagnose", t::DiagnoseDnsInput,
+        "Is DNS the problem? For a pod (or a namespace): NetworkPolicies blocking egress to port 53, CoreDNS pod health and its logs (loops, upstream timeouts), kube-dns Service endpoints, DNS errors in the pod's logs and ndots for external names. Reads kube-system only when the namespace policy allows it.",
+        |c, i| t::diagnose_dns(c, i).await;
     "find_problems", "diagnose", t::FindProblemsInput,
         "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
         |c, i| t::find_problems(c, i).await;

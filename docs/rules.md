@@ -8,6 +8,10 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 |---|---|---|
 | `cronjob.not_scheduling` | CronJob is suspended or not starting Jobs on schedule | [link](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) |
 | `dns.app_resolution_errors` | The application logs DNS resolution failures | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
+| `dns.coredns_unhealthy` | The cluster DNS pods (CoreDNS) are not healthy | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
+| `dns.ndots_hint` | External names go through the cluster search domains first (ndots) | [link](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/) |
+| `dns.netpol_blocks_egress` | A NetworkPolicy blocks DNS (port 53) egress | [link](https://kubernetes.io/docs/concepts/services-networking/network-policies/) |
+| `dns.no_endpoints` | The kube-dns Service has no ready endpoints | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
 | `job.backoff_limit` | Job failed: its pods failed more often than backoffLimit allows | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `job.deadline_exceeded` | Job failed: it ran longer than activeDeadlineSeconds | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `node.cordoned` | Node is cordoned: no new pods are scheduled there | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |

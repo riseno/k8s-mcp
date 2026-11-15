@@ -12,6 +12,7 @@ use k8s_openapi::api::core::v1::{
     Event, Node, PersistentVolume, PersistentVolumeClaim, Pod, ResourceQuota, Service,
     ServiceAccount,
 };
+use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::storage::v1::StorageClass;
 
 /// A piece of evidence that could not be gathered, and why.
@@ -181,6 +182,31 @@ pub struct PvcEvidence {
     pub pods: Vec<Pod>,
     /// Events of those pods (attach, mount and scheduling failures).
     pub pod_events: Vec<Event>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}
+
+/// Everything `diagnose_dns` knows about the DNS path of a pod (or of a namespace).
+#[derive(Debug, Clone, Default)]
+pub struct DnsEvidence {
+    /// The pod being checked, if one was named.
+    pub pod: Option<Pod>,
+    /// The namespace being checked (the pod's).
+    pub namespace: String,
+    /// Log tails of the pod's containers.
+    pub pod_logs: Vec<ContainerLog>,
+    /// NetworkPolicies in the namespace; `None` if unreadable.
+    pub network_policies: Option<Vec<NetworkPolicy>>,
+    /// Cluster DNS pods (`k8s-app=kube-dns` in kube-system); `None` if unreadable.
+    pub dns_pods: Option<Vec<Pod>>,
+    /// The kube-dns Service: `Some(None)` when it does not exist, `None` if unreadable.
+    pub dns_service: Option<Option<Service>>,
+    /// Ready endpoints in the kube-dns EndpointSlices; `None` if unreadable.
+    pub dns_ready_endpoints: Option<usize>,
+    /// Recent log lines of the cluster DNS pods.
+    pub dns_logs: Vec<ContainerLog>,
     /// Evidence that could not be gathered.
     pub unavailable: Vec<Unavailable>,
     /// Current time.

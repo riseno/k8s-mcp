@@ -81,6 +81,15 @@ pub fn diagnose_pvc(ev: &PvcEvidence) -> Vec<Finding> {
     out
 }
 
+/// Check a pod's (or a namespace's) DNS path: NetworkPolicies, CoreDNS, the kube-dns Service,
+/// the app's own resolution errors and ndots.
+pub fn diagnose_dns(ev: &DnsEvidence) -> Vec<Finding> {
+    let mut out = Vec::new();
+    rules::dns::check_cluster(ev, &mut out);
+    rank(&mut out);
+    out
+}
+
 /// Every rule id this engine can emit, with title and docs link.
 pub fn catalogue() -> Vec<RuleMeta> {
     let mut all: Vec<RuleMeta> = [
@@ -108,7 +117,7 @@ pub fn catalogue() -> Vec<RuleMeta> {
 mod tests {
     use super::*;
     use crate::test_support::{
-        node_fixture, pod_fixture, pvc_fixture, service_fixture, workload_fixture,
+        dns_fixture, node_fixture, pod_fixture, pvc_fixture, service_fixture, workload_fixture,
     };
 
     /// Every fixture under `dir`, sorted, as `dir/<file>` names.
@@ -166,6 +175,11 @@ mod tests {
         assert!(!pvcs.is_empty());
         for f in &pvcs {
             check(f, diagnose_pvc(&pvc_fixture(f)));
+        }
+        let dns = fixtures("dns");
+        assert!(!dns.is_empty());
+        for f in &dns {
+            check(f, diagnose_dns(&dns_fixture(f)));
         }
     }
 

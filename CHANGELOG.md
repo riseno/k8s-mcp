@@ -15,8 +15,15 @@ All notable changes are documented here. The format follows
   external provisioner silent for 5 minutes), `pvc.pending.wffc_waiting` (info with no pod,
   medium when the pod is Pending), `pvc.attach.multi_attach` and `pvc.attach.limit`. Returns
   the claim, the pods using it and their events. `pod.pending.pvc_unbound` now suggests it.
+- `diagnose_dns`: is DNS the problem? For a pod or a namespace, rules
+  `dns.netpol_blocks_egress` (an egress NetworkPolicy with no rule that can reach port 53;
+  judged conservatively), `dns.coredns_unhealthy` (missing or not-Ready CoreDNS, forwarding
+  loops, upstream timeouts in its logs), `dns.no_endpoints` (kube-dns missing or routing to
+  nothing), plus `dns.app_resolution_errors` and the `dns.ndots_hint` for external names.
+  kube-system is read only when the namespace policy allows it.
 - `find_problems` scans Services and PVCs (`kinds: services, pvcs`, on by default; ADR 0008).
-- Eval scenarios 15 (Service selector mismatch) and 16 (targetPort mismatch).
+- Eval scenarios 15 (Service selector mismatch), 16 (targetPort mismatch) and 17 (DNS blocked
+  by a NetworkPolicy).
 
 ## [0.1.4] - 2026-11-15
 

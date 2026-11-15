@@ -174,6 +174,16 @@ Why is storage stuck? For a PersistentVolumeClaim: phase, StorageClass (exists, 
 | `name` **(required)** | string | PersistentVolumeClaim name. |
 | `namespace` | string | Namespace (default: the context's namespace). |
 
+### `diagnose_dns`
+
+Is DNS the problem? For a pod (or a namespace): NetworkPolicies blocking egress to port 53, CoreDNS pod health and its logs (loops, upstream timeouts), kube-dns Service endpoints, DNS errors in the pod's logs and ndots for external names. Reads kube-system only when the namespace policy allows it.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+| `pod` | string | Pod whose DNS fails (optional: without it, the namespace and the cluster DNS are checked). |
+
 ### `find_problems`
 
 Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.

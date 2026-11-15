@@ -9,8 +9,9 @@ use k8s_mcp_core::policy::{Policy, RedactLevel};
 use k8s_mcp_testkit::mock::{MockApi, status, with_discovery};
 use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
-    Ctx, DiagnosePodInput, DiagnosePvcInput, DiagnoseServiceInput, DiagnoseWorkloadInput,
-    FindProblemsInput, GetLogsInput, GetResourceInput, ListEventsInput, ListResourcesInput,
+    Ctx, DiagnoseDnsInput, DiagnosePodInput, DiagnosePvcInput, DiagnoseServiceInput,
+    DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput, GetResourceInput, ListEventsInput,
+    ListResourcesInput,
 };
 use serde_json::{Value, json};
 
@@ -1152,4 +1153,89 @@ async fn find_problems_reports_pvcs_with_a_missing_storage_class() {
         "a pod waits on it"
     );
     assert_eq!(f.next[0].tool, "diagnose_pvc");
+}
+
+fn dns_mock(extra: impl FnOnce(MockApi) -> MockApi) -> k8s_mcp_testkit::mock::Mock {
+    let mut app = pod("shop", "api-1", "Running", None, 0);
+    app["metadata"]["labels"] = json!({"app": "api"});
+    let mut coredns = pod("kube-system", "coredns-1", "Running", None, 0);
+    coredns["metadata"]["labels"] = json!({"k8s-app": "kube-dns"});
+    coredns["status"]["conditions"] = json!([{"type": "Ready", "status": "True"}]);
+    let policy = json!({"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+        "metadata": {"name": "api-egress", "namespace": "shop"},
+        "spec": {"podSelector": {"matchLabels": {"app": "api"}}, "policyTypes": ["Egress"],
+            "egress": [{"to": [{"podSelector": {"matchLabels": {"app": "db"}}}], "ports": [{"port": 5432}]}]}});
+    let service = json!({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "kube-dns", "namespace": "kube-system"},
+        "spec": {"selector": {"k8s-app": "kube-dns"}, "ports": [{"port": 53, "protocol": "UDP"}]}});
+    let slice = json!({"apiVersion": "discovery.k8s.io/v1", "kind": "EndpointSlice", "metadata": {"name": "kube-dns-1", "namespace": "kube-system"},
+        "addressType": "IPv4", "endpoints": [{"addresses": ["10.244.0.2"], "conditions": {"ready": true}}]});
+    extra(
+        MockApi::new()
+            .get("/api/v1/namespaces/shop/pods/api-1", app)
+            .get(
+                "/api/v1/namespaces/shop/pods/api-1/log",
+                json!("dial tcp: lookup db.shop.svc.cluster.local on 10.96.0.10:53: read udp 10.244.1.7:40112->10.96.0.10:53: i/o timeout\n"),
+            )
+            .list("/apis/networking.k8s.io/v1/namespaces/shop/networkpolicies", vec![policy])
+            .list("/api/v1/namespaces/kube-system/pods", vec![coredns])
+            .get("/api/v1/namespaces/kube-system/services/kube-dns", service)
+            .list("/apis/discovery.k8s.io/v1/namespaces/kube-system/endpointslices", vec![slice])
+            .get("/api/v1/namespaces/kube-system/pods/coredns-1/log", json!("[INFO] plugin/reload: Running configuration\n")),
+    )
+    .start()
+}
+
+#[tokio::test]
+async fn diagnose_dns_finds_the_policy_that_blocks_port_53() {
+    let mock = dns_mock(|m| m);
+    let input = DiagnoseDnsInput {
+        pod: Some("api-1".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_dns(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "DNS for pod api-1 (shop): CoreDNS 1/1 Ready, kube-dns has 1 ready endpoints, 1 NetworkPolicies in shop. Top finding: NetworkPolicy api-egress blocks DNS for pod api-1."
+    );
+    let ids: Vec<&str> = env.findings.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["dns.netpol_blocks_egress", "dns.app_resolution_errors"]
+    );
+    assert_eq!(env.items[0]["name"], "coredns-1");
+    assert_eq!(env.sections[0].lines, ["dnsPolicy: ClusterFirst"]);
+}
+
+/// The namespace policy is applied to kube-system too: no request goes there.
+#[tokio::test]
+async fn diagnose_dns_does_not_read_kube_system_outside_the_namespace_policy() {
+    let mock = dns_mock(|m| m);
+    let input = DiagnoseDnsInput {
+        pod: Some("api-1".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_dns(&ctx(&mock, policy(&["shop"], &[])), input)
+        .await
+        .unwrap();
+    let requests = mock.requests.lock().unwrap().clone();
+    assert!(
+        !requests.iter().any(|r| r.contains("kube-system")),
+        "{requests:?}"
+    );
+    assert_eq!(env.findings[0].id, "dns.netpol_blocks_egress");
+    let notes = env
+        .sections
+        .iter()
+        .find(|s| s.title.starts_with("UNAVAILABLE"))
+        .unwrap();
+    assert!(
+        notes
+            .lines
+            .iter()
+            .any(|l| l.contains("kube-system is outside")),
+        "{:?}",
+        notes.lines
+    );
 }

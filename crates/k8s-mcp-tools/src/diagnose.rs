@@ -221,58 +221,10 @@ async fn gather_pod(
         });
     }
 
-    let mut logs = Vec::new();
-    if let Some(tail) = log_tail {
-        let api: Api<Pod> = Api::namespaced(client.clone(), &ns);
-        // (container, read previous instance?) for containers that have run at least once.
-        let wanted: Vec<(String, bool)> = pod
-            .status
-            .iter()
-            .flat_map(|s| {
-                s.init_container_statuses
-                    .iter()
-                    .flatten()
-                    .chain(s.container_statuses.iter().flatten())
-            })
-            .filter_map(|st| {
-                let restarted = st.restart_count > 0
-                    && st
-                        .last_state
-                        .as_ref()
-                        .and_then(|s| s.terminated.as_ref())
-                        .is_some();
-                let terminated_now = st.state.as_ref().is_some_and(|s| s.terminated.is_some());
-                let running = st.state.as_ref().is_some_and(|s| s.running.is_some());
-                // A container that just crashed sits in `terminated` for a while; its own
-                // logs hold the crash output and the previous instance may already be gone.
-                let previous = restarted && !terminated_now;
-                (restarted || running || terminated_now).then(|| (st.name.clone(), previous))
-            })
-            .collect();
-        for (container, previous) in wanted {
-            let lp = LogParams {
-                container: Some(container.clone()),
-                previous,
-                tail_lines: Some(tail),
-                ..LogParams::default()
-            };
-            match api.logs(&name, &lp).await {
-                Ok(raw) if raw.starts_with("unable to retrieve container logs") => un.push(Unavailable {
-                    what: format!("{}logs of container {container}", if previous { "previous " } else { "" }),
-                    reason: "the runtime no longer has them (the container was removed after its crash)".into(),
-                }),
-                Ok(raw) => logs.push(ContainerLog {
-                    lines: dedup_lines(redact_log(ctx, &raw, &secret_values).into_iter().filter(|l| !is_marker_line(l))),
-                    container,
-                    previous,
-                }),
-                Err(e) => un.push(Unavailable {
-                    what: format!("{}logs of container {container}", if previous { "previous " } else { "" }),
-                    reason: Error::kube(format!("get logs of pod {name}"), &e).to_string(),
-                }),
-            }
-        }
-    }
+    let logs = match log_tail {
+        Some(tail) => container_logs(ctx, sc, &pod, tail, &secret_values, &mut un).await,
+        None => Vec::new(),
+    };
     PodEvidence {
         pod,
         events,
@@ -285,6 +237,86 @@ async fn gather_pod(
         unavailable: un,
         now,
     }
+}
+
+/// Why logs of a container that crashed and was removed cannot be read.
+const LOGS_GONE: &str =
+    "the runtime no longer has them (the container was removed after its crash)";
+
+/// Log tails of the pod's containers that have run (the previous instance of restarted ones),
+/// redacted, with `secret_values` (from [`pod_secret_values`]) masked. Failures become notes.
+pub(crate) async fn container_logs(
+    ctx: &Ctx,
+    sc: &Scope,
+    pod: &Pod,
+    tail: i64,
+    secret_values: &[String],
+    un: &mut Vec<Unavailable>,
+) -> Vec<ContainerLog> {
+    let name = pod.metadata.name.clone().unwrap_or_default();
+    let ns = pod.metadata.namespace.clone().unwrap_or_default();
+    let client = sc.target.client.clone();
+    let mut logs = Vec::new();
+    let api: Api<Pod> = Api::namespaced(client.clone(), &ns);
+    // (container, read previous instance?) for containers that have run at least once.
+    let wanted: Vec<(String, bool)> = pod
+        .status
+        .iter()
+        .flat_map(|s| {
+            s.init_container_statuses
+                .iter()
+                .flatten()
+                .chain(s.container_statuses.iter().flatten())
+        })
+        .filter_map(|st| {
+            let restarted = st.restart_count > 0
+                && st
+                    .last_state
+                    .as_ref()
+                    .and_then(|s| s.terminated.as_ref())
+                    .is_some();
+            let terminated_now = st.state.as_ref().is_some_and(|s| s.terminated.is_some());
+            let running = st.state.as_ref().is_some_and(|s| s.running.is_some());
+            // A container that just crashed sits in `terminated` for a while; its own
+            // logs hold the crash output and the previous instance may already be gone.
+            let previous = restarted && !terminated_now;
+            (restarted || running || terminated_now).then(|| (st.name.clone(), previous))
+        })
+        .collect();
+    for (container, previous) in wanted {
+        let lp = LogParams {
+            container: Some(container.clone()),
+            previous,
+            tail_lines: Some(tail),
+            ..LogParams::default()
+        };
+        let what = format!(
+            "{}logs of container {container}",
+            if previous { "previous " } else { "" }
+        );
+        match api.logs(&name, &lp).await {
+            Ok(raw) if raw.starts_with("unable to retrieve container logs") => {
+                un.push(Unavailable {
+                    what,
+                    reason: LOGS_GONE.into(),
+                });
+            }
+            Ok(raw) => logs.push(ContainerLog {
+                lines: dedup_lines(
+                    redact_log(ctx, &raw, secret_values)
+                        .into_iter()
+                        .filter(|l| !is_marker_line(l)),
+                ),
+                container,
+                previous,
+            }),
+            Err(e) => un.push(Unavailable {
+                what,
+                reason: Error::kube(format!("get logs of pod {name}"), &e).to_string(),
+            }),
+        }
+    }
+    logs
 }
 
 fn note(

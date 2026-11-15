@@ -5,6 +5,7 @@
 mod common;
 mod diagnose;
 mod discovery;
+mod dns;
 mod logs;
 mod read;
 mod rows;
@@ -23,6 +24,7 @@ pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
     diagnose_pod, diagnose_workload, find_problems,
 };
+pub use dns::{DiagnoseDnsInput, diagnose_dns};
 pub use logs::{GetLogsInput, get_logs};
 pub use read::{
     ApiResourcesInput, CheckPermissionsInput, ClusterOverviewInput, GetResourceInput,

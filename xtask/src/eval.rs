@@ -548,8 +548,13 @@ mod tests {
         assert!(all.len() >= 12, "v0.1 needs at least 12 scenarios");
         for (dir, s) in &all {
             assert!(
-                ["diagnose_pod", "diagnose_workload", "diagnose_service"]
-                    .contains(&s.tool.as_str()),
+                [
+                    "diagnose_pod",
+                    "diagnose_workload",
+                    "diagnose_service",
+                    "diagnose_dns"
+                ]
+                .contains(&s.tool.as_str()),
                 "{dir}: tool"
             );
             assert!(

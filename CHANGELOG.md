@@ -5,6 +5,31 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-15
+
+### Fixed
+- `structuredContent` now carries every section (get_resource YAML and events, node pools,
+  unavailable-evidence notes); clients that read only it (Claude Code) got an empty YAML view.
+  YAML sections are trimmed from the end, logs from the start (#9).
+- `--max-output-bytes` is a hard cap on the message actually sent (#15).
+- The audit log records the MCP client; `--help` gives the real default audit path per platform (#16).
+- `list_resources` next-page calls keep selectors and the rest of the query (#11).
+- `top` reports an unbounded pod limit when a container has none, instead of >100% usage (#10).
+- `get_resource` workload summaries show pod-template containers (image, resources, probes, env) (#12).
+- `find_problems` in a namespace reports only nodes running its pods, and its summary counts
+  every severity (#13, #14).
+- `list_events` groups one cause across objects and counts occurrences (#21, #14).
+- `check_permissions` `verbs_for` uses `get` for `*/log` and `create` for `*/exec` and similar (#17).
+- `get_logs` drops Python traceback caret lines and merges identical output across a workload's pods (#20).
+- `api_resources` names every API group in its summary and shows the standard verb set as `all` (#22).
+
+### Added
+- `pod.crashloop.dependency_unreachable`, and log-based `pod.crashloop.command_not_found`
+  (`Failed to spawn`, `executable file not found`), for crash loops whose logs name the cause (#19).
+
+### Changed
+- ADR 0008: `find_problems` covers Services and PVCs from v0.2 (#18).
+
 ## [0.1.2] - 2026-11-15
 
 ### Fixed

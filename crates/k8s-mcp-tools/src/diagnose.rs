@@ -941,6 +941,9 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     )
     .await?;
     let now = ctx.now();
+    // Nodes are cluster-wide: in a namespace scan, only nodes running its pods are reported,
+    // unless nodes were asked for explicitly.
+    let only_namespace_nodes = sc.namespace.is_some() && input.kinds.is_none();
     let kinds = input
         .kinds
         .unwrap_or_else(|| vec!["pods".into(), "workloads".into(), "nodes".into()]);
@@ -1064,6 +1067,20 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             &mut un,
         )
     {
+        let mut nodes = nodes;
+        if only_namespace_nodes {
+            let used: BTreeSet<&str> = listed_pods
+                .iter()
+                .flatten()
+                .filter_map(|p| p.spec.as_ref()?.node_name.as_deref())
+                .collect();
+            nodes.retain(|n| {
+                n.metadata
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| used.contains(name))
+            });
+        }
         scanned.push(format!("{} nodes", nodes.len()));
         for n in nodes {
             let name = n.metadata.name.clone().unwrap_or_default();
@@ -1108,8 +1125,21 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     // One finding per root cause: after evidence is trimmed, so the merged list is kept.
     let mut findings = group_same_cause(findings);
     let total = findings.len();
+    let by_severity = [
+        Severity::Critical,
+        Severity::High,
+        Severity::Medium,
+        Severity::Low,
+        Severity::Info,
+    ]
+    .iter()
+    .filter_map(|s| {
+        let n = findings.iter().filter(|f| f.severity == *s).count();
+        (n > 0).then(|| format!("{n} {}", s.as_str()))
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
     findings.truncate(50);
-    let count = |s: Severity| findings.iter().filter(|f| f.severity == s).count();
     let mut e = envelope(
         &sc,
         if total == 0 {
@@ -1120,10 +1150,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             )
         } else {
             format!(
-                "{total} findings ({} critical, {} high, {} medium) across {}.",
-                count(Severity::Critical),
-                count(Severity::High),
-                count(Severity::Medium),
+                "{total} findings ({by_severity}) across {}.",
                 scanned.join(", ")
             )
         },

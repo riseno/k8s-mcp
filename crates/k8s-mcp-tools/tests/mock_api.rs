@@ -531,3 +531,45 @@ async fn list_resources_next_page_keeps_the_query() {
         "{reqs:?}"
     );
 }
+
+/// riseno/k8s-mcp#13 and #14: a namespace scan reports only nodes running that namespace's
+/// pods, and the summary counts every severity present.
+#[tokio::test]
+async fn find_problems_in_a_namespace_scopes_nodes_and_counts_every_severity() {
+    let node = |name: &str| {
+        json!({"apiVersion": "v1", "kind": "Node", "metadata": {"name": name},
+        "status": {"conditions": [{"type": "Ready", "status": "False", "reason": "KubeletNotReady", "lastTransitionTime": "2026-11-14T11:00:00Z"}]}})
+    };
+    let deploy = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "web", "namespace": "shop"},
+        "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "web"}}, "template": {"metadata": {"labels": {"app": "web"}}, "spec": {"containers": [{"name": "app", "image": "nginx:1.27"}]}}},
+        "status": {"replicas": 1, "availableReplicas": 1, "readyReplicas": 1}});
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .list(
+            "/api/v1/namespaces/shop/pods",
+            vec![pod("shop", "web-1", "Running", None, 0)],
+        )
+        .list("/apis/apps/v1/namespaces/shop/deployments", vec![deploy])
+        .list("/api/v1/nodes", vec![node("node-1"), node("node-2")])
+        .start();
+    let input = FindProblemsInput {
+        namespace: Some("shop".into()),
+        min_severity: Some(k8s_mcp_core::finding::Severity::Low),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::find_problems(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let nodes: Vec<&str> = env
+        .findings
+        .iter()
+        .filter_map(|f| f.object.as_ref())
+        .filter(|o| o.kind == "Node")
+        .map(|o| o.name.as_str())
+        .collect();
+    assert!(
+        nodes.contains(&"node-1") && !nodes.contains(&"node-2"),
+        "{nodes:?}"
+    );
+    assert!(env.summary.contains("1 low"), "{}", env.summary);
+}

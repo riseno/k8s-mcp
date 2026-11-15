@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_cause, rank};
-use k8s_mcp_core::text::{dedup_lines, is_marker_line};
+use k8s_mcp_core::text::{dedup_lines, is_marker_line, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
     ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
@@ -141,6 +141,8 @@ async fn gather_pod(
     };
 
     let mut refs = Vec::new();
+    // Values of the Secrets the pod uses, kept only to mask them in its logs (never output).
+    let mut secret_values: Vec<String> = Vec::new();
     let mut pvcs = Vec::new();
     let mut service_account = None;
     for (kind, ref_name) in collect_refs(&pod).into_iter().take(MAX_REFS) {
@@ -167,16 +169,19 @@ async fn gather_pod(
                 .get_opt(&ref_name)
                 .await
             {
-                Ok(Some(s)) => (
-                    Some(true),
-                    Some(
-                        s.data
-                            .unwrap_or_default()
-                            .into_keys()
-                            .chain(s.string_data.unwrap_or_default().into_keys())
-                            .collect(),
-                    ),
-                ),
+                Ok(Some(s)) => {
+                    secret_values.extend(values_of(&s));
+                    (
+                        Some(true),
+                        Some(
+                            s.data
+                                .unwrap_or_default()
+                                .into_keys()
+                                .chain(s.string_data.unwrap_or_default().into_keys())
+                                .collect(),
+                        ),
+                    )
+                }
                 Ok(None) => (Some(false), None),
                 Err(e) => note(&mut un, &format!("Secret {ref_name} (existence only)"), &e),
             },
@@ -254,7 +259,7 @@ async fn gather_pod(
                     reason: "the runtime no longer has them (the container was removed after its crash)".into(),
                 }),
                 Ok(raw) => logs.push(ContainerLog {
-                    lines: dedup_lines(raw.lines().filter(|l| !is_marker_line(l)).map(|l| ctx.redactor.text(&k8s_mcp_core::text::strip_ansi(l)).into_owned())),
+                    lines: dedup_lines(redact_log(ctx, &raw, &secret_values).into_iter().filter(|l| !is_marker_line(l))),
                     container,
                     previous,
                 }),
@@ -289,6 +294,51 @@ fn note(
         reason: Error::kube(format!("check {what}"), e).to_string(),
     });
     (None, None)
+}
+
+/// Redact one container log: exact Secret values first (every level), then patterns, tracking
+/// multi-line PEM keys.
+pub fn redact_log(ctx: &Ctx, raw: &str, secret_values: &[String]) -> Vec<String> {
+    let mut lines: Vec<String> = raw.lines().map(|l| strip_ansi(l).into_owned()).collect();
+    k8s_mcp_core::redact::scrub_values(&mut lines, secret_values);
+    ctx.redactor.lines(lines.iter().map(String::as_str))
+}
+
+/// Secret values as text (keys are not secret; values are kept in memory only for masking).
+fn values_of(s: &Secret) -> Vec<String> {
+    let data = s
+        .data
+        .iter()
+        .flatten()
+        .map(|(_, v)| String::from_utf8_lossy(&v.0).into_owned());
+    let string_data = s.string_data.iter().flatten().map(|(_, v)| v.clone());
+    data.chain(string_data).collect()
+}
+
+/// Values of the Secrets a pod references, for masking them in its logs. When RBAC forbids
+/// reading a Secret, records a note and returns what it could read.
+pub async fn pod_secret_values(sc: &Scope, pod: &Pod, notes: &mut Vec<Unavailable>) -> Vec<String> {
+    let ns = pod.metadata.namespace.clone().unwrap_or_default();
+    let api: Api<Secret> = Api::namespaced(sc.target.client.clone(), &ns);
+    let mut out = Vec::new();
+    for (_, name) in collect_refs(pod)
+        .into_iter()
+        .filter(|(k, _)| *k == RefKind::Secret)
+        .take(MAX_REFS)
+    {
+        match api.get_opt(&name).await {
+            Ok(Some(s)) => out.extend(values_of(&s)),
+            Ok(None) => {}
+            Err(e) => notes.push(Unavailable {
+                what: format!("Secret {name} values for masking in logs"),
+                reason: format!(
+                    "{}; only pattern redaction was applied",
+                    Error::kube(format!("read Secret {name}"), &e)
+                ),
+            }),
+        }
+    }
+    out
 }
 
 /// Every ConfigMap, Secret, PVC and ServiceAccount a pod references.

@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use k8s_mcp_core::envelope::Section;
-use k8s_mcp_core::text::{dedup_lines, is_marker_line, parse_duration, strip_ansi};
+use k8s_mcp_core::text::{dedup_lines, is_marker_line, parse_duration};
 use k8s_mcp_core::{Error, Result};
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, LogParams};
@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::common::{check_name, envelope, scope};
-use crate::diagnose::workload_pods;
+use crate::diagnose::{pod_secret_values, redact_log, workload_pods};
 use crate::read::add_notes;
 use crate::rows::unhealthy;
 use crate::{Ctx, Envelope};
@@ -127,6 +127,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
     let mut seen: Vec<(String, Vec<String>, String)> = Vec::new();
     for pod in &pods {
         let pod_name = pod.metadata.name.clone().unwrap_or_default();
+        let secret_values = pod_secret_values(&sc, pod, &mut notes).await;
         let containers: Vec<String> = if let Some(c) = &input.container {
             vec![c.clone()]
         } else {
@@ -185,6 +186,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 ctx_lines,
                 input.errors_only,
                 usize::try_from(tail).unwrap_or(200),
+                &secret_values,
             );
             // Pods of one workload often fail identically: send each distinct output once.
             if let Some(first) = seen
@@ -255,11 +257,9 @@ fn shape(
     context: usize,
     errors_only: bool,
     tail: usize,
+    secret_values: &[String],
 ) -> (Vec<String>, usize) {
-    let lines: Vec<String> = raw
-        .lines()
-        .map(|l| ctx.redactor.text(&strip_ansi(l)).into_owned())
-        .collect();
+    let lines = redact_log(ctx, raw, secret_values);
     let keep: Vec<bool> = if let (None, false) = (grep, errors_only) {
         vec![true; lines.len()]
     } else {
@@ -314,7 +314,7 @@ mod tests {
     #[tokio::test]
     async fn shapes_logs() {
         let raw = "\x1b[32mINFO\x1b[0m start\nretry\nretry\nretry\nERROR connect failed password=hunter2\nINFO ok\n";
-        let (lines, omitted) = shape(&ctx(), raw, None, 0, false, 10);
+        let (lines, omitted) = shape(&ctx(), raw, None, 0, false, 10, &[]);
         assert_eq!(omitted, 0);
         assert_eq!(
             lines,
@@ -325,13 +325,13 @@ mod tests {
                 "INFO ok"
             ]
         );
-        let (errs, _) = shape(&ctx(), raw, None, 0, true, 10);
+        let (errs, _) = shape(&ctx(), raw, None, 0, true, 10, &[]);
         assert_eq!(errs, ["ERROR connect failed password=«redacted»"]);
         let grep = RegexBuilder::new("connect")
             .case_insensitive(true)
             .build()
             .unwrap();
-        let (ctx_lines, _) = shape(&ctx(), raw, Some(&grep), 1, false, 10);
+        let (ctx_lines, _) = shape(&ctx(), raw, Some(&grep), 1, false, 10, &[]);
         assert_eq!(
             ctx_lines,
             [
@@ -340,7 +340,7 @@ mod tests {
                 "INFO ok"
             ]
         );
-        let (tail, omitted) = shape(&ctx(), raw, None, 0, false, 2);
+        let (tail, omitted) = shape(&ctx(), raw, None, 0, false, 2, &[]);
         assert_eq!((tail.len(), omitted), (2, 2));
     }
 }

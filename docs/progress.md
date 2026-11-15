@@ -93,3 +93,4 @@ formula. Pre-release tags (`-rc.N`) build and attest but do not publish the imag
 - ADR 0006: providers dispatch through an enum instead of `dyn Provider` + async-trait.
 - ADR 0007: the AWS SDK runs on rustls + ring via `aws-smithy-http-client`.
 - ADR 0008: `find_problems` covers Services and PVCs from v0.2, with the §9.2 `svc.*`/`pvc.*` rules.
+- ADR 0009: logs are scrubbed of the exact values of the Secrets their pod references.

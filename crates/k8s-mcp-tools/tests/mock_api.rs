@@ -726,3 +726,59 @@ async fn api_resources_compacts_verbs_and_names_groups() {
     .unwrap();
     assert_eq!(env.items[0]["verbs"], "all");
 }
+
+/// riseno/k8s-mcp#24 and #25: a value from a Secret the pod uses, logged without any keyword,
+/// and a PEM key logged across lines, never come back from get_logs.
+#[tokio::test]
+async fn get_logs_masks_secret_values_and_multi_line_keys() {
+    let mut p = pod("shop", "api-1", "Running", None, 0);
+    p["spec"]["containers"][0]["env"] = json!([{"name": "FROM_SECRET", "valueFrom": {"secretKeyRef": {"name": "db", "key": "pw"}}}]);
+    let secret = json!({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "db", "namespace": "shop"}, "data": {"pw": "czNjcjN0LWZyb20tc2VjcmV0"}});
+    let log = json!(
+        "echoed: s3cr3t-from-secret\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAkeybodyline1\nkeybodyline2==\n-----END RSA PRIVATE KEY-----\nready\n"
+    );
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/pods/api-1", p)
+        .get("/api/v1/namespaces/shop/secrets/db", secret)
+        .get("/api/v1/namespaces/shop/pods/api-1/log", log)
+        .start();
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(
+            &mock,
+            Policy::new(
+                &[],
+                &[],
+                &[],
+                k8s_mcp_core::policy::RedactLevel::Off,
+                24_000,
+            )
+            .unwrap(),
+        ),
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let all = format!("{}{}", env.render(), env.to_json());
+    assert!(
+        !all.contains("s3cr3t-from-secret"),
+        "Secret value leaked even with --redact off: {all}"
+    );
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(&mock, Policy::permissive()),
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let all = format!("{}{}", env.render(), env.to_json());
+    assert!(
+        !all.contains("s3cr3t-from-secret") && !all.contains("keybody"),
+        "{all}"
+    );
+    assert!(all.contains("ready"));
+}

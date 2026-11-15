@@ -7,6 +7,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::rules::re;
+
 /// Why some nodes rejected a pod, from one item of a `FailedScheduling` message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchedulingReason {
@@ -41,13 +43,9 @@ pub struct FailedScheduling {
     pub reasons: Vec<(Option<u32>, SchedulingReason)>,
 }
 
-#[allow(clippy::unwrap_used)] // constant patterns
-static HEADER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*\d+/(\d+) nodes are available:?\s*").unwrap());
-#[allow(clippy::unwrap_used)]
-static SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",\s+(\d+\s)").unwrap());
-#[allow(clippy::unwrap_used)]
-static COUNTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\s+(.*)$").unwrap());
+static HEADER: LazyLock<Regex> = LazyLock::new(|| re(r"^\s*\d+/(\d+) nodes are available:?\s*"));
+static SPLIT: LazyLock<Regex> = LazyLock::new(|| re(r",\s+(\d+\s)"));
+static COUNTED: LazyLock<Regex> = LazyLock::new(|| re(r"^(\d+)\s+(.*)$"));
 
 /// Parse a `FailedScheduling` message such as
 /// `0/5 nodes are available: 2 Insufficient cpu, 3 node(s) had untolerated taint {dedicated: gpu}. preemption: ...`.

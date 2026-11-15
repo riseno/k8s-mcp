@@ -9,14 +9,14 @@
 
 use std::sync::LazyLock;
 
-use k8s_mcp_core::finding::{Confidence, Finding, RuleMeta, Severity, Source};
+use k8s_mcp_core::finding::{Confidence, Evidence, Finding, RuleMeta, Severity, Source};
 use k8s_mcp_core::text::truncate;
 use k8s_openapi::api::core::v1::{Container, Pod};
 use regex::Regex;
 use serde_json::json;
 
 use super::{
-    all_containers, dns_name, docs, events_with, msg, pod_events_args, pod_ref, quote_event,
+    all_containers, dns_name, docs, events_with, msg, pod_events_args, pod_ref, quote_event, re,
     resource_args, rule_docs, service_account_name, waiting_message, waiting_reason,
 };
 use crate::evidence::{PodEvidence, RefKind};
@@ -72,26 +72,17 @@ pub enum Issue {
     InvalidEnvRef,
 }
 
-#[allow(clippy::unwrap_used)] // constant patterns
-static KEY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"couldn't find key (\S+) in (ConfigMap|Secret) [^/\s]+/([^\s:,]+)").unwrap()
-});
-#[allow(clippy::unwrap_used)]
+static KEY: LazyLock<Regex> =
+    LazyLock::new(|| re(r"couldn't find key (\S+) in (ConfigMap|Secret) [^/\s]+/([^\s:,]+)"));
 static VOLUME_KEY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(configmap|secret) references non-existent (?:config|secret) key: (\S+)").unwrap()
+    re(r"(configmap|secret) references non-existent (?:config|secret) key: (\S+)")
 });
-#[allow(clippy::unwrap_used)]
-static MISSING: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?i)\b(configmap|secret|serviceaccount)s? "([^"]+)" not found"#).unwrap()
-});
-#[allow(clippy::unwrap_used)]
-static ENV_REF: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)unsupported fieldpath|field label not supported|container resource").unwrap()
-});
-#[allow(clippy::unwrap_used)]
-static MOUNT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)subpath|mount|not a directory|read-only file system").unwrap()
-});
+static MISSING: LazyLock<Regex> =
+    LazyLock::new(|| re(r#"(?i)\b(configmap|secret|serviceaccount)s? "([^"]+)" not found"#));
+static ENV_REF: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)unsupported fieldpath|field label not supported|container resource"));
+static MOUNT: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)subpath|mount|not a directory|read-only file system"));
 
 /// Classify a kubelet/API message into a configuration [`Issue`].
 pub fn parse_issue(message: &str) -> Option<Issue> {
@@ -209,7 +200,7 @@ fn add(
     trigger: String,
 ) {
     if let Some((_, f)) = found.iter_mut().find(|(i, _)| *i == issue) {
-        f.evidence.push(k8s_mcp_core::finding::Evidence {
+        f.evidence.push(Evidence {
             source,
             text: trigger,
         });

@@ -13,7 +13,7 @@ use serde_json::json;
 use super::config::parse_issue;
 use super::{
     all_containers, docs, events_with, latest, msg, phase, pod_events_args, pod_ref, quote_event,
-    resource_args, rule_docs, secs_since, waiting_reason,
+    re, resource_args, rule_docs, secs_since, waiting_reason,
 };
 use crate::evidence::PodEvidence;
 
@@ -42,9 +42,10 @@ const STUCK_AFTER_SECS: i64 = 300;
 /// Event reasons for volume attach/mount failures.
 const VOLUME: [&str; 3] = ["FailedAttachVolume", "FailedMount", "FailedMapVolume"];
 
-#[allow(clippy::unwrap_used)] // constant pattern
 static CNI: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)setup network|set up network|cni|assign an ip|ip address|ipam|networkplugin|network plugin").unwrap()
+    re(
+        r"(?i)setup network|set up network|cni|assign an ip|ip address|ipam|networkplugin|network plugin",
+    )
 });
 
 /// Check a scheduled pod whose containers are still being created.

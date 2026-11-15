@@ -12,7 +12,7 @@ use k8s_mcp_core::text::truncate;
 use regex::Regex;
 use serde_json::json;
 
-use super::{docs, logs_args};
+use super::{docs, logs_args, re};
 use crate::evidence::PodEvidence;
 
 /// Rules emitted by this module.
@@ -22,9 +22,10 @@ pub const RULES: &[RuleMeta] = &[RuleMeta {
     docs: docs::DNS,
 }];
 
-#[allow(clippy::unwrap_used)] // constant pattern
 static DNS_ERROR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)no such host|temporary failure in name resolution|name or service not known|server misbehaving|servfail|getaddrinfo (enotfound|eai_again)|unknownhostexception|could not resolve host|:53\b.*i/o timeout").unwrap()
+    re(
+        r"(?i)no such host|temporary failure in name resolution|name or service not known|server misbehaving|servfail|getaddrinfo (enotfound|eai_again)|unknownhostexception|could not resolve host|:53\b.*i/o timeout",
+    )
 });
 
 /// Check every container log tail.

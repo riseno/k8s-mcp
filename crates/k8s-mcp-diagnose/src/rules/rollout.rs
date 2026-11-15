@@ -22,7 +22,7 @@ use serde_json::json;
 
 use super::config::{Issue, issue_finding, parse_issue};
 use super::{
-    dns_name, docs, events_with, last_seen, msg, quote_event, reason, resource_args, rule_docs,
+    dns_name, docs, events_with, last_seen, msg, quote_event, re, reason, resource_args, rule_docs,
 };
 use crate::evidence::{RefKind, Workload, WorkloadEvidence};
 
@@ -69,11 +69,6 @@ pub const RULES: &[RuleMeta] = &[
         docs: docs::DEPLOYMENT,
     },
 ];
-
-fn re(pattern: &str) -> Regex {
-    #[allow(clippy::unwrap_used)] // constant patterns, covered by tests
-    Regex::new(pattern).unwrap()
-}
 
 static QUOTA: LazyLock<Regex> = LazyLock::new(|| re(r"(exceeded|failed) quota: ([^,:\s]+)"));
 static PSA: LazyLock<Regex> =

@@ -1,0 +1,31 @@
+# Eval scenario 5 as seen with kind 1.37 on a GitHub-hosted runner: the OOM kill is reported
+# as reason Error, exit 137 (no OOMKilled reason).
+apiVersion: v1
+kind: Pod
+metadata: {name: hog-5c6d7-e8r9t, namespace: eval-x, creationTimestamp: "2026-11-14T11:45:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: hog
+      image: polinux/stress:1.0.4
+      command: [stress, --vm, "1", --vm-bytes, 128M, --vm-hang, "1"]
+      resources: {requests: {memory: 32Mi}, limits: {memory: 32Mi}}
+status:
+  phase: Running
+  containerStatuses:
+    - name: hog
+      ready: false
+      restartCount: 4
+      image: polinux/stress:1.0.4
+      state: {waiting: {reason: CrashLoopBackOff, message: "back-off 1m20s restarting failed container=hog"}}
+      lastState: {terminated: {exitCode: 137, reason: Error, startedAt: "2026-11-14T11:58:00Z", finishedAt: "2026-11-14T11:58:01Z"}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: hog.1, namespace: eval-x}
+involvedObject: {kind: Pod, name: hog-5c6d7-e8r9t, namespace: eval-x, fieldPath: "spec.containers{hog}"}
+reason: BackOff
+type: Warning
+message: "Back-off restarting failed container hog in pod hog-5c6d7-e8r9t_eval-x(u1)"
+count: 9
+lastTimestamp: "2026-11-14T11:59:30Z"

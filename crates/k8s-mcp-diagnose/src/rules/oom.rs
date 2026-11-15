@@ -1,15 +1,23 @@
 //! OOMKilled containers, with JVM/Node.js heap-flag checks (PROPOSAL §9.2).
 //! Node-level OOM (`node.oom.system`) lives in [`super::node`].
+//!
+//! Some runtimes report an OOM kill as `reason: Error, exitCode: 137` (seen with kind on
+//! GitHub-hosted runners, and when the kernel kills a child the main process waits on), so a
+//! SIGKILL under a memory limit with no probe-kill, eviction or preemption events is reported
+//! as an inferred OOM kill at medium confidence.
 
 use std::sync::LazyLock;
 
 use k8s_mcp_core::finding::{Confidence, Finding, RuleMeta, Severity, Source};
 use k8s_mcp_core::quantity::{bytes, fmt_bytes};
-use k8s_openapi::api::core::v1::Container;
+use k8s_openapi::api::core::v1::{Container, ContainerStateTerminated};
 use regex::Regex;
 use serde_json::json;
 
-use super::{all_containers, describe_termination, docs, last_termination, logs_args, pod_ref};
+use super::{
+    all_containers, describe_termination, docs, events_with, last_termination, logs_args, pod_ref,
+    probe_killed,
+};
 use crate::evidence::PodEvidence;
 
 /// Rules emitted by this module.
@@ -32,21 +40,40 @@ pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
         let Some(t) = last_termination(st) else {
             continue;
         };
-        if t.reason.as_deref() != Some("OOMKilled") {
+        let Some(definitive) = oom_kind(ev, c, t) else {
             continue;
-        }
+        };
         let limit = memory_limit(c);
-        let title = match limit {
-            Some(l) => format!(
+        let title = match (definitive, limit) {
+            (true, Some(l)) => format!(
                 "container {:?} was OOMKilled: it exceeded its {} memory limit",
                 c.name,
                 fmt_bytes(l)
             ),
-            None => format!("container {:?} was OOMKilled (no memory limit set)", c.name),
+            (true, None) => format!("container {:?} was OOMKilled (no memory limit set)", c.name),
+            (false, l) => format!(
+                "container {:?} was most likely OOM-killed: exit 137 under its {} memory limit",
+                c.name,
+                l.map_or_else(|| "?".into(), fmt_bytes)
+            ),
         };
-        let mut f = Finding::new("pod.oom.container", Severity::Critical, Confidence::High, title)
-            .explain("The kernel OOM killer stopped the container because it used more memory than allowed (exit 137, reason OOMKilled). It will keep crashing until memory use and the limit agree.")
-            .evidence(Source::Status, format!("lastState.terminated {}", describe_termination(t, ev.now)))
+        let (confidence, explanation) = if definitive {
+            (
+                Confidence::High,
+                "The kernel OOM killer stopped the container because it used more memory than allowed (exit 137, reason OOMKilled). It will keep crashing until memory use and the limit agree.",
+            )
+        } else {
+            (
+                Confidence::Medium,
+                "The container was SIGKILLed (exit 137) without an OOMKilled reason. With a memory limit set and no liveness, eviction or preemption events, the usual cause is the kernel OOM killer; some runtimes then report reason Error. Compare memory use with the limit (`top`) to confirm.",
+            )
+        };
+        let mut f = Finding::new("pod.oom.container", Severity::Critical, confidence, title)
+            .explain(explanation)
+            .evidence(
+                Source::Status,
+                format!("lastState.terminated {}", describe_termination(t, ev.now)),
+            )
             .evidence(Source::Status, format!("restartCount={}", st.restart_count))
             .docs(docs::MEMORY);
         let mut fix = String::new();
@@ -98,6 +125,21 @@ pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
                 ),
         );
     }
+}
+
+/// Whether a termination is an OOM kill: `Some(true)` when the runtime says `OOMKilled`,
+/// `Some(false)` when inferred (exit 137 under a memory limit, with no probe kill, eviction or
+/// preemption to explain the SIGKILL), `None` otherwise.
+pub fn oom_kind(ev: &PodEvidence, c: &Container, t: &ContainerStateTerminated) -> Option<bool> {
+    if t.reason.as_deref() == Some("OOMKilled") {
+        return Some(true);
+    }
+    let other_kill = probe_killed(&ev.events, &c.name)
+        || events_with(&ev.events, &["Evicted", "Preempting", "Preempted"])
+            .next()
+            .is_some()
+        || ev.pod.status.as_ref().and_then(|s| s.reason.as_deref()) == Some("Evicted");
+    (t.exit_code == 137 && memory_limit(c).is_some() && !other_kill).then_some(false)
 }
 
 /// Memory limit of a container in bytes.
@@ -162,6 +204,43 @@ mod tests {
                 .contains("-Xmx256m in env JAVA_OPTS exceeds the 128Mi limit")
         }));
         assert!(f.fix.contains("MaxRAMPercentage"));
+    }
+
+    #[test]
+    fn exit_137_under_a_memory_limit_is_an_inferred_oom_kill() {
+        let ev = pod_fixture("pods/oom-exit137-reason-error.yaml");
+        let mut out = Vec::new();
+        check(&ev, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "pod.oom.container");
+        assert_eq!(out[0].confidence, Confidence::Medium);
+        assert!(
+            out[0].title.contains("most likely OOM-killed"),
+            "{}",
+            out[0].title
+        );
+        // ...and it outranks the generic SIGKILL finding in the full engine.
+        let all = crate::diagnose_pod(&ev);
+        assert_eq!(all[0].id, "pod.oom.container");
+        assert!(all.iter().all(|f| f.id != "pod.crashloop.sigkill"));
+    }
+
+    #[test]
+    fn exit_137_without_a_limit_or_after_eviction_is_not_inferred_oom() {
+        let mut no_limit = pod_fixture("pods/oom-exit137-reason-error.yaml");
+        no_limit.pod.spec.as_mut().unwrap().containers[0].resources = None;
+        assert_eq!(
+            crate::diagnose_pod(&no_limit)[0].id,
+            "pod.crashloop.sigkill"
+        );
+
+        let mut evicted = pod_fixture("pods/oom-exit137-reason-error.yaml");
+        let mut e = evicted.events[0].clone();
+        e.reason = Some("Evicted".into());
+        evicted.events.push(e);
+        let mut out = Vec::new();
+        check(&evicted, &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]

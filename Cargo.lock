@@ -1058,7 +1058,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-core"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "globset",
  "jiff",
@@ -1077,7 +1077,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-diagnose"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "jiff",
  "k8s-mcp-core",
@@ -1090,7 +1090,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-server"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1113,7 +1113,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-testkit"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "http",
  "jiff",
@@ -1128,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-tools"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "http",
  "insta",
@@ -2790,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "anyhow",
  "serde",

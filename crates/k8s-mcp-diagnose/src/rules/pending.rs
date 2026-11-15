@@ -211,7 +211,7 @@ fn cause(ev: &PodEvidence, id: &str, short: &BTreeSet<&str>) -> Finding {
             base(
                 "the pod waits for a PersistentVolumeClaim that is not bound".into(),
                 "The pod uses a PVC that has no volume yet (or does not exist), and the scheduler will not place a pod whose immediate-binding claims are unbound.",
-                "Check the PVC: its StorageClass must exist and have a working provisioner (look at the PVC's events), or a matching PV must exist for static provisioning. A dedicated diagnose_pvc tool arrives in v0.2.",
+                "Check the PVC with diagnose_pvc: its StorageClass must exist and have a working provisioner, or a matching PV must exist for static provisioning.",
             ),
         ),
         _ => {
@@ -462,10 +462,17 @@ fn claims(ev: &PodEvidence, mut f: Finding) -> Finding {
                 .as_ref()
                 .and_then(|s| s.storage_class_name.as_deref())
                 .unwrap_or("(default)");
-            f = f.evidence(
-                Source::Related,
-                format!("PVC {name} phase={phase} storageClassName={class}"),
-            );
+            f = f
+                .evidence(
+                    Source::Related,
+                    format!("PVC {name} phase={phase} storageClassName={class}"),
+                )
+                .next(
+                    "diagnose_pvc",
+                    json!({"name": name, "namespace": ns}),
+                    &format!("root-cause PVC {name}"),
+                );
+            continue;
         } else if ev.refs.iter().any(|r| {
             r.kind == RefKind::PersistentVolumeClaim && r.name == name && r.exists == Some(false)
         }) {

@@ -13,8 +13,8 @@ use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_caus
 use k8s_mcp_core::text::{dedup_lines, is_marker_line, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
-    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, ServiceEvidence, Unavailable,
-    Workload, WorkloadEvidence,
+    ContainerLog, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind, ServiceEvidence,
+    Unavailable, Workload, WorkloadEvidence,
 };
 use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet};
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
@@ -23,6 +23,7 @@ use k8s_openapi::api::core::v1::{
     ConfigMap, Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, Secret, Service,
     ServiceAccount,
 };
+use k8s_openapi::api::storage::v1::StorageClass;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Resource;
 use kube::api::{Api, ListParams, LogParams};
@@ -36,6 +37,7 @@ use crate::common::{
 };
 use crate::read::{add_notes, events_section};
 use crate::rows::{node_row, pod_row, pod_status, unhealthy};
+use crate::storage::uses_claim;
 use crate::{Ctx, Envelope};
 
 /// Max referenced objects checked per pod.
@@ -979,7 +981,7 @@ pub async fn diagnose_node(ctx: &Ctx, input: DiagnoseNodeInput) -> Result<Envelo
 // find_problems
 
 /// What `find_problems` can scan (its `kinds` values), all by default.
-const KINDS: &[&str] = &["pods", "workloads", "nodes", "services"];
+const KINDS: &[&str] = &["pods", "workloads", "nodes", "services", "pvcs"];
 
 /// Inputs for `find_problems`.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -989,7 +991,7 @@ pub struct FindProblemsInput {
     pub namespace: Option<String>,
     /// Scan all allowed namespaces (default true unless `namespace` is set).
     pub all_namespaces: Option<bool>,
-    /// What to scan: any of `pods`, `workloads`, `nodes`, `services` (default all).
+    /// What to scan: any of `pods`, `workloads`, `nodes`, `services`, `pvcs` (default all).
     pub kinds: Option<Vec<String>>,
     /// Lowest severity to report (default `medium`).
     pub min_severity: Option<Severity>,
@@ -1173,6 +1175,25 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             );
         }
     }
+    // Service selectors and PVC consumers need the pods: reuse the pod scan when there was one.
+    let extra_pods = if (want("services") || want("pvcs")) && listed_pods.is_none() {
+        soft(
+            list_scoped::<Pod>(ctx, &sc, &ListParams::default(), "pods", &mut un).await,
+            "pods (for Services and PVCs)",
+            &mut un,
+        )
+    } else {
+        None
+    };
+    let all_pods = listed_pods.as_ref().or(extra_pods.as_ref());
+    let pods_in = |ns: &str| -> Option<Vec<Pod>> {
+        all_pods.map(|all| {
+            all.iter()
+                .filter(|p| p.metadata.namespace.as_deref() == Some(ns))
+                .cloned()
+                .collect()
+        })
+    };
     if want("services")
         && let Some(services) = soft(
             list_scoped::<Service>(ctx, &sc, &ListParams::default(), "services", &mut un).await,
@@ -1181,15 +1202,6 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
         )
     {
         scanned.push(format!("{} services", services.len()));
-        // Selector checks need the pods; reuse the pod scan when there was one.
-        let pods = match listed_pods.take() {
-            Some(p) => Some(p),
-            None => soft(
-                list_scoped::<Pod>(ctx, &sc, &ListParams::default(), "pods", &mut un).await,
-                "pods (for Service selectors)",
-                &mut un,
-            ),
-        };
         for svc in services {
             let (name, ns) = (
                 svc.metadata.name.clone().unwrap_or_default(),
@@ -1197,12 +1209,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             );
             let ev = ServiceEvidence {
                 service: svc,
-                pods: pods.as_ref().map(|all| {
-                    all.iter()
-                        .filter(|p| p.metadata.namespace.as_deref() == Some(ns.as_str()))
-                        .cloned()
-                        .collect()
-                }),
+                pods: pods_in(&ns),
                 events: events_about("Service", &ns, &|n| n == name),
                 now,
                 ..ServiceEvidence::default()
@@ -1213,8 +1220,59 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                     .map(|f| f.object(ObjectRef::new("Service", Some(&ns), &name))),
             );
         }
-        if want("pods") {
-            listed_pods = pods;
+    }
+    if want("pvcs")
+        && let Some(pvcs) = soft(
+            list_scoped::<PersistentVolumeClaim>(
+                ctx,
+                &sc,
+                &ListParams::default(),
+                "persistentvolumeclaims",
+                &mut un,
+            )
+            .await,
+            "PVCs",
+            &mut un,
+        )
+    {
+        scanned.push(format!("{} PVCs", pvcs.len()));
+        let storage_classes = soft(
+            Api::<StorageClass>::all(sc.target.client.clone())
+                .list(&ListParams::default())
+                .await
+                .map(|l| l.items)
+                .map_err(|e| Error::kube("list storageclasses", &e)),
+            "StorageClasses",
+            &mut un,
+        );
+        for pvc in pvcs {
+            let (name, ns) = (
+                pvc.metadata.name.clone().unwrap_or_default(),
+                pvc.metadata.namespace.clone().unwrap_or_default(),
+            );
+            let pods: Vec<Pod> = pods_in(&ns)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| uses_claim(p, &name))
+                .collect();
+            let pod_names: Vec<String> = pods
+                .iter()
+                .filter_map(|p| p.metadata.name.clone())
+                .collect();
+            let ev = PvcEvidence {
+                pvc,
+                storage_classes: storage_classes.clone(),
+                events: events_about("PersistentVolumeClaim", &ns, &|n| n == name),
+                pod_events: events_about("Pod", &ns, &|n| pod_names.iter().any(|p| p == n)),
+                pods,
+                now,
+                ..PvcEvidence::default()
+            };
+            findings.extend(
+                k8s_mcp_diagnose::diagnose_pvc(&ev)
+                    .into_iter()
+                    .map(|f| f.object(ObjectRef::new("PersistentVolumeClaim", Some(&ns), &name))),
+            );
         }
     }
     findings.retain(|f| f.severity <= min);
@@ -1232,6 +1290,10 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                 "Node" => ("diagnose_node", json!({"name": o.name})),
                 "Service" => (
                     "diagnose_service",
+                    json!({"name": o.name, "namespace": o.namespace}),
+                ),
+                "PersistentVolumeClaim" => (
+                    "diagnose_pvc",
                     json!({"name": o.name, "namespace": o.namespace}),
                 ),
                 k => (

@@ -164,14 +164,24 @@ Why can't traffic reach a Service? Checks the selector against pod labels (with 
 | `name` **(required)** | string | Service name. |
 | `namespace` | string | Namespace (default: the context's namespace). |
 
+### `diagnose_pvc`
+
+Why is storage stuck? For a PersistentVolumeClaim: phase, StorageClass (exists, default, provisioner, volumeBindingMode), provisioning events, WaitForFirstConsumer, the bound PV, and attach/mount failures of the pods using it (Multi-Attach, attach limits).
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `name` **(required)** | string | PersistentVolumeClaim name. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+
 ### `find_problems`
 
-Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes and Services. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.
+Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.
 
 | Input | Type | Description |
 |---|---|---|
 | `all_namespaces` | boolean | Scan all allowed namespaces (default true unless `namespace` is set). |
 | `context` | string | Kubeconfig context. |
-| `kinds` | array | What to scan: any of `pods`, `workloads`, `nodes`, `services` (default all). |
+| `kinds` | array | What to scan: any of `pods`, `workloads`, `nodes`, `services`, `pvcs` (default all). |
 | `min_severity` | enum | Lowest severity to report (default `medium`). |
 | `namespace` | string | Limit the scan to one namespace. |

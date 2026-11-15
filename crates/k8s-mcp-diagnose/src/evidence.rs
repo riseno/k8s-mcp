@@ -9,8 +9,10 @@ use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet}
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::api::core::v1::{
-    Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, Service, ServiceAccount,
+    Event, Node, PersistentVolume, PersistentVolumeClaim, Pod, ResourceQuota, Service,
+    ServiceAccount,
 };
+use k8s_openapi::api::storage::v1::StorageClass;
 
 /// A piece of evidence that could not be gathered, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,6 +160,27 @@ pub struct ServiceEvidence {
     pub pods: Option<Vec<Pod>>,
     /// Events whose involvedObject is the Service (last hour).
     pub events: Vec<Event>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}
+
+/// Everything `diagnose_pvc` knows about one PersistentVolumeClaim.
+#[derive(Debug, Clone, Default)]
+pub struct PvcEvidence {
+    /// The claim.
+    pub pvc: PersistentVolumeClaim,
+    /// All StorageClasses (to find the named or default one); `None` if unreadable.
+    pub storage_classes: Option<Vec<StorageClass>>,
+    /// The bound PersistentVolume, if any and readable.
+    pub pv: Option<PersistentVolume>,
+    /// Events whose involvedObject is the claim (last hour).
+    pub events: Vec<Event>,
+    /// Pods in the namespace that mount the claim.
+    pub pods: Vec<Pod>,
+    /// Events of those pods (attach, mount and scheduling failures).
+    pub pod_events: Vec<Event>,
     /// Evidence that could not be gathered.
     pub unavailable: Vec<Unavailable>,
     /// Current time.

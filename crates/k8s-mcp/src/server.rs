@@ -108,8 +108,11 @@ tools! {
     "diagnose_service", "diagnose", t::DiagnoseServiceInput,
         "Why can't traffic reach a Service? Checks the selector against pod labels (with the exact label diff), Ready endpoints, port/targetPort against container ports (by number and name) and LoadBalancer provisioning. Returns the port mapping table and matching pods.",
         |c, i| t::diagnose_service(c, i).await;
+    "diagnose_pvc", "diagnose", t::DiagnosePvcInput,
+        "Why is storage stuck? For a PersistentVolumeClaim: phase, StorageClass (exists, default, provisioner, volumeBindingMode), provisioning events, WaitForFirstConsumer, the bound PV, and attach/mount failures of the pods using it (Multi-Attach, attach limits).",
+        |c, i| t::diagnose_pvc(c, i).await;
     "find_problems", "diagnose", t::FindProblemsInput,
-        "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes and Services. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
+        "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
         |c, i| t::find_problems(c, i).await;
 }
 

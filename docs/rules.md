@@ -65,6 +65,11 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 | `pod.probe.startup_too_short` | The app needs longer to start than its probes allow | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
 | `pod.probe.timeout_too_low` | Probe times out because timeoutSeconds is too low | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
 | `pod.terminating.stuck` | Pod is stuck terminating long past its grace period | [link](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/) |
+| `pvc.attach.limit` | Nodes have reached their volume attach limit | [link](https://kubernetes.io/docs/concepts/storage/storage-limits/) |
+| `pvc.attach.multi_attach` | The volume is still attached to another node (Multi-Attach) | [link](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) |
+| `pvc.pending.no_storageclass` | The claim's StorageClass does not exist (or there is no default) | [link](https://kubernetes.io/docs/concepts/storage/storage-classes/) |
+| `pvc.pending.provisioning_failed` | The provisioner failed (or never tried) to create the volume | [link](https://kubernetes.io/docs/concepts/storage/dynamic-provisioning/) |
+| `pvc.pending.wffc_waiting` | The claim waits for a pod to be scheduled (WaitForFirstConsumer) | [link](https://kubernetes.io/docs/concepts/storage/storage-classes/) |
 | `svc.lb_pending` | The LoadBalancer Service has no external address | [link](https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer) |
 | `svc.no_matching_pods` | The Service selector matches no pods | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
 | `svc.no_ready_endpoints` | None of the Service's pods are Ready, so it has no endpoints | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |

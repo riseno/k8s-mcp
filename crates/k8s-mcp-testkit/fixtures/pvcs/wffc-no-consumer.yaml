@@ -1,0 +1,25 @@
+# WaitForFirstConsumer and no pod uses the claim yet: normal.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: cache, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 10Gi}}
+  storageClassName: local-path
+status: {phase: Pending}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: {name: local-path, annotations: {storageclass.kubernetes.io/is-default-class: "true"}}
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: Event
+metadata: {name: cache.1, namespace: shop}
+involvedObject: {kind: PersistentVolumeClaim, name: cache, namespace: shop}
+type: Normal
+reason: WaitForFirstConsumer
+message: 'waiting for first consumer to be created before binding'
+count: 3
+lastTimestamp: "2026-11-14T11:58:00Z"

@@ -18,6 +18,7 @@ pub mod node;
 pub mod oom;
 pub mod pending;
 pub mod probe;
+pub mod pvc;
 pub mod rollout;
 pub mod service;
 pub mod terminating;
@@ -63,6 +64,13 @@ pub mod docs {
         "https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/";
     /// Persistent volumes.
     pub const PV: &str = "https://kubernetes.io/docs/concepts/storage/persistent-volumes/";
+    /// StorageClasses.
+    pub const STORAGE_CLASS: &str = "https://kubernetes.io/docs/concepts/storage/storage-classes/";
+    /// Dynamic provisioning.
+    pub const DYNAMIC_PROVISIONING: &str =
+        "https://kubernetes.io/docs/concepts/storage/dynamic-provisioning/";
+    /// Per-node volume limits.
+    pub const VOLUME_LIMITS: &str = "https://kubernetes.io/docs/concepts/storage/storage-limits/";
     /// Resource quotas.
     pub const QUOTA: &str = "https://kubernetes.io/docs/concepts/policy/resource-quotas/";
     /// ConfigMaps.

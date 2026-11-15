@@ -9,8 +9,8 @@ use k8s_mcp_core::policy::{Policy, RedactLevel};
 use k8s_mcp_testkit::mock::{MockApi, status, with_discovery};
 use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
-    Ctx, DiagnosePodInput, DiagnoseServiceInput, DiagnoseWorkloadInput, FindProblemsInput,
-    GetLogsInput, GetResourceInput, ListEventsInput, ListResourcesInput,
+    Ctx, DiagnosePodInput, DiagnosePvcInput, DiagnoseServiceInput, DiagnoseWorkloadInput,
+    FindProblemsInput, GetLogsInput, GetResourceInput, ListEventsInput, ListResourcesInput,
 };
 use serde_json::{Value, json};
 
@@ -1077,4 +1077,79 @@ async fn find_problems_reports_services_that_select_no_pods() {
     assert_eq!(f.id, "svc.no_matching_pods");
     assert_eq!(f.object.as_ref().unwrap().kind, "Service");
     assert_eq!(f.next[0].tool, "diagnose_service");
+}
+
+fn pvc_and_class() -> (Value, Value) {
+    (
+        json!({"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+            "metadata": {"name": "data", "namespace": "shop", "creationTimestamp": "2026-11-14T11:40:00Z"},
+            "spec": {"storageClassName": "fast-ssd", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+            "status": {"phase": "Pending"}}),
+        json!({"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass",
+            "metadata": {"name": "standard", "annotations": {"storageclass.kubernetes.io/is-default-class": "true"}},
+            "provisioner": "rancher.io/local-path", "volumeBindingMode": "WaitForFirstConsumer"}),
+    )
+}
+
+fn pod_using_data() -> Value {
+    let mut p = pod("shop", "db-0", "Pending", None, 0);
+    p["spec"]["volumes"] =
+        json!([{"name": "data", "persistentVolumeClaim": {"claimName": "data"}}]);
+    p
+}
+
+#[tokio::test]
+async fn diagnose_pvc_names_the_missing_storage_class_and_its_consumers() {
+    let (pvc, class) = pvc_and_class();
+    let other = pod("shop", "web-1", "Running", None, 0);
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/persistentvolumeclaims/data", pvc)
+        .list("/apis/storage.k8s.io/v1/storageclasses", vec![class])
+        .list(
+            "/api/v1/namespaces/shop/pods",
+            vec![pod_using_data(), other],
+        )
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input = DiagnosePvcInput {
+        name: "data".into(),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_pvc(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "PVC data (shop): Pending, StorageClass fast-ssd (not found), 10Gi ReadWriteOnce, used by 1 pod(s). Top finding: PVC data names StorageClass \"fast-ssd\", which does not exist."
+    );
+    assert_eq!(env.items[0]["used_by"], "db-0");
+    assert_eq!(env.sections[0].lines, ["db-0  Pending  node=node-1"]);
+}
+
+/// ADR 0008: find_problems scans PVCs and points at diagnose_pvc.
+#[tokio::test]
+async fn find_problems_reports_pvcs_with_a_missing_storage_class() {
+    let (pvc, class) = pvc_and_class();
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .list("/api/v1/namespaces/shop/pods", vec![pod_using_data()])
+        .list("/api/v1/namespaces/shop/persistentvolumeclaims", vec![pvc])
+        .list("/apis/storage.k8s.io/v1/storageclasses", vec![class])
+        .start();
+    let input = FindProblemsInput {
+        namespace: Some("shop".into()),
+        kinds: Some(vec!["pvcs".into()]),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::find_problems(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let f = &env.findings[0];
+    assert_eq!(f.id, "pvc.pending.no_storageclass");
+    assert_eq!(
+        f.severity,
+        k8s_mcp_core::finding::Severity::Critical,
+        "a pod waits on it"
+    );
+    assert_eq!(f.next[0].tool, "diagnose_pvc");
 }

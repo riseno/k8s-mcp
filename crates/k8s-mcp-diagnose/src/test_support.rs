@@ -35,6 +35,9 @@
 //! A Service fixture (`services/`) holds one Service, the Pods of its namespace and the
 //! Service's Events.
 //!
+//! A PVC fixture (`pvcs/`) holds one PersistentVolumeClaim, the cluster's StorageClasses, an
+//! optional PersistentVolume, the Pods that use the claim and Events about either.
+//!
 //! A node fixture (`nodes/`) holds one Node plus any Events, Pods (all taken as running on
 //! the node; with no Pod documents `pods` is `None`, i.e. unreadable), `Unavailable`, and
 //! this pseudo-kind for the API server version:
@@ -50,8 +53,8 @@ use k8s_openapi::api::core::v1::{Event, Node, Pod};
 use serde_json::Value;
 
 use crate::evidence::{
-    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, ServiceEvidence, Unavailable,
-    Workload, WorkloadEvidence,
+    ContainerLog, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind, ServiceEvidence,
+    Unavailable, Workload, WorkloadEvidence,
 };
 
 /// Load a pod fixture into a [`PodEvidence`].
@@ -193,6 +196,30 @@ pub fn service_fixture(name: &str) -> ServiceEvidence {
         service: fx.one("Service"),
         pods: Some(fx.all("Pod")),
         events: fx.all("Event"),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load a PVC fixture (`pvcs/`): one PersistentVolumeClaim, the StorageClasses, an optional
+/// PersistentVolume, the Pods using the claim, and Events (about the claim, or about a Pod).
+pub fn pvc_fixture(name: &str) -> PvcEvidence {
+    let fx = load(name);
+    let events: Vec<Event> = fx.all("Event");
+    let about = |kind: &str| {
+        events
+            .iter()
+            .filter(|e| e.involved_object.kind.as_deref() == Some(kind))
+            .cloned()
+            .collect()
+    };
+    PvcEvidence {
+        pvc: fx.one("PersistentVolumeClaim"),
+        storage_classes: Some(fx.all("StorageClass")),
+        pv: fx.first("PersistentVolume"),
+        events: about("PersistentVolumeClaim"),
+        pods: fx.all("Pod"),
+        pod_events: about("Pod"),
         unavailable: unavailable(&fx),
         now: now(),
     }

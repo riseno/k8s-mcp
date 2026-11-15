@@ -1,0 +1,15 @@
+# No storageClassName and no default class.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: scratch, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 10Gi}}
+
+status: {phase: Pending}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: {name: manual}
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer

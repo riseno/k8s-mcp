@@ -10,7 +10,12 @@ All notable changes are documented here. The format follows
   (with the exact label diff against the closest pods), `svc.target_port_mismatch` (named
   targetPorts are definitive; numeric ones are medium confidence), `svc.no_ready_endpoints`
   and `svc.lb_pending`. Returns the port mapping table and the matching pods.
-- `find_problems` scans Services (`kinds: services`, on by default; ADR 0008).
+- `diagnose_pvc`: why storage is stuck. Rules `pvc.pending.no_storageclass` (named class
+  missing, or no default), `pvc.pending.provisioning_failed` (provisioner errors, or an
+  external provisioner silent for 5 minutes), `pvc.pending.wffc_waiting` (info with no pod,
+  medium when the pod is Pending), `pvc.attach.multi_attach` and `pvc.attach.limit`. Returns
+  the claim, the pods using it and their events. `pod.pending.pvc_unbound` now suggests it.
+- `find_problems` scans Services and PVCs (`kinds: services, pvcs`, on by default; ADR 0008).
 - Eval scenarios 15 (Service selector mismatch) and 16 (targetPort mismatch).
 
 ## [0.1.4] - 2026-11-15

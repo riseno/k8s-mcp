@@ -1,0 +1,9 @@
+id: bad-image-tag
+symptom: My pod web in namespace eval-bad-image-tag never starts. What is wrong?
+tool: diagnose_pod
+args: {name: web, namespace: eval-bad-image-tag}
+settle_seconds: 45
+expected:
+  primary: pod.image.not_found
+  acceptable: []
+forbidden: [pod.image.auth, pod.image.network, pod.image.invalid_name]

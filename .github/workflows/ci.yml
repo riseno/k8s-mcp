@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Not yet here (nothing to check): per-provider feature builds (v0.2) and the mdBook docs build.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install # reads rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+      - name: Lite build
+        run: cargo build -p k8s-mcp-server --no-default-features
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2,cargo-audit@0.23.0
+      - run: cargo deny --locked check # also bans OpenSSL and aws-lc (ADR 0001)
+      - run: cargo audit
+
+  musl:
+    runs-on: ubuntu-latest
+    container: ghcr.io/rust-cross/cargo-zigbuild:0.24.1
+    env:
+      BIN: target/x86_64-unknown-linux-musl/release/k8s-mcp
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo zigbuild --locked --release -p k8s-mcp-server --target x86_64-unknown-linux-musl
+      - name: Assert static linking
+        run: |
+          file "$BIN" | tee /dev/stderr | grep -q 'statically linked'
+          ldd "$BIN" 2>&1 | tee /dev/stderr | grep -q 'not a dynamic executable'
+      - name: Binary size
+        run: |
+          echo "k8s-mcp x86_64-unknown-linux-musl (stripped): $(stat -c %s "$BIN") bytes" | tee -a "$GITHUB_STEP_SUMMARY"

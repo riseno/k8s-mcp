@@ -1,0 +1,79 @@
+name: publish-container
+
+# Called by release.yml (dist `publish-jobs`) after the GitHub Release exists. Builds the
+# multi-arch image from the release's musl binaries, pushes it to ghcr.io, signs it with
+# cosign keyless (GitHub OIDC), attests its provenance, and attaches SPDX SBOMs and a signed
+# checksum bundle to the release.
+# TODO(v0.2): package the Helm chart and push it to oci://ghcr.io/OWNER/charts.
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: write # gh release upload
+  packages: write # push to ghcr.io
+  id-token: write # cosign keyless and attestations
+  attestations: write
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-*
+          path: target/distrib
+          merge-multiple: true
+      - name: Unpack the musl binaries per platform
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/k8s-mcp" >> "$GITHUB_ENV"
+          for p in amd64:x86_64 arm64:aarch64; do
+            dir="target/docker/linux/${p%%:*}"
+            mkdir -p "$dir"
+            tar xJf "target/distrib/k8s-mcp-server-${p#*:}-unknown-linux-musl.tar.xz" --strip-components 1 -C "$dir"
+          done
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: target/docker
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:latest
+      - uses: sigstore/cosign-installer@v4.1.3
+      - name: Sign the image and the release checksums
+        run: |
+          cosign sign --yes "$IMAGE@${{ steps.build.outputs.digest }}"
+          cosign sign-blob --yes --bundle target/distrib/sha256.sum.sigstore.json target/distrib/sha256.sum
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - uses: anchore/sbom-action@v0.24.3
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: target/k8s-mcp-image.spdx.json
+          upload-artifact: false
+      - uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: target/k8s-mcp-crates.spdx.json
+          upload-artifact: false
+      - name: Attach SBOMs and the checksum signature to the release
+        run: gh release upload "$TAG" target/k8s-mcp-image.spdx.json target/k8s-mcp-crates.spdx.json target/distrib/sha256.sum.sigstore.json

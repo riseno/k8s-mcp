@@ -1,0 +1,37 @@
+[graph]
+# The release targets (PROPOSAL §14); platform-only crates for other targets are ignored.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+all-features = true
+
+[licenses]
+# Only what the current tree needs; anything new fails until reviewed here.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "ISC",                            # ring, untrusted, rustls-webpki
+    "BSD-3-Clause",                   # subtle, encoding_rs
+    "Unicode-3.0",                    # unicode-ident (Unicode data tables)
+    "Apache-2.0 WITH LLVM-exception", # ar_archive_writer (build-time only); the exception only adds permissions
+]
+
+[licenses.private]
+# Unpublished workspace crates (xtask, testkit) need no licence check.
+ignore = true
+
+[bans]
+deny = [
+    { crate = "openssl", reason = "ADR 0001: rustls only, no OpenSSL" },
+    { crate = "openssl-sys", reason = "ADR 0001: rustls only, no OpenSSL" },
+    { crate = "aws-lc-rs", reason = "ADR 0001: ring is the only rustls crypto provider" },
+    { crate = "aws-lc-sys", reason = "ADR 0001: ring is the only rustls crypto provider" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

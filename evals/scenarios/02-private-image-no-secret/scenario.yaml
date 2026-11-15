@@ -1,0 +1,9 @@
+id: private-image-no-secret
+symptom: The api pod in eval-private-image-no-secret is stuck and never pulls its image. Why?
+tool: diagnose_pod
+args: {name: api, namespace: eval-private-image-no-secret}
+settle_seconds: 45
+expected:
+  primary: pod.image.auth
+  acceptable: [pod.image.not_found]
+forbidden: [pod.image.network, pod.image.rate_limited, pod.image.invalid_name]

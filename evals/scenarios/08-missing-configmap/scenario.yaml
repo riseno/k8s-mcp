@@ -1,0 +1,9 @@
+id: missing-configmap
+symptom: The billing pod in eval-missing-configmap is stuck and its container never starts. What is missing?
+tool: diagnose_pod
+args: {name: billing, namespace: eval-missing-configmap}
+settle_seconds: 30
+expected:
+  primary: pod.config.missing_configmap
+  acceptable: []
+forbidden: [pod.config.missing_key, pod.config.missing_secret]

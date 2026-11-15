@@ -1,0 +1,9 @@
+id: liveness-wrong-port
+symptom: The frontend deployment in eval-liveness-wrong-port keeps restarting but nginx logs look clean. Why?
+tool: diagnose_workload
+args: {kind: Deployment, name: frontend, namespace: eval-liveness-wrong-port}
+settle_seconds: 90
+expected:
+  primary: pod.probe.port_mismatch
+  acceptable: [pod.probe.liveness_failing]
+forbidden: [pod.crashloop.exit_zero, pod.crashloop.sigterm, pod.crashloop.app_error]

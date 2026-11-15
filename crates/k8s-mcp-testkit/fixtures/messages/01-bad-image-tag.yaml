@@ -1,0 +1,303 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/01-bad-image-tag. Synthetic test workloads, no real credentials.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"name":"web","namespace":"eval-bad-image-tag"},"spec":{"containers":[{"image":"nginx:doesnotexist","name":"web"}]}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "2237"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+spec:
+  containers:
+  - image: nginx:doesnotexist
+    imagePullPolicy: IfNotPresent
+    name: web
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-gtktn
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-gtktn
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: 'containers with unready status: [web]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    message: 'containers with unready status: [web]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - image: nginx:doesnotexist
+    imageID: ""
+    lastState: {}
+    name: web
+    ready: false
+    restartCount: 0
+    started: false
+    state:
+      waiting:
+        message: 'Back-off pulling image "nginx:doesnotexist": ErrImagePull: rpc error:
+          code = NotFound desc = failed to pull and unpack image "docker.io/library/nginx:doesnotexist":
+          failed to resolve reference "docker.io/library/nginx:doesnotexist": docker.io/library/nginx:doesnotexist:
+          not found'
+        reason: ImagePullBackOff
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-gtktn
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Pending
+  podIP: 10.244.0.8
+  podIPs:
+  - ip: 10.244.0.8
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "831"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-bad-image-tag/web to k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: web.18e80d804a90eef1
+  namespace: eval-bad-image-tag
+  resourceVersion: "834"
+  uid: 5864723a-e083-492f-b13d-adb1539c68de
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 5
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "832"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+kind: Event
+lastTimestamp: "2026-11-14T23:37:54Z"
+message: Pulling image "nginx:doesnotexist"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: web.18e80d8060aa415b
+  namespace: eval-bad-image-tag
+  resourceVersion: "1766"
+  uid: fad06b40-801f-4685-8ede-9cf52489fe78
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 5
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "832"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+kind: Event
+lastTimestamp: "2026-11-14T23:37:55Z"
+message: 'Failed to pull image "nginx:doesnotexist": rpc error: code = NotFound desc
+  = failed to pull and unpack image "docker.io/library/nginx:doesnotexist": failed
+  to resolve reference "docker.io/library/nginx:doesnotexist": docker.io/library/nginx:doesnotexist:
+  not found'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web.18e80d808511ff09
+  namespace: eval-bad-image-tag
+  resourceVersion: "1770"
+  uid: f7913808-ed1e-4e32-b472-ef9569b0a9cf
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 5
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "832"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+kind: Event
+lastTimestamp: "2026-11-14T23:37:55Z"
+message: 'Error: ErrImagePull'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web.18e80d8085134d82
+  namespace: eval-bad-image-tag
+  resourceVersion: "1771"
+  uid: 0e1f8bde-3cb8-4c3c-822b-0e8d43ecd1ad
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 21
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "832"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+kind: Event
+lastTimestamp: "2026-11-14T23:40:05Z"
+message: Back-off pulling image "nginx:doesnotexist"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web.18e80d80ad38aa8e
+  namespace: eval-bad-image-tag
+  resourceVersion: "2088"
+  uid: 06d137e7-8604-4b9f-a43a-908fd5c2ef5b
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 21
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:57Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{web}
+  kind: Pod
+  name: web
+  namespace: eval-bad-image-tag
+  resourceVersion: "832"
+  uid: 4d041946-2a47-42e2-90ab-fa89fa07f5d4
+kind: Event
+lastTimestamp: "2026-11-14T23:40:05Z"
+message: 'Error: ImagePullBackOff'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:57Z"
+  name: web.18e80d80ad396ffc
+  namespace: eval-bad-image-tag
+  resourceVersion: "2089"
+  uid: 478e4e35-461b-4e90-accf-43a44f9aa64a
+reason: Failed
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning

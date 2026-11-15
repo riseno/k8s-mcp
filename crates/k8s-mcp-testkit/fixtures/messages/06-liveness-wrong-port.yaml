@@ -1,0 +1,751 @@
+# Real objects observed on kind v0.33.0 (kindest/node v1.37.0, containerd)
+# from evals/scenarios/06-liveness-wrong-port. Synthetic test workloads, no real credentials.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"name":"frontend","namespace":"eval-liveness-wrong-port"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"frontend"}},"template":{"metadata":{"labels":{"app":"frontend"}},"spec":{"containers":[{"image":"nginx:1.31-alpine","livenessProbe":{"failureThreshold":2,"httpGet":{"path":"/","port":8080},"periodSeconds":2},"name":"frontend","ports":[{"containerPort":80}]}]}}}}
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  name: frontend
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "2223"
+  uid: 803ed450-d6cb-4a06-b868-296adaa8b586
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - image: nginx:1.31-alpine
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 2
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 2
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: frontend
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  conditions:
+  - lastTransitionTime: "2026-11-14T23:34:56Z"
+    lastUpdateTime: "2026-11-14T23:35:06Z"
+    message: ReplicaSet "frontend-cd4496b67" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  - lastTransitionTime: "2026-11-14T23:41:01Z"
+    lastUpdateTime: "2026-11-14T23:41:01Z"
+    message: Deployment does not have minimum availability.
+    reason: MinimumReplicasUnavailable
+    status: "False"
+    type: Available
+  observedGeneration: 1
+  replicas: 1
+  terminatingReplicas: 0
+  unavailableReplicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/desired-replicas: "1"
+    deployment.kubernetes.io/max-replicas: "2"
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generation: 1
+  labels:
+    app: frontend
+    pod-template-hash: cd4496b67
+  name: frontend-cd4496b67
+  namespace: eval-liveness-wrong-port
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: frontend
+    uid: 803ed450-d6cb-4a06-b868-296adaa8b586
+  resourceVersion: "2222"
+  uid: 6d630996-8bde-454c-9b8b-a8030835205f
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+      pod-template-hash: cd4496b67
+  template:
+    metadata:
+      labels:
+        app: frontend
+        pod-template-hash: cd4496b67
+    spec:
+      containers:
+      - image: nginx:1.31-alpine
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 2
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 2
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: frontend
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  replicas: 1
+  terminatingReplicas: 0
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  generateName: frontend-cd4496b67-
+  generation: 1
+  labels:
+    app: frontend
+    pod-template-hash: cd4496b67
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: frontend-cd4496b67
+    uid: 6d630996-8bde-454c-9b8b-a8030835205f
+  resourceVersion: "2221"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+spec:
+  containers:
+  - image: nginx:1.31-alpine
+    imagePullPolicy: IfNotPresent
+    livenessProbe:
+      failureThreshold: 2
+      httpGet:
+        path: /
+        port: 8080
+        scheme: HTTP
+      periodSeconds: 2
+      successThreshold: 1
+      timeoutSeconds: 1
+    name: frontend
+    ports:
+    - containerPort: 80
+      protocol: TCP
+    resources: {}
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-rgl7w
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: k8s-mcp-dev-control-plane
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-rgl7w
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:41:01Z"
+    message: 'containers with unready status: [frontend]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:41:01Z"
+    message: 'containers with unready status: [frontend]'
+    observedGeneration: 1
+    reason: ContainersNotReady
+    status: "False"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-11-14T23:34:56Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: containerd://0d4cfe67fce9df789a81976c84fc3ecab3fcbe40e5eb24e23c9c78bb6fa65e01
+    image: docker.io/library/nginx:1.31-alpine
+    imageID: docker.io/library/nginx@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
+    lastState:
+      terminated:
+        containerID: containerd://0d4cfe67fce9df789a81976c84fc3ecab3fcbe40e5eb24e23c9c78bb6fa65e01
+        exitCode: 0
+        finishedAt: "2026-11-14T23:41:00Z"
+        reason: Completed
+        startedAt: "2026-11-14T23:40:57Z"
+    name: frontend
+    ready: false
+    resources: {}
+    restartCount: 7
+    started: false
+    state:
+      waiting:
+        message: back-off 5m0s restarting failed container=frontend pod=frontend-cd4496b67-jtqxt_eval-liveness-wrong-port(b6560dfa-30a6-4ac9-b919-7f716deac094)
+        reason: CrashLoopBackOff
+    user:
+      linux:
+        gid: 0
+        supplementalGroups:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 4
+        - 6
+        - 10
+        - 11
+        - 20
+        - 26
+        - 27
+        uid: 0
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-rgl7w
+      readOnly: true
+      recursiveReadOnly: Disabled
+  hostIP: 172.21.0.5
+  hostIPs:
+  - ip: 172.21.0.5
+  observedGeneration: 1
+  phase: Running
+  podIP: 10.244.0.13
+  podIPs:
+  - ip: 10.244.0.13
+  qosClass: BestEffort
+  resources: {}
+  startTime: "2026-11-14T23:34:56Z"
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "894"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Successfully assigned eval-liveness-wrong-port/frontend-cd4496b67-jtqxt to
+  k8s-mcp-dev-control-plane
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: frontend-cd4496b67-jtqxt.18e80d8062b4b53d
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "905"
+  uid: 349f797a-fb40-42ff-9d50-7b3181f56c31
+reason: Scheduled
+reportingComponent: default-scheduler
+reportingInstance: ""
+source:
+  component: default-scheduler
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Pulling image "nginx:1.31-alpine"
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: frontend-cd4496b67-jtqxt.18e80d80792a0c9f
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "962"
+  uid: 8b8962f4-ab34-4cbe-843c-f6ad0ed2f720
+reason: Pulling
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:35:06Z"
+message: 'Successfully pulled image "nginx:1.31-alpine" in 2.608s (9.074s including
+  waiting). Image size: 26294634 bytes.'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: frontend-cd4496b67-jtqxt.18e80d8296103184
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "1094"
+  uid: 462571b0-8b9d-4ca4-b854-5b2275f6f987
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:36:46Z"
+message: Container created
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: frontend-cd4496b67-jtqxt.18e80d82967b8420
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "1579"
+  uid: 317c147c-70f1-4356-a516-a6666dd37a20
+reason: Created
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:36:46Z"
+message: Container started
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: frontend-cd4496b67-jtqxt.18e80d82985ebdb1
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "1580"
+  uid: 2c3029fd-aff4-4330-afa5-61f3626118d4
+reason: Started
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 14
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:06Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:38:12Z"
+message: 'Liveness probe failed: Get "http://10.244.0.13:8080/": dial tcp 10.244.0.13:8080:
+  connect: connection refused'
+metadata:
+  creationTimestamp: "2026-11-14T23:35:06Z"
+  name: frontend-cd4496b67-jtqxt.18e80d82c92f3b18
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "1833"
+  uid: c9f15d33-a4ba-47d9-89b1-9016fc19b92b
+reason: Unhealthy
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 6
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:08Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:36:48Z"
+message: Container frontend failed liveness probe, will be restarted
+metadata:
+  creationTimestamp: "2026-11-14T23:35:08Z"
+  name: frontend-cd4496b67-jtqxt.18e80d834062bab5
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "1589"
+  uid: 4a00126d-c8ab-4b95-9ebb-ae747301ee35
+reason: Killing
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 7
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:08Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:40:57Z"
+message: Container image "nginx:1.31-alpine" already present on machine and can be
+  accessed by the pod
+metadata:
+  creationTimestamp: "2026-11-14T23:35:08Z"
+  name: frontend-cd4496b67-jtqxt.18e80d8343145f89
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "2212"
+  uid: 0b54402c-fcab-43a0-8904-7f0f82afc743
+reason: Pulled
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Normal
+---
+apiVersion: v1
+count: 12
+eventTime: null
+firstTimestamp: "2026-11-14T23:35:16Z"
+involvedObject:
+  apiVersion: v1
+  fieldPath: spec.containers{frontend}
+  kind: Pod
+  name: frontend-cd4496b67-jtqxt
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "900"
+  uid: b6560dfa-30a6-4ac9-b919-7f716deac094
+kind: Event
+lastTimestamp: "2026-11-14T23:40:44Z"
+message: Back-off restarting failed container frontend in pod frontend-cd4496b67-jtqxt_eval-liveness-wrong-port(b6560dfa-30a6-4ac9-b919-7f716deac094)
+metadata:
+  creationTimestamp: "2026-11-14T23:35:16Z"
+  name: frontend-cd4496b67-jtqxt.18e80d85217d7a76
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "2168"
+  uid: b6f2480b-bb75-4060-bd48-9962d744417a
+reason: BackOff
+reportingComponent: kubelet
+reportingInstance: k8s-mcp-dev-control-plane
+source:
+  component: kubelet
+  host: k8s-mcp-dev-control-plane
+type: Warning
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: ReplicaSet
+  name: frontend-cd4496b67
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "877"
+  uid: 6d630996-8bde-454c-9b8b-a8030835205f
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: 'Created pod: frontend-cd4496b67-jtqxt'
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: frontend-cd4496b67.18e80d80627da99b
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "903"
+  uid: 3cd2e16f-78da-4dea-a808-52e1fefffefc
+reason: SuccessfulCreate
+reportingComponent: replicaset-controller
+reportingInstance: ""
+source:
+  component: replicaset-controller
+type: Normal
+---
+apiVersion: v1
+count: 1
+eventTime: null
+firstTimestamp: "2026-11-14T23:34:56Z"
+involvedObject:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: frontend
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "875"
+  uid: 803ed450-d6cb-4a06-b868-296adaa8b586
+kind: Event
+lastTimestamp: "2026-11-14T23:34:56Z"
+message: Scaled up replica set frontend-cd4496b67 from 0 to 1
+metadata:
+  creationTimestamp: "2026-11-14T23:34:56Z"
+  name: frontend.18e80d805d53d7b3
+  namespace: eval-liveness-wrong-port
+  resourceVersion: "880"
+  uid: 6bef3c15-440d-43b0-aa02-a1ed7aa2189e
+reason: ScalingReplicaSet
+reportingComponent: deployment-controller
+reportingInstance: ""
+source:
+  component: deployment-controller
+type: Normal
+---
+kind: ContainerLog
+container: frontend
+previous: true
+lines:
+  - '/docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration'
+  - '/docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/'
+  - '/docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh'
+  - '10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf'
+  - '10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf'
+  - '/docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh'
+  - '/docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh'
+  - '/docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh'
+  - '/docker-entrypoint.sh: Configuration complete; ready for start up'
+  - '2026/11/14 23:40:57 [notice] 1#1: using the "epoll" event method'
+  - '2026/11/14 23:40:57 [notice] 1#1: nginx/1.31.8'
+  - '2026/11/14 23:40:57 [notice] 1#1: built by gcc 15.2.0 (Alpine 15.2.0) '
+  - '2026/11/14 23:40:57 [notice] 1#1: OS: Linux 7.0.14-linuxkit'
+  - '2026/11/14 23:40:57 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 1073741816:1073741816'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker processes'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 34'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 35'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 36'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 37'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 38'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 39'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 40'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 41'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 42'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 43'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 44'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 45'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 46'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 47'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 48'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 49'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 50'
+  - '2026/11/14 23:40:57 [notice] 1#1: start worker process 51'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 3 (SIGQUIT) received, shutting down'
+  - '2026/11/14 23:41:00 [notice] 34#34: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 36#36: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 46#46: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 35#35: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 37#37: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 38#38: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 46#46: exiting'
+  - '2026/11/14 23:41:00 [notice] 37#37: exiting'
+  - '2026/11/14 23:41:00 [notice] 38#38: exiting'
+  - '2026/11/14 23:41:00 [notice] 36#36: exiting'
+  - '2026/11/14 23:41:00 [notice] 35#35: exiting'
+  - '2026/11/14 23:41:00 [notice] 34#34: exiting'
+  - '2026/11/14 23:41:00 [notice] 46#46: exit'
+  - '2026/11/14 23:41:00 [notice] 38#38: exit'
+  - '2026/11/14 23:41:00 [notice] 35#35: exit'
+  - '2026/11/14 23:41:00 [notice] 37#37: exit'
+  - '2026/11/14 23:41:00 [notice] 34#34: exit'
+  - '2026/11/14 23:41:00 [notice] 36#36: exit'
+  - '2026/11/14 23:41:00 [notice] 40#40: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 41#41: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 39#39: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 40#40: exiting'
+  - '2026/11/14 23:41:00 [notice] 41#41: exiting'
+  - '2026/11/14 23:41:00 [notice] 39#39: exiting'
+  - '2026/11/14 23:41:00 [notice] 48#48: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 48#48: exiting'
+  - '2026/11/14 23:41:00 [notice] 42#42: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 42#42: exiting'
+  - '2026/11/14 23:41:00 [notice] 43#43: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 51#51: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 51#51: exiting'
+  - '2026/11/14 23:41:00 [notice] 43#43: exiting'
+  - '2026/11/14 23:41:00 [notice] 44#44: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 47#47: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 45#45: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 47#47: exiting'
+  - '2026/11/14 23:41:00 [notice] 44#44: exiting'
+  - '2026/11/14 23:41:00 [notice] 45#45: exiting'
+  - '2026/11/14 23:41:00 [notice] 49#49: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 50#50: gracefully shutting down'
+  - '2026/11/14 23:41:00 [notice] 49#49: exiting'
+  - '2026/11/14 23:41:00 [notice] 50#50: exiting'
+  - '2026/11/14 23:41:00 [notice] 44#44: exit'
+  - '2026/11/14 23:41:00 [notice] 47#47: exit'
+  - '2026/11/14 23:41:00 [notice] 45#45: exit'
+  - '2026/11/14 23:41:00 [notice] 49#49: exit'
+  - '2026/11/14 23:41:00 [notice] 50#50: exit'
+  - '2026/11/14 23:41:00 [notice] 40#40: exit'
+  - '2026/11/14 23:41:00 [notice] 39#39: exit'
+  - '2026/11/14 23:41:00 [notice] 41#41: exit'
+  - '2026/11/14 23:41:00 [notice] 42#42: exit'
+  - '2026/11/14 23:41:00 [notice] 43#43: exit'
+  - '2026/11/14 23:41:00 [notice] 51#51: exit'
+  - '2026/11/14 23:41:00 [notice] 48#48: exit'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 46'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 45 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 46 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 47 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 29 (SIGIO) received'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 45'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 51'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 35 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 42 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 49 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 50 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 39 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 36 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 38 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 51 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 29 (SIGIO) received'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 39'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 44'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 44 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 29 (SIGIO) received'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 48'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 48 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 29 (SIGIO) received'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 40'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 40 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 41 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 34 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 43 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 29 (SIGIO) received'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 43'
+  - '2026/11/14 23:41:00 [notice] 1#1: signal 17 (SIGCHLD) received from 37'
+  - '2026/11/14 23:41:00 [notice] 1#1: worker process 37 exited with code 0'
+  - '2026/11/14 23:41:00 [notice] 1#1: exit'

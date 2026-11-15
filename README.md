@@ -116,6 +116,12 @@ No config file is needed; every flag also reads `K8S_MCP_<FLAG>` (for example `K
 
 | Flag | Default | Purpose |
 |---|---|---|
+| `--transport stdio\|http` | `stdio` | MCP transport; `http` serves streamable HTTP at `/mcp`, with `/healthz` and `/readyz` |
+| `--listen <addr>` | `127.0.0.1:8080` | HTTP listen address |
+| `--auth tokenreview\|static\|none` | `tokenreview` | HTTP bearer auth: Kubernetes tokens checked with TokenReview, one token from `--auth-token-file`, or none (loopback only) |
+| `--auth-token-file <path>` | none | Bearer token file for `--auth static` |
+| `--allowed-hosts <host,...>` | `localhost`, `127.0.0.1`, `::1` | HTTP `Host` values accepted (DNS-rebinding protection) |
+| `--allowed-origins <origin,...>` | none | Browser `Origin` values accepted; any other `Origin` gets 403 |
 | `--kubeconfig <path>` | `$KUBECONFIG` or `~/.kube/config` | Kubeconfig |
 | `--in-cluster` | auto | Use the ServiceAccount token |
 | `--context <name>` | current-context | Default context |

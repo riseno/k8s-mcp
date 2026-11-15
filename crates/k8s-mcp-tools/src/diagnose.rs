@@ -794,20 +794,28 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
     };
     let findings = k8s_mcp_diagnose::diagnose_workload(&ev);
 
-    let ready = pods.iter().filter(|p| unhealthy(p, now).is_none()).count();
+    // riseno/k8s-mcp#32: measure against desired replicas, not just the pods that exist.
+    let health = match k8s_mcp_diagnose::rules::rollout::replicas(&ev.workload) {
+        Some((desired, available)) => format!(
+            "{available}/{desired} replicas available ({} pod(s) exist)",
+            pods.len()
+        ),
+        None => format!(
+            "{}/{} pods healthy",
+            pods.iter().filter(|p| unhealthy(p, now).is_none()).count(),
+            pods.len()
+        ),
+    };
     let mut e = envelope(
         &sc,
         match findings.first() {
             Some(f) => format!(
-                "{kind} {} ({ns}): {ready}/{} pods healthy. Top finding: {}.",
-                input.name,
-                pods.len(),
-                f.title
+                "{kind} {} ({ns}): {health}. Top finding: {}.",
+                input.name, f.title
             ),
             None => format!(
-                "{kind} {} ({ns}): {ready}/{} pods healthy; no problems found by the diagnosis rules.",
-                input.name,
-                pods.len()
+                "{kind} {} ({ns}): {health}; no problems found by the diagnosis rules.",
+                input.name
             ),
         },
     );

@@ -5,6 +5,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-15
+
+### Fixed
+- Node conditions not known to affect pods (vendor or unknown problem types) say how many pods
+  run on the node instead of claiming they are affected (#32).
+- `diagnose_workload` summaries count available against desired replicas, e.g.
+  `1/2 replicas available (1 pod(s) exist)`, instead of only the pods that exist (#32).
+- Small `--max-output-bytes` caps cut findings to their headlines before dropping whole
+  findings or table rows, so a 3,000-byte cap still returns the top finding (#32).
+
 ## [0.1.3] - 2026-11-15
 
 ### Security

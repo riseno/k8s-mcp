@@ -9,8 +9,8 @@ use k8s_mcp_core::policy::{Policy, RedactLevel};
 use k8s_mcp_testkit::mock::{MockApi, status, with_discovery};
 use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
-    Ctx, DiagnosePodInput, FindProblemsInput, GetLogsInput, GetResourceInput, ListEventsInput,
-    ListResourcesInput,
+    Ctx, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput,
+    GetResourceInput, ListEventsInput, ListResourcesInput,
 };
 use serde_json::{Value, json};
 
@@ -700,6 +700,36 @@ async fn workload_logs_drop_markers_and_merge_identical_pods() {
     assert_eq!(first["omitted_lines"], 1);
     assert_eq!(env.items[1]["same_as"], first["pod"]);
     assert!(env.sections[1].lines.is_empty() && env.sections[1].title.contains("same as"));
+}
+
+/// riseno/k8s-mcp#32: the summary measures against desired replicas, so a Deployment whose second
+/// pod is never created (quota) is not reported as "1/1 healthy".
+#[tokio::test]
+async fn workload_summary_counts_desired_replicas() {
+    let deploy = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "web", "namespace": "shop"},
+        "spec": {"replicas": 2, "selector": {"matchLabels": {"app": "web"}}, "template": {"spec": {"containers": [{"name": "app", "image": "i"}]}}},
+        "status": {"replicas": 1, "availableReplicas": 1}});
+    let mut p = pod("shop", "web-1", "Running", None, 0);
+    p["metadata"]["labels"] = json!({"app": "web"});
+    let mock = MockApi::new()
+        .get("/apis/apps/v1/namespaces/shop/deployments/web", deploy)
+        .list("/api/v1/namespaces/shop/pods", vec![p])
+        .start();
+    let input = DiagnoseWorkloadInput {
+        kind: "Deployment".into(),
+        name: "web".into(),
+        namespace: None,
+        context: None,
+    };
+    let env = k8s_mcp_tools::diagnose_workload(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert!(
+        env.summary
+            .starts_with("Deployment web (shop): 1/2 replicas available (1 pod(s) exist)"),
+        "{}",
+        env.summary
+    );
 }
 
 /// riseno/k8s-mcp#22: standard verbs collapse to "all", and the summary names every group so a

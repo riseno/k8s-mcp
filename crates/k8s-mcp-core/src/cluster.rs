@@ -12,8 +12,11 @@ use std::time::{Duration, Instant};
 use kube::Client;
 use kube::config::{Config, ExecInteractiveMode, KubeConfigOptions, Kubeconfig, KubeconfigError};
 
+use k8s_openapi::api::core::v1::Node;
+
 use crate::error::{Error, Result};
 use crate::policy::Policy;
+use crate::provider::{Detection, Signals, detect};
 
 /// Name used for the in-cluster ServiceAccount "context".
 pub const IN_CLUSTER: &str = "in-cluster";
@@ -200,6 +203,22 @@ impl ClusterManager {
         &self.default_context
     }
 
+    /// Detect the cloud provider of a context from its kubeconfig and, when given, its nodes.
+    /// No cloud calls.
+    pub fn detect_provider(&self, context: &str, nodes: &[Node]) -> Option<Detection> {
+        let (host, exec_command, exec_args) = match &self.source {
+            Source::Kubeconfig(kc) => kubeconfig_signals(kc, context),
+            _ => (String::new(), String::new(), Vec::new()),
+        };
+        detect(&Signals {
+            context,
+            server_host: &host,
+            exec_command: &exec_command,
+            exec_args: &exec_args,
+            nodes,
+        })
+    }
+
     /// Contexts allowed by `policy`, default first. Never includes credentials.
     pub fn contexts(&self, policy: &Policy) -> Vec<ContextInfo> {
         let Source::Kubeconfig(kc) = &self.source else {
@@ -221,22 +240,11 @@ impl ClusterManager {
             .filter(|c| policy.context_allowed(&c.name, &self.default_context))
             .map(|c| {
                 let ctx = c.context.as_ref();
-                let server = ctx
-                    .and_then(|ctx| kc.clusters.iter().find(|cl| cl.name == ctx.cluster))
-                    .and_then(|cl| cl.cluster.as_ref())
-                    .and_then(|cl| cl.server.clone())
-                    .unwrap_or_default();
-                let exec = ctx
-                    .and_then(|ctx| ctx.user.as_ref())
-                    .and_then(|u| kc.auth_infos.iter().find(|a| &a.name == u))
-                    .and_then(|a| a.auth_info.as_ref())
-                    .and_then(|a| a.exec.as_ref())
-                    .and_then(|e| e.command.clone())
-                    .unwrap_or_default();
-                let host = server_host(&server);
                 ContextInfo {
-                    provider: guess_provider(&host, &exec, &c.name),
-                    server_host: host,
+                    provider: self
+                        .detect_provider(&c.name, &[])
+                        .map(|d| d.provider.as_str()),
+                    server_host: kubeconfig_signals(kc, &c.name).0,
                     namespace: ctx
                         .and_then(|c| c.namespace.clone())
                         .unwrap_or_else(|| "default".into()),
@@ -439,18 +447,28 @@ pub fn server_host(server: &str) -> String {
     rest.rsplit('@').next().unwrap_or(rest).to_owned()
 }
 
-/// Guess the managed provider from cheap kubeconfig signals (PROPOSAL §10.2).
-pub fn guess_provider(host: &str, exec: &str, context: &str) -> Option<&'static str> {
-    let exec = exec.rsplit(['/', '\\']).next().unwrap_or(exec);
-    if host.ends_with(".eks.amazonaws.com") || exec == "aws" || exec == "aws-iam-authenticator" {
-        Some("eks")
-    } else if host.ends_with(".azmk8s.io") || exec == "kubelogin" {
-        Some("aks")
-    } else if exec == "gke-gcloud-auth-plugin" || context.starts_with("gke_") {
-        Some("gke")
-    } else {
-        None
-    }
+/// API server host and exec plugin (command, args) of a kubeconfig context.
+fn kubeconfig_signals(kc: &Kubeconfig, context: &str) -> (String, String, Vec<String>) {
+    let ctx = kc
+        .contexts
+        .iter()
+        .find(|c| c.name == context)
+        .and_then(|c| c.context.as_ref());
+    let server = ctx
+        .and_then(|ctx| kc.clusters.iter().find(|cl| cl.name == ctx.cluster))
+        .and_then(|cl| cl.cluster.as_ref())
+        .and_then(|cl| cl.server.clone())
+        .unwrap_or_default();
+    let exec = ctx
+        .and_then(|ctx| ctx.user.as_ref())
+        .and_then(|u| kc.auth_infos.iter().find(|a| &a.name == u))
+        .and_then(|a| a.auth_info.as_ref())
+        .and_then(|a| a.exec.as_ref());
+    (
+        server_host(&server),
+        exec.and_then(|e| e.command.clone()).unwrap_or_default(),
+        exec.and_then(|e| e.args.clone()).unwrap_or_default(),
+    )
 }
 
 #[cfg(test)]

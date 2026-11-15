@@ -1306,3 +1306,35 @@ async fn autoscaling_status_without_karpenter_or_ca() {
     );
     assert!(env.sections.is_empty(), "{:?}", env.sections);
 }
+
+/// v0.2 acceptance criterion 3 through cluster_overview: EKS and its identity from node
+/// labels and providerIDs alone (the mock kubeconfig has no EKS signal), no cloud calls.
+#[tokio::test]
+async fn cluster_overview_names_the_detected_provider() {
+    let version = json!({"major": "1", "minor": "33", "gitVersion": "v1.33.5-eks-3025e55", "gitCommit": "", "gitTreeState": "", "buildDate": "", "goVersion": "", "compiler": "", "platform": ""});
+    let node = json!({"apiVersion": "v1", "kind": "Node",
+        "metadata": {"name": "ip-10-0-1-5.eu-west-1.compute.internal", "labels": {
+            "eks.amazonaws.com/nodegroup": "general", "alpha.eksctl.io/cluster-name": "shop", "topology.kubernetes.io/region": "eu-west-1"}},
+        "spec": {"providerID": "aws:///eu-west-1a/i-0abc123"},
+        "status": {"conditions": [{"type": "Ready", "status": "True"}]}});
+    let mock = MockApi::new()
+        .get("/version", version)
+        .list("/api/v1/nodes", vec![node])
+        .list("/api/v1/namespaces", vec![])
+        .list("/api/v1/pods", vec![])
+        .list("/api/v1/events", vec![])
+        .start();
+    let env = k8s_mcp_tools::cluster_overview(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::ClusterOverviewInput::default(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        env.summary.starts_with(
+            "Kubernetes v1.33.5-eks-3025e55 on eks (cluster shop, eu-west-1): 1/1 nodes Ready"
+        ),
+        "{}",
+        env.summary
+    );
+}

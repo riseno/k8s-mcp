@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Cloud provider detection with no cloud calls (ADR 0010): EKS, GKE and AKS from node
+  providerIDs and labels, the API server host, the exec plugin and its arguments, and the
+  context name, with the cluster's name, region and account. `cluster_overview` reports it
+  (`Kubernetes v1.33.5 on eks (cluster shop, eu-west-1)`), as do `list_contexts` and `doctor`.
+  A bare providerID is reported with low confidence.
 - Streamable HTTP transport for in-cluster use: `--transport http` serves MCP at `/mcp`
   (stateless for protocol `2026-07-28`, sessions for older clients) with `/healthz` and
   `/readyz`, on `--listen` (default `127.0.0.1:8080`).

@@ -44,8 +44,8 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | 7 | Eval gates (top-1 ≥ 85%, top-3 100%, forbidden 0) | ✅ | 14/14, 14/14, 0/14 on kind 1.37 |
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
-| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | Pipeline verified with `v0.1.0-rc.3`; repos made public and `v0.1.0` tagged through `release-gate` (signing and attestations on). rc.2 exposed two fixed bugs (OOM reported as reason Error; dist cannot block a release) |
-| 11 | README, docs site, references published; SECURITY.md | 🚧 | written; GitHub Pages publishing needs the repo |
+| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | ✅ | Released 2026-11-15 through `release-gate` (evals on kind 1.34/1.37): 5 targets with GitHub build-provenance attestations (verified with `gh attestation verify`), shell/PowerShell installers, signed `sha256.sum`, cosign-signed and attested `ghcr.io/riseno/k8s-mcp:v0.1.0` and `:latest`, SBOMs, `brew install riseno/tap/k8s-mcp`. The ghcr package must still be made public in its package settings (no API for that) |
+| 11 | README, docs site, references published; SECURITY.md | ✅ | Repo public; docs published to the [wiki](https://github.com/riseno/k8s-mcp/wiki) by `wiki.yml` (instead of GitHub Pages) |
 
 ## Not done yet (v0.1 follow-ups)
 

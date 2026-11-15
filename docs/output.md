@@ -32,7 +32,9 @@ schema) and a compact text rendering in `content`, which is what most models rea
   with a `continue` cursor; log tail 200 (max 2,000). When a cap is hit `truncated` is true,
   `omitted` counts what was dropped, and the text says how to get more. Output is shortened
   in this order: section lines (oldest first for logs, from the end for everything else),
-  findings beyond the top three, table rows, the remaining findings.
+  findings after the first cut to their headlines (no explanation, evidence or docs; fix capped
+  at 200 bytes), findings beyond the top three, table rows, findings beyond the first, then the
+  first finding cut to its headline.
 - **Logs**: ANSI stripped, credentials redacted, consecutive duplicates collapsed
   (`[×37] connection refused`), optional `grep` with `context_lines` and `errors_only`.
 - **Events**: grouped by reason, object and message with counts and first/last seen;

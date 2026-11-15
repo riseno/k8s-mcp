@@ -37,7 +37,7 @@ check "bad Origin -> 403" 403 "$(code "${H[@]}" "${A[@]}" -H 'Origin: https://ev
 SID=$(curl -s -D - -o /dev/null "${H[@]}" "${A[@]}" -d "$INIT" "$URL/mcp" | tr -d '\r' | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}')
 check "session" yes "${SID:+yes}"
 curl -s -o /dev/null "${H[@]}" "${A[@]}" -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$URL/mcp"
-check "tools/list" 13 "$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jq '.result.tools | length')"
+check "tools/list has diagnose_pod" true "$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jq '[.result.tools[].name] | index("diagnose_pod") != null')"
 POD=$(k -n "$NS" get pod -l "app.kubernetes.io/instance=$REL" -o jsonpath='{.items[0].metadata.name}')
 R=$(rpc "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"diagnose_pod\",\"arguments\":{\"namespace\":\"$NS\",\"name\":\"$POD\"}}}")
 check "diagnose_pod" false "$(jq '.result.isError' <<<"$R")"

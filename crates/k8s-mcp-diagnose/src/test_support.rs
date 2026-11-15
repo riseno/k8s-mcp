@@ -32,6 +32,9 @@
 //! pod; the remaining Events are the workload's. Pseudo-kinds apply to every pod unless they
 //! carry `pod: <name>`.
 //!
+//! A Service fixture (`services/`) holds one Service, the Pods of its namespace and the
+//! Service's Events.
+//!
 //! A node fixture (`nodes/`) holds one Node plus any Events, Pods (all taken as running on
 //! the node; with no Pod documents `pods` is `None`, i.e. unreadable), `Unavailable`, and
 //! this pseudo-kind for the API server version:
@@ -47,8 +50,8 @@ use k8s_openapi::api::core::v1::{Event, Node, Pod};
 use serde_json::Value;
 
 use crate::evidence::{
-    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
-    WorkloadEvidence,
+    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, ServiceEvidence, Unavailable,
+    Workload, WorkloadEvidence,
 };
 
 /// Load a pod fixture into a [`PodEvidence`].
@@ -177,6 +180,19 @@ pub fn node_fixture(name: &str) -> NodeEvidence {
         server_version: pseudo(&fx, "ServerVersion")
             .next()
             .map(|o| (version(o, "major"), version(o, "minor"))),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load a Service fixture (`services/`): one Service plus the namespace's Pods and the
+/// Service's Events.
+pub fn service_fixture(name: &str) -> ServiceEvidence {
+    let fx = load(name);
+    ServiceEvidence {
+        service: fx.one("Service"),
+        pods: Some(fx.all("Pod")),
+        events: fx.all("Event"),
         unavailable: unavailable(&fx),
         now: now(),
     }

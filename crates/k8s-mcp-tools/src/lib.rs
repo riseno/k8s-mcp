@@ -8,6 +8,7 @@ mod discovery;
 mod logs;
 mod read;
 mod rows;
+mod service;
 
 use std::sync::Arc;
 
@@ -28,6 +29,7 @@ pub use read::{
     check_permissions, cluster_overview, get_resource, list_contexts, list_events, list_resources,
     top,
 };
+pub use service::{DiagnoseServiceInput, diagnose_service};
 
 /// Source of "now", injected so tests and golden snapshots are deterministic.
 pub type Clock = Arc<dyn Fn() -> Timestamp + Send + Sync>;

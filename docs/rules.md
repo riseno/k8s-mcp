@@ -65,6 +65,10 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 | `pod.probe.startup_too_short` | The app needs longer to start than its probes allow | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
 | `pod.probe.timeout_too_low` | Probe times out because timeoutSeconds is too low | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
 | `pod.terminating.stuck` | Pod is stuck terminating long past its grace period | [link](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/) |
+| `svc.lb_pending` | The LoadBalancer Service has no external address | [link](https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer) |
+| `svc.no_matching_pods` | The Service selector matches no pods | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
+| `svc.no_ready_endpoints` | None of the Service's pods are Ready, so it has no endpoints | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
+| `svc.target_port_mismatch` | The Service targetPort is not a port its pods expose | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
 | `workload.create_failed` | The controller cannot create pods (admission webhook, Pod Security, LimitRange) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.replicas.unavailable` | Fewer replicas are available than desired | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.rollout.stuck` | Deployment rollout exceeded its progress deadline | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |

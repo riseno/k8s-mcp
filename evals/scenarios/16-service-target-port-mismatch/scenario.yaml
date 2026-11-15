@@ -1,0 +1,9 @@
+id: service-target-port-mismatch
+symptom: Connections to the front Service in eval-service-target-port-mismatch are refused, though the pod is Ready. Why?
+tool: diagnose_service
+args: {name: front, namespace: eval-service-target-port-mismatch}
+settle_seconds: 20
+expected:
+  primary: svc.target_port_mismatch
+  acceptable: []
+forbidden: [svc.no_matching_pods, svc.no_ready_endpoints]

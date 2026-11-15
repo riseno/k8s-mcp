@@ -1,0 +1,9 @@
+id: service-selector-mismatch
+symptom: Requests to the web Service in eval-service-selector-mismatch time out, but its pods are healthy. Why?
+tool: diagnose_service
+args: {name: web, namespace: eval-service-selector-mismatch}
+settle_seconds: 20
+expected:
+  primary: svc.no_matching_pods
+  acceptable: []
+forbidden: [svc.no_ready_endpoints, svc.target_port_mismatch]

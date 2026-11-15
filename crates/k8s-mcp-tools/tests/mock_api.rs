@@ -9,8 +9,8 @@ use k8s_mcp_core::policy::{Policy, RedactLevel};
 use k8s_mcp_testkit::mock::{MockApi, status, with_discovery};
 use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
-    Ctx, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput,
-    GetResourceInput, ListEventsInput, ListResourcesInput,
+    Ctx, DiagnosePodInput, DiagnoseServiceInput, DiagnoseWorkloadInput, FindProblemsInput,
+    GetLogsInput, GetResourceInput, ListEventsInput, ListResourcesInput,
 };
 use serde_json::{Value, json};
 
@@ -1002,4 +1002,79 @@ async fn service_summary_shows_matching_pods_and_endpoints() {
             .any(|r| r.contains("labelSelector=app%3Dnothing-matches")),
         "{reqs:?}"
     );
+}
+
+fn web_service() -> Value {
+    json!({"apiVersion": "v1", "kind": "Service",
+        "metadata": {"name": "web", "namespace": "shop", "creationTimestamp": "2026-11-14T10:00:00Z"},
+        "spec": {"selector": {"app": "web"}, "ports": [{"name": "http", "port": 80, "targetPort": 8080}]}})
+}
+
+/// A Service whose selector matches no pod names the label difference and shows its ports.
+#[tokio::test]
+async fn diagnose_service_shows_the_label_diff_and_port_table() {
+    let mut p = pod("shop", "web-1", "Running", None, 0);
+    p["metadata"]["labels"] = json!({"app": "web-v2"});
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/services/web", web_service())
+        .list("/api/v1/namespaces/shop/pods", vec![p])
+        .list(
+            "/apis/discovery.k8s.io/v1/namespaces/shop/endpointslices",
+            vec![],
+        )
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input = DiagnoseServiceInput {
+        name: "web".into(),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_service(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "Service web (shop, ClusterIP): selector app=web matches 0 pods (0 Ready); 0 ready endpoints. Top finding: Service web selects no pods (app=web)."
+    );
+    let f = &env.findings[0];
+    assert!(
+        f.evidence
+            .iter()
+            .any(|e| e.text == "pod web-1 has app=web-v2 (selector wants app=web)"),
+        "{:?}",
+        f.evidence
+    );
+    assert_eq!(
+        env.items,
+        [json!({"port": "http 80", "target": "8080", "protocol": "TCP", "exposed_by": "0/0 pods"})]
+    );
+}
+
+/// ADR 0008: find_problems scans Services (listing pods for their selectors when it was not
+/// asked to scan pods) and points at diagnose_service.
+#[tokio::test]
+async fn find_problems_reports_services_that_select_no_pods() {
+    let mut p = pod("shop", "web-1", "Running", None, 0);
+    p["metadata"]["labels"] = json!({"app": "web-v2"});
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .list("/api/v1/namespaces/shop/pods", vec![p])
+        .list("/api/v1/namespaces/shop/services", vec![web_service()])
+        .start();
+    let input = FindProblemsInput {
+        namespace: Some("shop".into()),
+        kinds: Some(vec!["services".into()]),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::find_problems(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert!(
+        env.summary.ends_with("across 1 services."),
+        "{}",
+        env.summary
+    );
+    let f = &env.findings[0];
+    assert_eq!(f.id, "svc.no_matching_pods");
+    assert_eq!(f.object.as_ref().unwrap().kind, "Service");
+    assert_eq!(f.next[0].tool, "diagnose_service");
 }

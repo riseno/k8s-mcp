@@ -5,6 +5,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `diagnose_service`: why traffic does not reach a Service. Rules `svc.no_matching_pods`
+  (with the exact label diff against the closest pods), `svc.target_port_mismatch` (named
+  targetPorts are definitive; numeric ones are medium confidence), `svc.no_ready_endpoints`
+  and `svc.lb_pending`. Returns the port mapping table and the matching pods.
+- `find_problems` scans Services (`kinds: services`, on by default; ADR 0008).
+- Eval scenarios 15 (Service selector mismatch) and 16 (targetPort mismatch).
+
 ## [0.1.4] - 2026-11-15
 
 ### Fixed

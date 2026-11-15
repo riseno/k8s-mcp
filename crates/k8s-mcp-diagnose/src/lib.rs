@@ -65,6 +65,14 @@ pub fn diagnose_node(ev: &NodeEvidence) -> Vec<Finding> {
     out
 }
 
+/// Root-cause a Service: selector, port mapping, readiness and load balancer.
+pub fn diagnose_service(ev: &ServiceEvidence) -> Vec<Finding> {
+    let mut out = Vec::new();
+    rules::service::check(ev, &mut out);
+    rank(&mut out);
+    out
+}
+
 /// Every rule id this engine can emit, with title and docs link.
 pub fn catalogue() -> Vec<RuleMeta> {
     let mut all: Vec<RuleMeta> = [
@@ -80,6 +88,7 @@ pub fn catalogue() -> Vec<RuleMeta> {
         rules::dns::RULES,
         rules::rollout::RULES,
         rules::node::RULES,
+        rules::service::RULES,
     ]
     .concat();
     all.sort_by_key(|r| r.id);
@@ -89,7 +98,7 @@ pub fn catalogue() -> Vec<RuleMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{node_fixture, pod_fixture, workload_fixture};
+    use crate::test_support::{node_fixture, pod_fixture, service_fixture, workload_fixture};
 
     /// Every fixture under `dir`, sorted, as `dir/<file>` names.
     fn fixtures(dir: &str) -> Vec<String> {
@@ -136,6 +145,11 @@ mod tests {
         }
         for f in &nodes {
             check(f, diagnose_node(&node_fixture(f)));
+        }
+        let services = fixtures("services");
+        assert!(!services.is_empty());
+        for f in &services {
+            check(f, diagnose_service(&service_fixture(f)));
         }
     }
 

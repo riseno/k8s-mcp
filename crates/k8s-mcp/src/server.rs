@@ -105,8 +105,11 @@ tools! {
     "diagnose_node", "diagnose", t::DiagnoseNodeInput,
         "Root-cause a node: Ready and pressure conditions, taints and cordon, kubelet version skew, requests vs allocatable, node events (NotReady, SystemOOM, eviction) and failing pods on it.",
         |c, i| t::diagnose_node(c, i).await;
+    "diagnose_service", "diagnose", t::DiagnoseServiceInput,
+        "Why can't traffic reach a Service? Checks the selector against pod labels (with the exact label diff), Ready endpoints, port/targetPort against container ports (by number and name) and LoadBalancer provisioning. Returns the port mapping table and matching pods.",
+        |c, i| t::diagnose_service(c, i).await;
     "find_problems", "diagnose", t::FindProblemsInput,
-        "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads and nodes. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
+        "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes and Services. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
         |c, i| t::find_problems(c, i).await;
 }
 

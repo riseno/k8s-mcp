@@ -9,7 +9,7 @@ use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet}
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::api::core::v1::{
-    Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, ServiceAccount,
+    Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, Service, ServiceAccount,
 };
 
 /// A piece of evidence that could not be gathered, and why.
@@ -143,6 +143,21 @@ pub struct NodeEvidence {
     pub pods: Option<Vec<Pod>>,
     /// API server version as (major, minor), if known.
     pub server_version: Option<(u32, u32)>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}
+
+/// Everything `diagnose_service` knows about one Service.
+#[derive(Debug, Clone, Default)]
+pub struct ServiceEvidence {
+    /// The Service.
+    pub service: Service,
+    /// Pods in the Service's namespace (the rules apply its selector); `None` if unreadable.
+    pub pods: Option<Vec<Pod>>,
+    /// Events whose involvedObject is the Service (last hour).
+    pub events: Vec<Event>,
     /// Evidence that could not be gathered.
     pub unavailable: Vec<Unavailable>,
     /// Current time.

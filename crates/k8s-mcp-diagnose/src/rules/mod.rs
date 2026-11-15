@@ -19,6 +19,7 @@ pub mod oom;
 pub mod pending;
 pub mod probe;
 pub mod rollout;
+pub mod service;
 pub mod terminating;
 
 use std::collections::BTreeMap;
@@ -96,6 +97,12 @@ pub mod docs {
         "https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/";
     /// Pod Security Admission.
     pub const PSA: &str = "https://kubernetes.io/docs/concepts/security/pod-security-admission/";
+    /// Debugging Services.
+    pub const DEBUG_SERVICE: &str =
+        "https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/";
+    /// Service type LoadBalancer.
+    pub const LOAD_BALANCER: &str =
+        "https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer";
     /// Network plugins.
     pub const NETWORK: &str = "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/";
 }
@@ -202,6 +209,11 @@ pub fn resource_args(kind: &str, name: &str, namespace: &str) -> Value {
 pub fn pod_events_args(pod: &Pod) -> Value {
     let (name, ns) = pod_ref(pod);
     json!({ "namespace": ns, "involved_kind": "Pod", "involved_name": name })
+}
+
+/// True when the pod's `Ready` condition is `True`.
+pub fn pod_ready(pod: &Pod) -> bool {
+    pod_condition(pod, "Ready").is_some_and(|c| c.status == "True")
 }
 
 /// Event message (empty if absent).

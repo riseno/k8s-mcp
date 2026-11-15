@@ -154,14 +154,24 @@ Root-cause a node: Ready and pressure conditions, taints and cordon, kubelet ver
 | `context` | string | Kubeconfig context. |
 | `name` **(required)** | string | Node name. |
 
+### `diagnose_service`
+
+Why can't traffic reach a Service? Checks the selector against pod labels (with the exact label diff), Ready endpoints, port/targetPort against container ports (by number and name) and LoadBalancer provisioning. Returns the port mapping table and matching pods.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `name` **(required)** | string | Service name. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+
 ### `find_problems`
 
-Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads and nodes. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.
+Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes and Services. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.
 
 | Input | Type | Description |
 |---|---|---|
 | `all_namespaces` | boolean | Scan all allowed namespaces (default true unless `namespace` is set). |
 | `context` | string | Kubeconfig context. |
-| `kinds` | array | What to scan: any of `pods`, `workloads`, `nodes` (default all). |
+| `kinds` | array | What to scan: any of `pods`, `workloads`, `nodes`, `services` (default all). |
 | `min_severity` | enum | Lowest severity to report (default `medium`). |
 | `namespace` | string | Limit the scan to one namespace. |

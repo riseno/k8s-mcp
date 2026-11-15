@@ -1,0 +1,92 @@
+# k8s-mcp in-cluster: streamable HTTP at http://<release>.<namespace>.svc:8080/mcp.
+# Every value is validated by values.schema.json.
+
+image:
+  repository: ghcr.io/riseno/k8s-mcp
+  # Defaults to the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Stateless: scale horizontally. Clients on protocol 2025-11-25 keep a session, so with more
+# than one replica they need session affinity at the ingress.
+replicaCount: 1
+
+auth:
+  # tokenreview: callers send a Kubernetes ServiceAccount or OIDC token, validated with the
+  #   TokenReview API (the chart binds system:auth-delegator to the server's ServiceAccount).
+  # static: callers send one shared token, read from a Secret (key `token`).
+  mode: tokenreview
+  # Secret holding the static token (key `token`); required when mode is static.
+  existingSecret: ""
+
+# Extra HTTP Host values to accept, for example an ingress hostname. The Service DNS names,
+# localhost and 127.0.0.1 are always accepted.
+allowedHosts: []
+# Browser Origin values to accept (with scheme). Empty: any request carrying an Origin gets 403.
+allowedOrigins: []
+
+# Redaction level: strict, standard or off.
+redact: standard
+logLevel: info
+# Extra flags, for example ["--namespaces=shop,payments", "--max-output-bytes=16000"].
+extraArgs: []
+
+clusterDomain: cluster.local
+
+serviceAccount:
+  create: true
+  # Defaults to the release full name.
+  name: ""
+  # Cloud identity for provider tools:
+  #   EKS IRSA:              eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>
+  #   GKE Workload Identity: iam.gke.io/gcp-service-account: <gsa>@<project>.iam.gserviceaccount.com
+  #   AKS Workload Identity: azure.workload.identity/client-id: <client-id>  (and podLabels below)
+  # EKS Pod Identity needs no annotation: create the association outside the chart.
+  annotations: {}
+  labels: {}
+
+rbac:
+  # Read-only ClusterRole (no Secrets) bound to the ServiceAccount.
+  create: true
+  # Adds `get` on Secrets so the server can check that referenced Secrets exist and mask their
+  # values in logs. Values are never returned, but the grant itself allows reading them.
+  secretsMetadata: false
+  # Extra ClusterRole rules, for example read access to more CRDs.
+  extraRules: []
+
+service:
+  type: ClusterIP
+  port: 8080
+
+podLabels: {}
+  # AKS Workload Identity:
+  # azure.workload.identity/use: "true"
+podAnnotations: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+networkPolicy:
+  # Restrict traffic: ingress to port 8080, egress to DNS, the API server and extraEgress.
+  enabled: false
+  # Sources allowed to reach the server (NetworkPolicy `from` entries). Empty: any source.
+  ingressFrom: []
+  # API server endpoint CIDRs (the control-plane IPs, not the kubernetes Service IP);
+  # required when enabled. Ports 443 and 6443 are allowed.
+  apiServerCIDRs: []
+  # Extra egress rules, for example cloud APIs for provider tools.
+  extraEgress: []
+
+podDisruptionBudget:
+  enabled: false
+  maxUnavailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

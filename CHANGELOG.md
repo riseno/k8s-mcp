@@ -14,6 +14,12 @@ All notable changes are documented here. The format follows
   only. `Host` and `Origin` allow-lists (`--allowed-hosts`, `--allowed-origins`).
 - Audit records carry the authenticated HTTP `caller`.
 - Cargo feature `http` (default); `--no-default-features` builds a stdio-only binary.
+- Helm chart `deploy/helm/k8s-mcp`, published to `oci://ghcr.io/riseno/charts/k8s-mcp` on
+  release: Deployment and Service (`/mcp` on 8080), read-only ClusterRole without Secrets,
+  `system:auth-delegator` binding for TokenReview, identity values for EKS, GKE and AKS,
+  optional NetworkPolicy and PodDisruptionBudget, a hardened pod, and `values.schema.json`.
+  CI lints it, validates the rendered manifests and installs it on kind and k3s with an HTTP
+  smoke test. See `docs/in-cluster.md`.
 - `diagnose_service`: why traffic does not reach a Service. Rules `svc.no_matching_pods`
   (with the exact label diff against the closest pods), `svc.target_port_mismatch` (named
   targetPorts are definitive; numeric ones are medium confidence), `svc.no_ready_endpoints`

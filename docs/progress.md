@@ -53,6 +53,17 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 - The 10 s list cache (ADR 0004) and the mdBook build in CI.
 - First CI run on GitHub (workflows are untested there; `release.yml` uses dist's `$/` self-repo syntax, which actionlint 1.7.12 does not know yet).
 
+## Going public (checklist)
+
+The repos are private for now (PROPOSAL §17.3: check employment contracts before publishing).
+When making `riseno/k8s-mcp` and `riseno/homebrew-tap` public:
+
+1. `gh repo edit riseno/k8s-mcp --visibility public --accept-visibility-change-consequences` (same for `riseno/homebrew-tap`).
+2. Set `github-attestations = true` in `dist-workspace.toml` and run `dist generate` (dist 0.34.0): GitHub artifact attestations only work in public repos on Free/Pro/Team plans.
+3. Nothing to change for the container job: cosign keyless signing and provenance attestation switch on automatically for public repos (`github.event.repository.private == false`).
+4. Make the `ghcr.io/riseno/k8s-mcp` package public in its package settings.
+5. Tag a final release (`v0.1.0`); pre-releases skip the Homebrew tap and `:latest`.
+
 ## Deviations
 - ADR 0002: no separate `k8s-mcp-server` library crate (name clash with the published bin).
 - ADR 0003: serde-saphyr and jiff.

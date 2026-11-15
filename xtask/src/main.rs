@@ -1,4 +1,4 @@
-//! Developer tasks: `cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep]`.
+//! Developer tasks: `cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep] | docs`.
 //!
 //! Every cluster command goes through [`kubectl`], which pins the kind-only kubeconfig in
 //! `.dev/kubeconfig` and the `kind-k8s-mcp-dev` context, so `~/.kube/config` is never used.
@@ -24,7 +24,10 @@ fn main() -> Result<()> {
         Some("kind-up") => kind_up(),
         Some("kind-down") => kind_down(),
         Some("eval") => eval::main(&args[1..]),
-        _ => bail!("usage: cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep]"),
+        Some("docs") => docs(),
+        _ => {
+            bail!("usage: cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep] | docs")
+        }
     }
 }
 
@@ -150,4 +153,19 @@ fn kind_down() -> Result<()> {
     run(Command::new("kind")
         .args(["delete", "cluster", "--name", CLUSTER, "--kubeconfig"])
         .arg(kubeconfig()))
+}
+
+/// Regenerate `docs/tools.md` and `docs/rules.md` from the tool registry and rule catalogue.
+fn docs() -> Result<()> {
+    run(Command::new(env!("CARGO"))
+        .current_dir(root())
+        .args([
+            "test",
+            "-p",
+            "k8s-mcp-server",
+            "--bin",
+            "k8s-mcp",
+            "docs_are_current",
+        ])
+        .env("K8S_MCP_UPDATE_DOCS", "1"))
 }

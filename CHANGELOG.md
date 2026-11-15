@@ -5,6 +5,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Streamable HTTP transport for in-cluster use: `--transport http` serves MCP at `/mcp`
+  (stateless for protocol `2026-07-28`, sessions for older clients) with `/healthz` and
+  `/readyz`, on `--listen` (default `127.0.0.1:8080`).
+- HTTP auth: `--auth tokenreview` (default; Kubernetes tokens validated with the TokenReview
+  API, cached 60 s), `--auth static --auth-token-file <path>`, or `--auth none` on loopback
+  only. `Host` and `Origin` allow-lists (`--allowed-hosts`, `--allowed-origins`).
+- Audit records carry the authenticated HTTP `caller`.
+- Cargo feature `http` (default); `--no-default-features` builds a stdio-only binary.
+
 ## [0.1.4] - 2026-11-15
 
 ### Fixed

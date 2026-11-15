@@ -36,6 +36,8 @@ globset = "0.4"
 jiff = "0.2"
 tower-test = "0.4"
 http = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tower = { version = "0.5", features = ["util"] }
 insta = { version = "1.49", features = ["json"] }
 proptest = "1.12"
 assert_cmd = "2.2"

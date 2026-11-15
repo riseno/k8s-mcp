@@ -28,6 +28,10 @@ pub struct Record {
     pub session: String,
     /// MCP client name/version, if known.
     pub client: Option<String>,
+    /// Authenticated HTTP caller (TokenReview username, `static-token` or `anonymous`);
+    /// absent on stdio.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller: Option<String>,
     /// Tool name.
     pub tool: String,
     /// Tool tier.
@@ -244,6 +248,7 @@ mod tests {
             ts: "2026-11-14T12:00:00Z".into(),
             session: "s".into(),
             client: None,
+            caller: None,
             tool: tool.into(),
             tier: "read",
             context: Some("dev".into()),

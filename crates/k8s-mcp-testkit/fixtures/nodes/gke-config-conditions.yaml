@@ -1,0 +1,26 @@
+# A healthy GKE node (riseno/k8s-mcp#5): GKE sets SysctlChanged and KubeletConfigChanged to True
+# with configuration snapshots as messages. VendorMaintenanceScheduled stands in for any vendor
+# condition the rules do not know.
+apiVersion: v1
+kind: Node
+metadata:
+  name: gke-dev-pool-1-abcd
+  labels: {cloud.google.com/gke-nodepool: pool-1}
+spec: {providerID: "gce://cmg-dev/us-west1-a/gke-dev-pool-1-abcd"}
+status:
+  allocatable: {cpu: "4", memory: 14Gi, pods: "110"}
+  nodeInfo: {kubeletVersion: v1.35.2-gke.1000}
+  conditions:
+    - {type: Ready, status: "True", reason: KubeletReady}
+    - {type: MemoryPressure, status: "False", reason: KubeletHasSufficientMemory}
+    - {type: DiskPressure, status: "False", reason: KubeletHasNoDiskPressure}
+    - {type: PIDPressure, status: "False", reason: KubeletHasSufficientPID}
+    - {type: NetworkUnavailable, status: "False", reason: RouteCreated}
+    - {type: KernelDeadlock, status: "False", reason: KernelHasNoDeadlock}
+    - {type: SysctlChanged, status: "True", reason: NodeSysctlChange, message: '{"unmanaged": {"kernel.cad_pid": "1"}}', lastTransitionTime: "2026-11-01T12:00:00Z"}
+    - {type: KubeletConfigChanged, status: "True", reason: KubeletConfigChangeDetected, message: '{"managed": {"cpuCFSQuota": true, "podPidsLimit": 4096}}', lastTransitionTime: "2026-11-01T12:00:00Z"}
+    - {type: VendorMaintenanceScheduled, status: "True", reason: Scheduled, message: "maintenance window 2026-11-20T02:00Z"}
+---
+kind: ServerVersion
+major: 1
+minor: 35

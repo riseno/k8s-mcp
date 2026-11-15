@@ -13,11 +13,16 @@ use crate::text::{neutralize, untrusted_block};
 /// Counts of what was left out to respect output caps.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct Omitted {
+    /// Findings dropped.
+    pub findings: usize,
     /// Rows dropped from `items`.
     pub items: usize,
     /// Log lines dropped.
     pub log_lines: usize,
 }
+
+/// Findings `fit` keeps before it starts dropping table rows.
+const KEEP_FINDINGS: usize = 3;
 
 /// A text-only block rendered after the items table (events, log excerpts).
 #[derive(Debug, Clone, Default)]
@@ -199,8 +204,8 @@ impl Envelope {
         if self.truncated {
             let _ = writeln!(
                 out,
-                "\n(truncated: {} items and {} log lines omitted; narrow the query (namespace, selector, since), adjust limit/tail, or use the continue cursor)",
-                self.omitted.items, self.omitted.log_lines
+                "\n(truncated: {} findings, {} items and {} log lines omitted; narrow the query (namespace, selector, since), adjust limit/tail, or use the continue cursor)",
+                self.omitted.findings, self.omitted.items, self.omitted.log_lines
             );
         }
         out
@@ -238,6 +243,12 @@ impl Envelope {
                 }
                 continue;
             }
+            // Keep the top findings, then the table, then the first finding.
+            if self.findings.len() > KEEP_FINDINGS {
+                self.findings.pop();
+                self.omitted.findings += 1;
+                continue;
+            }
             if !self.items.is_empty() {
                 let bytes: usize = self.items.iter().map(|i| i.to_string().len() * 2).sum();
                 let n = drop_count(self.items.len(), bytes, over);
@@ -247,6 +258,7 @@ impl Envelope {
             }
             if self.findings.len() > 1 {
                 self.findings.pop();
+                self.omitted.findings += 1;
                 continue;
             }
             // Last resort: cut evidence and the summary.
@@ -258,6 +270,7 @@ impl Envelope {
             }
             self.summary = crate::text::truncate(&self.summary, max_bytes / 4);
             self.sections.clear();
+            self.omitted.findings += self.findings.len();
             self.findings.clear();
             return;
         }
@@ -442,6 +455,36 @@ mod tests {
             let e = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("fit did not terminate");
             proptest::prop_assert!(e.size() <= cap || (e.findings.is_empty() && e.items.is_empty() && e.sections.is_empty()));
         }
+    }
+
+    /// riseno/k8s-mcp#4: findings beyond the top few go before table rows, and are counted.
+    #[test]
+    fn fit_keeps_the_table_ahead_of_extra_findings_and_counts_them() {
+        let mut e = Envelope::new("overview");
+        e.columns = vec!["name"];
+        e.items = (0..10)
+            .map(|i| json!({"name": format!("pod-{i}")}))
+            .collect();
+        for i in 0..20 {
+            e.findings.push(
+                Finding::new(
+                    "pod.image.not_found",
+                    Severity::Critical,
+                    Confidence::High,
+                    format!("finding {i}"),
+                )
+                .fix("x".repeat(300)),
+            );
+        }
+        e.fit(6_000);
+        assert!(e.size() <= 6_000);
+        assert_eq!(e.items.len(), 10, "table rows kept");
+        assert_eq!(e.findings.len() + e.omitted.findings, 20);
+        assert!(e.omitted.findings > 0);
+        assert!(
+            e.render()
+                .contains(&format!("{} findings, 0 items", e.omitted.findings))
+        );
     }
 
     #[test]

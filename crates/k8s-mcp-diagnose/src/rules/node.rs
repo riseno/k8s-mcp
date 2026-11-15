@@ -81,6 +81,23 @@ const STANDARD: &[&str] = &[
     "NetworkUnavailable",
 ];
 
+/// node-problem-detector conditions that mean the node is unreliable (upstream NPD monitors).
+const NPD_FAULTS: &[&str] = &[
+    "KernelDeadlock",
+    "ReadonlyFilesystem",
+    "FrequentKubeletRestart",
+    "FrequentDockerRestart",
+    "FrequentContainerdRestart",
+    "CorruptDockerOverlay2",
+    "FrequentUnregisterNetDevice",
+    "KubeletUnhealthy",
+    "ContainerRuntimeUnhealthy",
+];
+
+/// Vendor conditions that record configuration and stay `True` on healthy nodes (GKE). Not
+/// documented by the vendor: classified from their messages (riseno/k8s-mcp#5).
+const INFORMATIONAL: &[&str] = &["SysctlChanged", "KubeletConfigChanged"];
+
 /// Run every node check.
 pub fn check(ev: &NodeEvidence, out: &mut Vec<Finding>) {
     let name = node_name(&ev.node);
@@ -93,7 +110,7 @@ pub fn check(ev: &NodeEvidence, out: &mut Vec<Finding>) {
     for c in conditions {
         let t = c.type_.as_str();
         let healthy_when_true = t == "Ready" || (t.ends_with("Ready") && !STANDARD.contains(&t));
-        if (c.status == "True") == healthy_when_true {
+        if (c.status == "True") == healthy_when_true || INFORMATIONAL.contains(&t) {
             continue;
         }
         let f = match c.type_.as_str() {
@@ -242,9 +259,15 @@ fn npd(name: &str, c: &NodeCondition) -> Finding {
     } else {
         snake(&c.type_)
     };
-    Finding::new(&id, Severity::High, Confidence::High, format!("node {name} reports problem condition {shown}"))
-        .explain("This condition is set by node-problem-detector or a vendor node agent, not the kubelet; its message names the problem. Kernel deadlocks, read-only filesystems and repeated runtime restarts usually leave the node unreliable.")
-        .fix(format!("Read the condition message and the node's system logs. For kernel or filesystem problems, drain the node (`kubectl drain {name} --ignore-daemonsets`) and replace or reboot it."))
+    if NPD_FAULTS.contains(&c.type_.as_str()) {
+        return Finding::new(&id, Severity::High, Confidence::High, format!("node {name} reports problem condition {shown}"))
+            .explain("node-problem-detector set this condition: kernel deadlocks, read-only filesystems and repeated kubelet or runtime restarts usually leave the node unreliable.")
+            .fix(format!("Read the condition message and the node's system logs. If the problem persists, drain the node (`kubectl drain {name} --ignore-daemonsets`) and replace or reboot it."))
+            .docs(docs::NODES);
+    }
+    Finding::new(&id, Severity::Medium, Confidence::Medium, format!("node {name} reports condition {shown}"))
+        .explain("A node agent (node-problem-detector or a vendor agent) set a condition this rule set does not know. Vendors also use conditions to record configuration, so it is not necessarily a fault.")
+        .fix("Read the condition message (get_resource kind=Node). Act only if it describes a fault; do not drain a node because of this condition alone.")
         .docs(docs::NODES)
 }
 
@@ -420,6 +443,28 @@ mod tests {
                 .any(|e| e.source == Source::Event && e.text.contains("EvictionThresholdMet"))
         );
         assert!(out[3].title.contains("(3 OOM events)"), "{}", out[3].title);
+    }
+
+    #[test]
+    fn gke_config_conditions_are_ignored_and_unknown_ones_are_medium_without_drain_advice() {
+        let out = run(&node_fixture("nodes/gke-config-conditions.yaml"));
+        let got: Vec<_> = out.iter().map(|f| (f.id.as_str(), f.severity)).collect();
+        assert_eq!(
+            got,
+            [("node.npd.vendor_maintenance_scheduled", Severity::Medium)]
+        );
+        assert!(!out[0].fix.contains("drain the node"), "{}", out[0].fix);
+    }
+
+    #[test]
+    fn known_npd_fault_is_high_with_drain_advice() {
+        let out = run(&node_fixture("nodes/pressure-oom.yaml"));
+        let f = out
+            .iter()
+            .find(|f| f.id == "node.npd.kernel_deadlock")
+            .unwrap();
+        assert_eq!(f.severity, Severity::High);
+        assert!(f.fix.contains("kubectl drain"), "{}", f.fix);
     }
 
     #[test]

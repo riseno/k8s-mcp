@@ -5,6 +5,20 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-15
+
+### Fixed
+- Node conditions: GKE's `SysctlChanged` and `KubeletConfigChanged` (config snapshots that stay
+  `True` on healthy nodes) no longer produce `high` findings with drain advice. Known
+  node-problem-detector faults stay `high`; unknown vendor conditions are `medium` and never
+  advise draining (#5).
+- `find_problems` and `cluster_overview`: one root cause on many pods is one finding listing
+  the other objects, dropped findings are counted in `omitted.findings`, and output capping
+  keeps `cluster_overview`'s unhealthy-pod table ahead of extra findings (#4).
+- A Deployment past its progress deadline gives one `workload.rollout.stuck` finding instead
+  of also `workload.replicas.unavailable` (#6).
+- `find_problems` no longer reports "pods seen: 0" for workloads whose pods exist (#7).
+
 ## [0.1.1] - 2026-11-15
 
 ### Fixed

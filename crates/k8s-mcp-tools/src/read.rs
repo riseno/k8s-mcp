@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
-use k8s_mcp_core::finding::{NextCall, ObjectRef, rank};
+use k8s_mcp_core::finding::{NextCall, ObjectRef, group_same_cause, rank};
 use k8s_mcp_core::quantity::{bytes, cpu_millis, fmt_bytes};
 use k8s_mcp_core::text::{age, parse_duration, truncate};
 use k8s_mcp_core::{Error, Result};
@@ -186,6 +186,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
         }
     }
     rank(&mut findings);
+    let mut findings = group_same_cause(findings);
     findings.truncate(10);
 
     let provider = nodes.as_deref().and_then(provider_from_nodes).or_else(|| {

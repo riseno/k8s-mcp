@@ -1,0 +1,18 @@
+# runAsNonRoot with an image that runs as root.
+apiVersion: v1
+kind: Pod
+metadata: {name: api-5d6f7-abcde, namespace: shop, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  securityContext: {runAsNonRoot: true}
+  containers:
+    - name: api
+      image: nginx:1.27
+status:
+  phase: Pending
+  containerStatuses:
+    - name: api
+      ready: false
+      restartCount: 0
+      image: nginx:1.27
+      state: {waiting: {reason: CreateContainerConfigError, message: "container has runAsNonRoot and image will run as root (pod: \"api-5d6f7-abcde_shop(u1)\", container: api)"}}

@@ -1,0 +1,30 @@
+# A Job whose pods exit 1 until backoffLimit is reached.
+apiVersion: batch/v1
+kind: Job
+metadata: {name: nightly-report, namespace: shop}
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers: [{name: report, image: ghcr.io/acme/report:1.2}]
+status:
+  failed: 4
+  conditions:
+    - {type: Failed, status: "True", reason: BackoffLimitExceeded, message: "Job has reached the specified backoff limit"}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: nightly-report-x9z8c, namespace: shop, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  restartPolicy: Never
+  containers: [{name: report, image: ghcr.io/acme/report:1.2}]
+status:
+  phase: Failed
+  containerStatuses:
+    - name: report
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/report:1.2
+      state: {terminated: {exitCode: 1, reason: Error, startedAt: "2026-11-14T11:50:05Z", finishedAt: "2026-11-14T11:50:09Z"}}

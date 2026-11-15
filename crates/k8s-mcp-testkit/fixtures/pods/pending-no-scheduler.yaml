@@ -1,0 +1,11 @@
+# A pod asking for a scheduler that is not installed: no events, no PodScheduled condition.
+apiVersion: v1
+kind: Pod
+metadata: {name: train-0, namespace: ml, creationTimestamp: "2026-11-14T11:45:00Z"}
+spec:
+  schedulerName: batch-scheduler
+  containers:
+    - name: train
+      image: ghcr.io/acme/train:0.9
+status:
+  phase: Pending

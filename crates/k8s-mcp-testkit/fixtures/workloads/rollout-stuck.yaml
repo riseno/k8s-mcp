@@ -1,0 +1,88 @@
+# A rollout to a tag that does not exist: progress deadline exceeded, both new pods stuck.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: shop}
+spec:
+  replicas: 2
+  progressDeadlineSeconds: 600
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers: [{name: api, image: ghcr.io/acme/api:2.1.0-typo}]
+status:
+  replicas: 2
+  updatedReplicas: 2
+  availableReplicas: 0
+  unavailableReplicas: 2
+  conditions:
+    - {type: Available, status: "False", reason: MinimumReplicasUnavailable}
+    - {type: Progressing, status: "False", reason: ProgressDeadlineExceeded, message: "ReplicaSet \"api-7f9c6d5b4\" has timed out progressing."}
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata: {name: api-7f9c6d5b4, namespace: shop}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: api}}
+status: {replicas: 2}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: api-7f9c6d5b4-a1s2d, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z", labels: {app: api}}
+spec:
+  nodeName: node-1
+  containers: [{name: api, image: ghcr.io/acme/api:2.1.0-typo}]
+status:
+  phase: Pending
+  containerStatuses:
+    - name: api
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/api:2.1.0-typo
+      state: {waiting: {reason: ImagePullBackOff, message: "Back-off pulling image \"ghcr.io/acme/api:2.1.0-typo\""}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: api-7f9c6d5b4-f3g4h, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z", labels: {app: api}}
+spec:
+  nodeName: node-2
+  containers: [{name: api, image: ghcr.io/acme/api:2.1.0-typo}]
+status:
+  phase: Pending
+  containerStatuses:
+    - name: api
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/api:2.1.0-typo
+      state: {waiting: {reason: ImagePullBackOff, message: "Back-off pulling image \"ghcr.io/acme/api:2.1.0-typo\""}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: api-pod-a.1, namespace: shop}
+involvedObject: {kind: Pod, name: api-7f9c6d5b4-a1s2d, namespace: shop, fieldPath: "spec.containers{api}"}
+reason: Failed
+type: Warning
+message: "Failed to pull image \"ghcr.io/acme/api:2.1.0-typo\": rpc error: code = NotFound desc = failed to pull and unpack image \"ghcr.io/acme/api:2.1.0-typo\": failed to resolve reference \"ghcr.io/acme/api:2.1.0-typo\": ghcr.io/acme/api:2.1.0-typo: not found"
+count: 8
+lastTimestamp: "2026-11-14T11:58:00Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: api-pod-b.1, namespace: shop}
+involvedObject: {kind: Pod, name: api-7f9c6d5b4-f3g4h, namespace: shop, fieldPath: "spec.containers{api}"}
+reason: Failed
+type: Warning
+message: "Failed to pull image \"ghcr.io/acme/api:2.1.0-typo\": rpc error: code = NotFound desc = failed to pull and unpack image \"ghcr.io/acme/api:2.1.0-typo\": failed to resolve reference \"ghcr.io/acme/api:2.1.0-typo\": ghcr.io/acme/api:2.1.0-typo: not found"
+count: 8
+lastTimestamp: "2026-11-14T11:58:30Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: api.1, namespace: shop}
+involvedObject: {kind: Deployment, name: api, namespace: shop}
+reason: ScalingReplicaSet
+type: Normal
+message: "Scaled up replica set api-7f9c6d5b4 from 0 to 2"
+count: 1
+lastTimestamp: "2026-11-14T11:40:00Z"

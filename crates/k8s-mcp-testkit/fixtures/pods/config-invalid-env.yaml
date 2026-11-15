@@ -1,0 +1,33 @@
+# envFrom keys that are not valid variable names are skipped (the pod still runs).
+apiVersion: v1
+kind: Pod
+metadata: {name: web-7c8d9-r5t6y, namespace: shop, creationTimestamp: "2026-11-14T11:00:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: web
+      image: nginx:1.27
+      envFrom: [{configMapRef: {name: app-env}}]
+status:
+  phase: Running
+  containerStatuses:
+    - name: web
+      ready: true
+      restartCount: 0
+      image: nginx:1.27
+      state: {running: {startedAt: "2026-11-14T11:00:05Z"}}
+---
+kind: RefCheck
+refKind: ConfigMap
+name: app-env
+exists: true
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.1, namespace: shop}
+involvedObject: {kind: Pod, name: web-7c8d9-r5t6y, namespace: shop}
+reason: InvalidEnvironmentVariableNames
+type: Warning
+message: "Keys [app.port, 1st-run] from the EnvFrom configMap shop/app-env were skipped since they are considered invalid environment variable names."
+count: 1
+lastTimestamp: "2026-11-14T11:00:04Z"

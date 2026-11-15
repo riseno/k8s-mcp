@@ -1,0 +1,35 @@
+# Eval scenario 8: env valueFrom configMapKeyRef to a ConfigMap that does not exist.
+apiVersion: v1
+kind: Pod
+metadata: {name: web-5f7d8b9c4-k2m9x, namespace: eval-x, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: web
+      image: nginx:1.27
+      env:
+        - name: APP_MODE
+          valueFrom: {configMapKeyRef: {name: app-config, key: mode}}
+status:
+  phase: Pending
+  containerStatuses:
+    - name: web
+      ready: false
+      restartCount: 0
+      image: nginx:1.27
+      state: {waiting: {reason: CreateContainerConfigError, message: "configmap \"app-config\" not found"}}
+---
+kind: RefCheck
+refKind: ConfigMap
+name: app-config
+exists: false
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.1, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-5f7d8b9c4-k2m9x, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: Failed
+type: Warning
+message: "Error: configmap \"app-config\" not found"
+count: 12
+lastTimestamp: "2026-11-14T11:59:30Z"

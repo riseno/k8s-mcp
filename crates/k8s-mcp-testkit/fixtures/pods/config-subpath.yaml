@@ -1,0 +1,26 @@
+# A subPath mount the runtime cannot prepare.
+apiVersion: v1
+kind: Pod
+metadata: {name: app-6f7c8-q9w8e, namespace: shop, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: app
+      image: ghcr.io/acme/app:1.0
+      volumeMounts: [{name: cfg, mountPath: /etc/app/app.yaml, subPath: app.yaml}]
+  volumes:
+    - name: cfg
+      configMap: {name: app-cfg}
+status:
+  phase: Pending
+  containerStatuses:
+    - name: app
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/app:1.0
+      state: {waiting: {reason: CreateContainerError, message: "failed to prepare subPath for volumeMount \"cfg\" of container \"app\""}}
+---
+kind: RefCheck
+refKind: ConfigMap
+name: app-cfg
+exists: true

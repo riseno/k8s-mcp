@@ -1,0 +1,28 @@
+# EKS VPC CNI out of IPs.
+apiVersion: v1
+kind: Pod
+metadata: {name: web-8g9h0-h3j4k, namespace: shop, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: ip-10-0-1-23.ec2.internal
+  containers:
+    - name: web
+      image: nginx:1.27
+status:
+  phase: Pending
+  startTime: "2026-11-14T11:50:00Z"
+  containerStatuses:
+    - name: web
+      ready: false
+      restartCount: 0
+      image: nginx:1.27
+      state: {waiting: {reason: ContainerCreating}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.1, namespace: shop}
+involvedObject: {kind: Pod, name: web-8g9h0-h3j4k, namespace: shop}
+reason: FailedCreatePodSandBox
+type: Warning
+message: "Failed to create pod sandbox: rpc error: code = Unknown desc = failed to setup network for sandbox \"3f2a\": plugin type=\"aws-cni\" name=\"aws-cni\" failed (add): add cmd: failed to assign an IP address to container"
+count: 21
+lastTimestamp: "2026-11-14T11:59:30Z"

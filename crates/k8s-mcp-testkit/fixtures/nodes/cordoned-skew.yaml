@@ -1,0 +1,33 @@
+# A cordoned node with an old kubelet, no pod network, and pods bound past its allocatable.
+apiVersion: v1
+kind: Node
+metadata: {name: node-4}
+spec:
+  unschedulable: true
+  taints: [{key: node.kubernetes.io/unschedulable, effect: NoSchedule}]
+status:
+  allocatable: {cpu: "4", memory: 8Gi, pods: "110"}
+  nodeInfo: {kubeletVersion: v1.29.4-eks-036c24b}
+  conditions:
+    - {type: Ready, status: "True", reason: KubeletReady}
+    - {type: NetworkUnavailable, status: "True", reason: NoRouteCreated, message: "Node created without a route"}
+---
+kind: ServerVersion
+major: 1
+minor: 33
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: batch-1, namespace: jobs}
+spec:
+  nodeName: node-4
+  containers: [{name: work, image: busybox:1.36, resources: {requests: {cpu: 2500m, memory: 1Gi}}}]
+status: {phase: Running}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: batch-2, namespace: jobs}
+spec:
+  nodeName: node-4
+  containers: [{name: work, image: busybox:1.36, resources: {requests: {cpu: 2500m, memory: 1Gi}}}]
+status: {phase: Running}

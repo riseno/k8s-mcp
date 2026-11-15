@@ -1,0 +1,26 @@
+# Eval scenario 9: secretKeyRef to a key the Secret does not have.
+apiVersion: v1
+kind: Pod
+metadata: {name: api-6c9f7d5b8-p4q7r, namespace: eval-x, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: api
+      image: ghcr.io/acme/api:2.0.1
+      env:
+        - name: DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: db-creds, key: password}}
+status:
+  phase: Pending
+  containerStatuses:
+    - name: api
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/api:2.0.1
+      state: {waiting: {reason: CreateContainerConfigError, message: "couldn't find key password in Secret eval-x/db-creds"}}
+---
+kind: RefCheck
+refKind: Secret
+name: db-creds
+exists: true
+keys: [username]

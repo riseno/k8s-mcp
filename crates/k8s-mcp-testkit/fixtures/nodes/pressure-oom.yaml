@@ -1,0 +1,52 @@
+# Memory pressure and system OOMs, plus node-problem-detector and EKS agent conditions.
+# Pods are unreadable (no Pod documents).
+apiVersion: v1
+kind: Node
+metadata: {name: node-3}
+status:
+  allocatable: {cpu: "8", memory: 16Gi, pods: "110"}
+  nodeInfo: {kubeletVersion: v1.33.1}
+  conditions:
+    - {type: Ready, status: "True", reason: KubeletReady}
+    - {type: MemoryPressure, status: "True", reason: KubeletHasInsufficientMemory, message: "kubelet has insufficient memory available", lastTransitionTime: "2026-11-14T11:52:00Z"}
+    - {type: DiskPressure, status: "False", reason: KubeletHasNoDiskPressure}
+    - {type: PIDPressure, status: "False", reason: KubeletHasSufficientPID}
+    - {type: NetworkUnavailable, status: "False", reason: RouteCreated}
+    - {type: KernelDeadlock, status: "True", reason: DockerHung, message: "kernel: INFO: task docker:20744 blocked for more than 120 seconds."}
+    - {type: ReadonlyFilesystem, status: "False", reason: FilesystemIsNotReadOnly}
+    - {type: StorageReady, status: "False", reason: IODelays, message: "IO delays detected on /dev/nvme0n1"}
+    - {type: ContainerRuntimeReady, status: "True", reason: ContainerRuntimeIsReady}
+---
+kind: ServerVersion
+major: 1
+minor: 33
+---
+apiVersion: v1
+kind: Event
+metadata: {name: node-3.1, namespace: default}
+involvedObject: {kind: Node, name: node-3}
+reason: EvictionThresholdMet
+type: Warning
+message: "Attempting to reclaim memory"
+count: 4
+lastTimestamp: "2026-11-14T11:55:00Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: node-3.2, namespace: default}
+involvedObject: {kind: Node, name: node-3}
+reason: SystemOOM
+type: Warning
+message: "System OOM encountered, victim process: java, pid: 48211"
+count: 2
+lastTimestamp: "2026-11-14T11:54:00Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: node-3.3, namespace: default}
+involvedObject: {kind: Node, name: node-3}
+reason: OOMKilling
+type: Warning
+message: "Out of memory: Killed process 48211 (java) total-vm:9812344kB, anon-rss:7340032kB"
+count: 1
+lastTimestamp: "2026-11-14T11:54:00Z"

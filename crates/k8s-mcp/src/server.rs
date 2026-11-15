@@ -149,6 +149,10 @@ fn parse<T: DeserializeOwned>(args: Value) -> k8s_mcp_core::Result<T> {
     })
 }
 
+/// The authenticated HTTP caller, put in the request extensions by the HTTP auth layer.
+#[derive(Clone, Debug)]
+pub struct Caller(pub String);
+
 /// The k8s-mcp MCP server.
 #[derive(Clone)]
 pub struct K8sMcp {
@@ -192,7 +196,7 @@ impl K8sMcp {
         &self,
         name: &str,
         args: Value,
-        client: Option<String>,
+        (client, caller): (Option<String>, Option<String>),
         cancelled: impl Future<Output = ()>,
     ) -> CallToolResult {
         let start = Instant::now();
@@ -240,6 +244,7 @@ impl K8sMcp {
             ts: jiff::Timestamp::now().to_string(),
             session: self.session.clone(),
             client,
+            caller,
             tool: name.to_owned(),
             tier: "read",
             context: Some(
@@ -469,9 +474,19 @@ impl ServerHandler for K8sMcp {
         let client = context
             .client_info()
             .map(|i| format!("{}/{}", i.name, i.version));
+        let caller = context
+            .extensions
+            .get::<http::request::Parts>()
+            .and_then(|p| p.extensions.get::<Caller>())
+            .map(|c| c.0.clone());
         let args = Value::Object(request.arguments.unwrap_or_default());
         Ok(self
-            .run(&request.name, args, client, context.ct.cancelled_owned())
+            .run(
+                &request.name,
+                args,
+                (client, caller),
+                context.ct.cancelled_owned(),
+            )
             .await
             .into())
     }

@@ -1,6 +1,7 @@
 //! API discovery (cached per context for 5 minutes) and kind resolution.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use k8s_mcp_core::cluster::{ResourceInfo, Target};
 use k8s_mcp_core::{Error, Result};
@@ -9,7 +10,12 @@ use kube::discovery::ApiResource;
 
 use crate::Ctx;
 
-/// All resources served by the cluster (preferred version of each group), cached.
+/// Budget for one API group's resource list. Broken aggregated APIs (common on managed
+/// clusters, e.g. custom or external metrics adapters) accept the request and never answer.
+const GROUP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// All resources served by the cluster (preferred version of each group), cached. Groups are
+/// fetched concurrently; a group that fails or exceeds [`GROUP_TIMEOUT`] is skipped.
 pub async fn resources(ctx: &Ctx, target: &Target) -> Result<Arc<Vec<ResourceInfo>>> {
     if let Some(r) = ctx.clusters.cached_discovery(&target.context) {
         return Ok(r);
@@ -25,16 +31,31 @@ pub async fn resources(ctx: &Ctx, target: &Target) -> Result<Arc<Vec<ResourceInf
         .list_api_groups()
         .await
         .map_err(|e| Error::kube("discover API groups", &e))?;
+    let mut tasks = tokio::task::JoinSet::new();
     for g in groups.groups {
         let Some(pref) = g.preferred_version.or_else(|| g.versions.first().cloned()) else {
             continue;
         };
-        match client.list_api_group_resources(&pref.group_version).await {
-            Ok(list) => push_list(&mut out, &g.name, &list),
-            // Aggregated APIs (e.g. a broken metrics-server) can fail on their own.
-            Err(e) => {
-                tracing::debug!(group = %pref.group_version, error = %e, "skipping API group");
+        let client = client.clone();
+        tasks.spawn(async move {
+            let res = tokio::time::timeout(
+                GROUP_TIMEOUT,
+                client.list_api_group_resources(&pref.group_version),
+            )
+            .await;
+            (g.name, pref.group_version, res)
+        });
+    }
+    while let Some(joined) = tasks.join_next().await {
+        match joined {
+            Ok((name, _, Ok(Ok(list)))) => push_list(&mut out, &name, &list),
+            Ok((_, gv, Ok(Err(e)))) => {
+                tracing::debug!(group = %gv, error = %e, "skipping API group");
             }
+            Ok((_, gv, Err(_))) => {
+                tracing::debug!(group = %gv, "skipping API group: no answer within 5s");
+            }
+            Err(e) => tracing::debug!(error = %e, "discovery task failed"),
         }
     }
     out.sort_by(|a, b| a.group.cmp(&b.group).then(a.kind.cmp(&b.kind)));

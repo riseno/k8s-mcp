@@ -117,9 +117,11 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
     )
     .unwrap_or_default();
     retain_recent(&mut warnings, now, SignedDuration::from_hours(1));
-    let metrics = resources(ctx, &sc.target)
+    // One request: full discovery walks every API group, and broken aggregated APIs stall it.
+    let metrics = client
+        .list_api_groups()
         .await
-        .is_ok_and(|r| r.iter().any(|r| r.group == "metrics.k8s.io"));
+        .is_ok_and(|g| g.groups.iter().any(|g| g.name == "metrics.k8s.io"));
 
     let mut phases: BTreeMap<String, usize> = BTreeMap::new();
     for p in &pods {

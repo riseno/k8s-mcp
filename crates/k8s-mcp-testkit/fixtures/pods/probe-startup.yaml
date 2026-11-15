@@ -1,0 +1,45 @@
+# A startup probe with a 30s budget for an app that needs longer.
+apiVersion: v1
+kind: Pod
+metadata: {name: search-9e0f1-q7w8e, namespace: shop, creationTimestamp: "2026-11-14T11:30:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: search
+      image: ghcr.io/acme/search:7.1
+      ports: [{containerPort: 9200, name: http}]
+      startupProbe:
+        httpGet: {path: /_cluster/health, port: http}
+        periodSeconds: 10
+        failureThreshold: 3
+        timeoutSeconds: 5
+status:
+  phase: Running
+  containerStatuses:
+    - name: search
+      ready: false
+      started: false
+      restartCount: 6
+      image: ghcr.io/acme/search:7.1
+      state: {running: {startedAt: "2026-11-14T11:59:30Z"}}
+      lastState: {terminated: {exitCode: 143, reason: Error, startedAt: "2026-11-14T11:58:55Z", finishedAt: "2026-11-14T11:59:28Z"}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: search.1, namespace: shop}
+involvedObject: {kind: Pod, name: search-9e0f1-q7w8e, namespace: shop, fieldPath: "spec.containers{search}"}
+reason: Unhealthy
+type: Warning
+message: "Startup probe failed: HTTP probe failed with statuscode: 503"
+count: 19
+lastTimestamp: "2026-11-14T11:59:25Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: search.2, namespace: shop}
+involvedObject: {kind: Pod, name: search-9e0f1-q7w8e, namespace: shop, fieldPath: "spec.containers{search}"}
+reason: Killing
+type: Normal
+message: "Container search failed startup probe, will be restarted"
+count: 6
+lastTimestamp: "2026-11-14T11:59:25Z"

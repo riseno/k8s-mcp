@@ -1,0 +1,27 @@
+# A healthy node at the API server's version.
+apiVersion: v1
+kind: Node
+metadata: {name: node-1}
+status:
+  allocatable: {cpu: "4", memory: 8Gi, pods: "110"}
+  nodeInfo: {kubeletVersion: v1.33.1}
+  conditions:
+    - {type: Ready, status: "True", reason: KubeletReady}
+    - {type: MemoryPressure, status: "False", reason: KubeletHasSufficientMemory}
+    - {type: DiskPressure, status: "False", reason: KubeletHasNoDiskPressure}
+    - {type: PIDPressure, status: "False", reason: KubeletHasSufficientPID}
+    - {type: NetworkUnavailable, status: "False", reason: RouteCreated}
+    - {type: KernelDeadlock, status: "False", reason: KernelHasNoDeadlock}
+    - {type: StorageReady, status: "True", reason: DiskIsHealthy}
+---
+kind: ServerVersion
+major: 1
+minor: 33
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: web-1, namespace: shop}
+spec:
+  nodeName: node-1
+  containers: [{name: web, image: nginx:1.27, resources: {requests: {cpu: 500m, memory: 512Mi}}}]
+status: {phase: Running}

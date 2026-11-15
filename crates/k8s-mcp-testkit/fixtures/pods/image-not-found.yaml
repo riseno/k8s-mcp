@@ -1,0 +1,47 @@
+# Eval scenario 1: a tag that does not exist (nginx:doesnotexist on containerd).
+apiVersion: v1
+kind: Pod
+metadata: {name: web-bad-tag-6b7c8-a1s2d, namespace: eval-x, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: web
+      image: nginx:doesnotexist
+status:
+  phase: Pending
+  containerStatuses:
+    - name: web
+      ready: false
+      restartCount: 0
+      image: nginx:doesnotexist
+      state: {waiting: {reason: ImagePullBackOff, message: "Back-off pulling image \"nginx:doesnotexist\""}}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.1, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-bad-tag-6b7c8-a1s2d, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: Failed
+type: Warning
+message: "Failed to pull image \"nginx:doesnotexist\": rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/library/nginx:doesnotexist\": failed to resolve reference \"docker.io/library/nginx:doesnotexist\": docker.io/library/nginx:doesnotexist: not found"
+count: 4
+lastTimestamp: "2026-11-14T11:58:00Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.2, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-bad-tag-6b7c8-a1s2d, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: Failed
+type: Warning
+message: "Error: ErrImagePull"
+count: 4
+lastTimestamp: "2026-11-14T11:58:00Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web.3, namespace: eval-x}
+involvedObject: {kind: Pod, name: web-bad-tag-6b7c8-a1s2d, namespace: eval-x, fieldPath: "spec.containers{web}"}
+reason: BackOff
+type: Normal
+message: "Back-off pulling image \"nginx:doesnotexist\""
+count: 30
+lastTimestamp: "2026-11-14T11:59:40Z"

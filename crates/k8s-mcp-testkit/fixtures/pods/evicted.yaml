@@ -1,0 +1,14 @@
+# Evicted under node memory pressure.
+apiVersion: v1
+kind: Pod
+metadata: {name: report-5b6c7-x8z9a, namespace: shop, creationTimestamp: "2026-11-14T09:00:00Z"}
+spec:
+  nodeName: node-3
+  containers:
+    - name: report
+      image: ghcr.io/acme/report:1.2
+      resources: {requests: {memory: 256Mi}}
+status:
+  phase: Failed
+  reason: Evicted
+  message: "The node was low on resource: memory. Threshold quantity: 100Mi, available: 81732Ki. Container report was using 1820Mi, request is 256Mi, has larger consumption of memory."

@@ -1,0 +1,16 @@
+# A healthy single-replica StatefulSet.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: redis, namespace: shop}
+spec:
+  replicas: 1
+  serviceName: redis
+  selector: {matchLabels: {app: redis}}
+  template:
+    metadata: {labels: {app: redis}}
+    spec:
+      containers: [{name: redis, image: redis:7.4}]
+status:
+  replicas: 1
+  readyReplicas: 1
+  availableReplicas: 1

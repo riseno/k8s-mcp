@@ -23,7 +23,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | core: audit (JSONL, rotation) | 🚧 | |
 | core: cache | ✅ | discovery cache only, list cache deferred (ADR 0004) |
 | Read tools (§8.1) | 🚧 | |
-| Diagnose rules (§9.2) | 🚧 | CrashLoop and OOM done |
+| Diagnose rules (§9.2) | ✅ | all v0.1 areas; FailedScheduling parser; fixtures for the 14 eval scenarios with a ranking test (root cause first, forbidden ids absent). Evidence gathering for `node.npd.*`/quotas/HPA lives in the tools crate |
 | diagnose_pod / workload / node, find_problems | 🚧 | |
 | Prompts and resources | ⏳ | |
 | doctor, PATH handling | ⏳ | |

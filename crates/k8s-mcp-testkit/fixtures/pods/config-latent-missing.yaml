@@ -1,0 +1,31 @@
+# A running pod whose required ConfigMap was deleted (fails at next start), plus an
+# optional reference to another missing ConfigMap (must not be reported).
+apiVersion: v1
+kind: Pod
+metadata: {name: web-8d9e0-u7i8o, namespace: shop, creationTimestamp: "2026-11-14T10:00:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: web
+      image: nginx:1.27
+      envFrom:
+        - configMapRef: {name: feature-flags}
+        - configMapRef: {name: overrides, optional: true}
+status:
+  phase: Running
+  containerStatuses:
+    - name: web
+      ready: true
+      restartCount: 0
+      image: nginx:1.27
+      state: {running: {startedAt: "2026-11-14T10:00:05Z"}}
+---
+kind: RefCheck
+refKind: ConfigMap
+name: feature-flags
+exists: false
+---
+kind: RefCheck
+refKind: ConfigMap
+name: overrides
+exists: false

@@ -1,0 +1,31 @@
+# Eval scenario 2: a private GHCR image and no imagePullSecrets anywhere.
+apiVersion: v1
+kind: Pod
+metadata: {name: private-app-7d8e9-f3g4h, namespace: eval-x, creationTimestamp: "2026-11-14T11:50:00Z"}
+spec:
+  nodeName: node-1
+  containers:
+    - name: app
+      image: ghcr.io/acme/private-app:1.0.0
+status:
+  phase: Pending
+  containerStatuses:
+    - name: app
+      ready: false
+      restartCount: 0
+      image: ghcr.io/acme/private-app:1.0.0
+      state: {waiting: {reason: ErrImagePull, message: "failed to pull and unpack image \"ghcr.io/acme/private-app:1.0.0\": failed to resolve reference \"ghcr.io/acme/private-app:1.0.0\": failed to authorize: failed to fetch anonymous token: unexpected status from GET request to https://ghcr.io/token?scope=repository%3Aacme%2Fprivate-app%3Apull&service=ghcr.io: 401 Unauthorized"}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: default, namespace: eval-x}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: app.1, namespace: eval-x}
+involvedObject: {kind: Pod, name: private-app-7d8e9-f3g4h, namespace: eval-x, fieldPath: "spec.containers{app}"}
+reason: Failed
+type: Warning
+message: "Failed to pull image \"ghcr.io/acme/private-app:1.0.0\": failed to pull and unpack image \"ghcr.io/acme/private-app:1.0.0\": failed to resolve reference \"ghcr.io/acme/private-app:1.0.0\": failed to authorize: failed to fetch anonymous token: unexpected status from GET request to https://ghcr.io/token?scope=repository%3Aacme%2Fprivate-app%3Apull&service=ghcr.io: 401 Unauthorized"
+count: 3
+lastTimestamp: "2026-11-14T11:58:30Z"

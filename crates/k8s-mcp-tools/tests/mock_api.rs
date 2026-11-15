@@ -327,3 +327,38 @@ async fn get_logs_shapes_and_reports_missing_previous_instance() {
         env.render()
     );
 }
+
+/// A broken aggregated API group (accepts, never answers) must not stall discovery: it is
+/// skipped after the per-group budget and the other kinds still resolve.
+#[tokio::test(start_paused = true)]
+async fn discovery_skips_an_api_group_that_never_answers() {
+    let mock = MockApi::new()
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [
+            {"name": "pods", "singularName": "", "kind": "Pod", "namespaced": true, "verbs": ["list"]}
+        ]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [
+            {"name": "apps", "versions": [{"groupVersion": "apps/v1", "version": "v1"}], "preferredVersion": {"groupVersion": "apps/v1", "version": "v1"}},
+            {"name": "external.metrics.k8s.io", "versions": [{"groupVersion": "external.metrics.k8s.io/v1beta1", "version": "v1beta1"}]}
+        ]}))
+        .get("/apis/apps/v1", json!({"kind": "APIResourceList", "groupVersion": "apps/v1", "resources": [
+            {"name": "deployments", "singularName": "", "kind": "Deployment", "namespaced": true, "verbs": ["list"]}
+        ]}))
+        .hang("/apis/external.metrics.k8s.io/v1beta1")
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let started = tokio::time::Instant::now();
+    let env = k8s_mcp_tools::api_resources(&c, k8s_mcp_tools::ApiResourcesInput::default())
+        .await
+        .unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "took {:?}",
+        started.elapsed()
+    );
+    let kinds: Vec<&str> = env
+        .items
+        .iter()
+        .filter_map(|i| i["kind"].as_str())
+        .collect();
+    assert_eq!(kinds, ["Pod", "Deployment"]);
+}

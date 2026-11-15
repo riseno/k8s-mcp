@@ -549,7 +549,7 @@ impl ServerHandler for K8sMcp {
                     .run(
                         "cluster_overview",
                         json!({ "context": name }),
-                        None,
+                        (None, None),
                         context.ct.cancelled_owned(),
                     )
                     .await;

@@ -362,3 +362,138 @@ async fn discovery_skips_an_api_group_that_never_answers() {
         .collect();
     assert_eq!(kinds, ["Pod", "Deployment"]);
 }
+
+/// riseno/k8s-mcp#7: find_problems counts a workload's pods from the pods it listed, and leaves
+/// the count out (instead of claiming 0) when it did not list pods.
+#[tokio::test]
+async fn find_problems_counts_existing_pods_for_workload_findings() {
+    let deploy = json!({
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": {"name": "api", "namespace": "shop", "creationTimestamp": "2026-11-14T10:00:00Z"},
+        "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "api"}}, "template": {"metadata": {"labels": {"app": "api"}}, "spec": {"containers": [{"name": "app", "image": "nginx:1.27"}]}}},
+        "status": {"replicas": 1, "availableReplicas": 0, "unavailableReplicas": 1}
+    });
+    let mut p = pod(
+        "shop",
+        "api-7d9f8c6b5-x2k4q",
+        "Running",
+        Some("CrashLoopBackOff"),
+        700,
+    );
+    p["metadata"]["labels"] = json!({"app": "api"});
+    let other = pod("shop", "unrelated", "Running", None, 0);
+    let mock = || {
+        MockApi::new()
+            .list("/api/v1/events", vec![])
+            .list("/api/v1/pods", vec![p.clone(), other.clone()])
+            .list("/apis/apps/v1/deployments", vec![deploy.clone()])
+            .start()
+    };
+    let unavailable = |env: &k8s_mcp_tools::Envelope| {
+        env.findings
+            .iter()
+            .find(|f| f.id == "workload.replicas.unavailable")
+            .map(|f| {
+                f.evidence
+                    .iter()
+                    .map(|e| e.text.clone())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            })
+            .unwrap()
+    };
+    let m = mock();
+    let env = k8s_mcp_tools::find_problems(
+        &ctx(&m, Policy::permissive()),
+        FindProblemsInput {
+            kinds: Some(vec!["pods".into(), "workloads".into()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        unavailable(&env).contains("(pods seen: 1)"),
+        "{}",
+        unavailable(&env)
+    );
+
+    let m = mock();
+    let env = k8s_mcp_tools::find_problems(
+        &ctx(&m, Policy::permissive()),
+        FindProblemsInput {
+            kinds: Some(vec!["workloads".into()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        !unavailable(&env).contains("pods seen"),
+        "{}",
+        unavailable(&env)
+    );
+}
+
+/// riseno/k8s-mcp#4: one missing image on many pods is one finding that lists the other pods,
+/// so it cannot crowd every other finding out of the output cap.
+#[tokio::test]
+async fn find_problems_groups_one_root_cause_across_pods() {
+    let msg = "rpc error: code = NotFound desc = failed to pull and unpack image \"registry.example/app:latest\": failed to resolve reference \"registry.example/app:latest\": registry.example/app:latest: not found";
+    let pods: Vec<Value> = (0..6)
+        .map(|i| {
+            let mut p = pod(
+                "shop",
+                &format!("web-{i}"),
+                "Pending",
+                Some("ErrImagePull"),
+                0,
+            );
+            p["spec"]["containers"][0]["image"] = json!("registry.example/app:latest");
+            p["status"]["containerStatuses"][0]["image"] = json!("registry.example/app:latest");
+            p["status"]["containerStatuses"][0]["state"]["waiting"]["message"] = json!(msg);
+            p
+        })
+        .collect();
+    let events: Vec<Value> = (0..6)
+        .map(|i| json!({"apiVersion": "v1", "kind": "Event", "metadata": {"name": format!("e{i}"), "namespace": "shop"},
+            "involvedObject": {"kind": "Pod", "name": format!("web-{i}"), "namespace": "shop", "fieldPath": "spec.containers{app}"},
+            "reason": "Failed", "type": "Warning", "message": format!("Failed to pull image \"registry.example/app:latest\": {msg}"),
+            "count": 3, "lastTimestamp": "2026-11-14T11:59:00Z"}))
+        .collect();
+    let mock = MockApi::new()
+        .list("/api/v1/events", events)
+        .list("/api/v1/pods", pods)
+        .start();
+    let env = k8s_mcp_tools::find_problems(
+        &ctx(&mock, Policy::permissive()),
+        FindProblemsInput {
+            kinds: Some(vec!["pods".into()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let image: Vec<_> = env
+        .findings
+        .iter()
+        .filter(|f| f.id.starts_with("pod.image."))
+        .collect();
+    assert_eq!(
+        image.len(),
+        1,
+        "{:?}",
+        env.findings
+            .iter()
+            .map(|f| (&f.id, &f.title))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        image[0]
+            .evidence
+            .iter()
+            .any(|e| e.text.starts_with("same finding on 5 more: Pod/web-")),
+        "{:?}",
+        image[0].evidence
+    );
+}

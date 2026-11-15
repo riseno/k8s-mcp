@@ -156,7 +156,7 @@ pub fn workload_fixture(name: &str) -> WorkloadEvidence {
         },
         workload,
         events,
-        pod_count: pod_names.len(),
+        pod_count: Some(pod_names.len()),
         pods: pod_evidences,
         quotas: fx.all("ResourceQuota"),
         hpa: fx.first("HorizontalPodAutoscaler"),
@@ -205,7 +205,7 @@ mod tests {
         assert!(matches!(ev.workload, Workload::Deployment(_)));
         assert_eq!(
             (ev.pods.len(), ev.pod_count, ev.replicasets.len()),
-            (2, 2, 1)
+            (2, Some(2), 1)
         );
         for p in &ev.pods {
             assert!(!p.events.is_empty());

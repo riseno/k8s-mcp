@@ -312,6 +312,7 @@ fn cronjob(
 }
 
 fn rollout(ev: &WorkloadEvidence, kind: &str, name: &str, ns: &str, out: &mut Vec<Finding>) {
+    let counts = replicas(&ev.workload);
     if let Workload::Deployment(d) = &ev.workload
         && let Some(c) = d
             .status
@@ -325,32 +326,29 @@ fn rollout(ev: &WorkloadEvidence, kind: &str, name: &str, ns: &str, out: &mut Ve
                     && c.reason.as_deref() == Some("ProgressDeadlineExceeded")
             })
     {
-        out.push(
-            Finding::new("workload.rollout.stuck", Severity::High, Confidence::High, format!("rollout of Deployment {name} is stuck (progress deadline exceeded)"))
-                .explain("The newest ReplicaSet's pods did not become available within spec.progressDeadlineSeconds. The rollout halts; the pod findings show why the new pods fail.")
-                .evidence(Source::Status, format!("condition Progressing=False reason=ProgressDeadlineExceeded: {}", truncate(c.message.as_deref().unwrap_or(""), 300)))
-                .fix(format!("Fix what the pod findings report, or roll back to the last working revision (`kubectl rollout undo deployment/{name} -n {ns}`)."))
-                .docs(docs::DEPLOYMENT),
-        );
-    }
-    let Some((desired, available)) = replicas(&ev.workload) else {
-        return;
-    };
-    if available < desired {
-        let mut f = Finding::new("workload.replicas.unavailable", Severity::High, Confidence::High, format!("{kind} {name} has {available}/{desired} replicas available"))
+        let mut f = Finding::new("workload.rollout.stuck", Severity::High, Confidence::High, format!("rollout of Deployment {name} is stuck (progress deadline exceeded)"))
+            .explain("The newest ReplicaSet's pods did not become available within spec.progressDeadlineSeconds. The rollout halts; the pod findings show why the new pods fail.")
+            .evidence(Source::Status, format!("condition Progressing=False reason=ProgressDeadlineExceeded: {}", truncate(c.message.as_deref().unwrap_or(""), 300)))
+            .fix(format!("Fix what the pod findings report, or roll back to the last working revision (`kubectl rollout undo deployment/{name} -n {ns}`)."))
+            .docs(docs::DEPLOYMENT);
+        if let Some((desired, available)) = counts {
+            f = f.evidence(Source::Status, replica_counts(ev, desired, available));
+        }
+        // The stuck rollout already explains the missing replicas: one finding per cause.
+        out.push(with_pods_next(f, &ev.workload, ns));
+    } else if let Some((desired, available)) = counts
+        && available < desired
+    {
+        let f = Finding::new("workload.replicas.unavailable", Severity::High, Confidence::High, format!("{kind} {name} has {available}/{desired} replicas available"))
             .explain("Some desired pods are missing or not ready. This is a symptom: the pod and creation findings show the cause.")
-            .evidence(Source::Status, format!("desired={desired} available={available} (pods seen: {})", ev.pod_count))
+            .evidence(Source::Status, replica_counts(ev, desired, available))
             .fix("Fix the root cause reported by the other findings. If there are none, the pods may still be starting (minReadySeconds, slow readiness) or were never created (look for FailedCreate events).")
             .docs(docs::DEPLOYMENT);
-        if let Some(sel) = selector(&ev.workload) {
-            f = f.next(
-                "list_resources",
-                json!({"kind": "Pod", "namespace": ns, "label_selector": sel}),
-                "see the workload's pods and their status",
-            );
-        }
-        out.push(f);
+        out.push(with_pods_next(f, &ev.workload, ns));
     }
+    let Some((desired, _)) = counts else {
+        return;
+    };
     let scaled = ev
         .hpa
         .as_ref()
@@ -413,6 +411,26 @@ fn replicas(w: &Workload) -> Option<(i32, i32)> {
             Some((s.desired_number_scheduled, s.number_available.unwrap_or(0)))
         }
         Workload::Job(_) | Workload::CronJob(_) => None,
+    }
+}
+
+/// `desired=N available=M`, plus `(pods seen: K)` when the pods were counted.
+fn replica_counts(ev: &WorkloadEvidence, desired: i32, available: i32) -> String {
+    match ev.pod_count {
+        Some(n) => format!("desired={desired} available={available} (pods seen: {n})"),
+        None => format!("desired={desired} available={available}"),
+    }
+}
+
+/// Suggest listing the workload's pods, when it has a label selector.
+fn with_pods_next(f: Finding, w: &Workload, ns: &str) -> Finding {
+    match selector(w) {
+        Some(sel) => f.next(
+            "list_resources",
+            json!({"kind": "Pod", "namespace": ns, "label_selector": sel}),
+            "see the workload's pods and their status",
+        ),
+        None => f,
     }
 }
 
@@ -510,17 +528,19 @@ mod tests {
     }
 
     #[test]
-    fn stuck_rollout_and_unavailable_replicas_are_high() {
+    fn stuck_rollout_is_one_high_finding_with_replica_counts() {
         let out = run(&workload_fixture("workloads/rollout-stuck.yaml"));
         let got: Vec<_> = out.iter().map(|f| (f.id.as_str(), f.severity)).collect();
-        assert_eq!(
-            got,
-            [
-                ("workload.rollout.stuck", Severity::High),
-                ("workload.replicas.unavailable", Severity::High)
-            ]
+        assert_eq!(got, [("workload.rollout.stuck", Severity::High)]);
+        assert!(
+            out[0]
+                .evidence
+                .iter()
+                .any(|e| e.text.starts_with("desired=")),
+            "{:?}",
+            out[0].evidence
         );
-        assert_eq!(out[1].next[0].args["label_selector"], "app=api");
+        assert_eq!(out[0].next[0].args["label_selector"], "app=api");
     }
 
     #[test]

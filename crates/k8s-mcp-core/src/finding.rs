@@ -275,6 +275,49 @@ pub fn dedup(findings: &mut Vec<Finding>) {
     findings.retain(|f| seen.insert((f.id.clone(), f.object.clone())));
 }
 
+/// Merge findings with the same id and title on different objects (the same root cause seen on
+/// many pods, e.g. one missing image) into the first one, listing the other objects in its
+/// evidence. Keeps order, so call it after [`rank`].
+pub fn group_same_cause(findings: Vec<Finding>) -> Vec<Finding> {
+    const SHOWN: usize = 5;
+    let mut out: Vec<(Finding, Vec<String>)> = Vec::new();
+    for f in findings {
+        let same = f.object.as_ref().and_then(|o| {
+            out.iter_mut()
+                .find(|(g, _)| g.id == f.id && g.title == f.title && g.object.as_ref() != Some(o))
+                .map(|(_, more)| (more, o.to_string()))
+        });
+        match same {
+            Some((more, name)) => more.push(name),
+            None => out.push((f, Vec::new())),
+        }
+    }
+    out.into_iter()
+        .map(|(mut f, more)| {
+            if !more.is_empty() {
+                let mut text = format!(
+                    "same finding on {} more: {}",
+                    more.len(),
+                    more.iter()
+                        .take(SHOWN)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                if more.len() > SHOWN {
+                    use std::fmt::Write as _;
+                    let _ = write!(text, " and {} others", more.len() - SHOWN);
+                }
+                f.evidence.push(Evidence {
+                    source: Source::Related,
+                    text,
+                });
+            }
+            f
+        })
+        .collect()
+}
+
 /// Metadata for one detection rule, used for the `k8s-mcp://rules` resource and generated docs.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct RuleMeta {
@@ -301,6 +344,36 @@ mod tests {
         rank(&mut f);
         let ids: Vec<_> = f.iter().map(|f| f.id.as_str()).collect();
         assert_eq!(ids, ["c", "b", "a", "d"]);
+    }
+
+    #[test]
+    fn group_same_cause_merges_one_root_cause_across_pods() {
+        let f = |pod: &str, title: &str| {
+            Finding::new(
+                "pod.image.not_found",
+                Severity::Critical,
+                Confidence::High,
+                title,
+            )
+            .object(ObjectRef::new("Pod", Some("shop"), pod))
+        };
+        let mut all: Vec<Finding> = (0..8)
+            .map(|i| f(&format!("web-{i}"), "image \"app:latest\" not found"))
+            .collect();
+        all.push(f("api-0", "image \"api:2\" not found"));
+        let grouped = group_same_cause(all);
+        assert_eq!(grouped.len(), 2);
+        let merged = grouped[0].evidence.last().unwrap();
+        assert_eq!(merged.source, Source::Related);
+        assert!(
+            merged
+                .text
+                .starts_with("same finding on 7 more: Pod/web-1 (shop)"),
+            "{}",
+            merged.text
+        );
+        assert!(merged.text.ends_with("and 2 others"), "{}", merged.text);
+        assert!(grouped[1].evidence.is_empty());
     }
 
     #[test]

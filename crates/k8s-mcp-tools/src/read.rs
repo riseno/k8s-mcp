@@ -25,7 +25,7 @@ use crate::common::{
     Scope, bounded, check_name, clean, ensure_namespace, envelope, events_for, fallback_namespaces,
     list_scoped, retain_recent, scope, soft,
 };
-use crate::discovery::{api_resource, resolve, resources};
+use crate::discovery::{Resolved, api_resource, resolve, resources};
 use crate::rows::{self, node_pool, pod_row, provider_from_nodes, unhealthy};
 use crate::{Ctx, Envelope};
 
@@ -388,7 +388,8 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
         .clusters
         .target(input.context.as_deref(), &ctx.policy)
         .await?;
-    let info = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let resolved = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let info = resolved.info.clone();
     let ar = api_resource(&info);
     let all_ns = !info.namespaced || input.all_namespaces;
     let sc = scope(
@@ -467,8 +468,29 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
         e.next
             .push(NextCall::new("list_resources", args, "fetch the next page"));
     }
+    let mut args = json!({"kind": input.kind});
+    if let Some(ns) = &input.namespace {
+        args["namespace"] = json!(ns);
+    }
+    add_alternatives(&mut e, &resolved, "list_resources", &args);
     add_notes(&mut e, &notes);
     Ok(e)
+}
+
+/// Say which other API groups serve an ambiguous kind, with a call for each (riseno/k8s-mcp#27).
+fn add_alternatives(e: &mut Envelope, resolved: &Resolved, tool: &str, args: &Value) {
+    if let Some(note) = resolved.note() {
+        e.summary.push_str(&note);
+    }
+    for alt in resolved.alternatives.iter().take(3) {
+        let mut a = args.clone();
+        a["api_version"] = json!(alt.api_version());
+        e.next.push(NextCall::new(
+            tool,
+            a,
+            &format!("the {} served by {}", alt.kind, alt.api_version()),
+        ));
+    }
 }
 
 async fn list_dynamic(
@@ -583,7 +605,8 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
         .clusters
         .target(input.context.as_deref(), &ctx.policy)
         .await?;
-    let info = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let resolved = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let info = resolved.info.clone();
     let ar = api_resource(&info);
     let sc = scope(
         ctx,
@@ -677,6 +700,11 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
             ),
         }
     }
+    let mut args = json!({"kind": input.kind, "name": input.name});
+    if let Some(ns) = &input.namespace {
+        args["namespace"] = json!(ns);
+    }
+    add_alternatives(&mut e, &resolved, "get_resource", &args);
     Ok(e)
 }
 

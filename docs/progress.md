@@ -24,7 +24,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | core: cache | ✅ | discovery cache only, list cache deferred (ADR 0004) |
 | Read tools (§8.1) | ✅ | 9 tools; mock-API tests and golden snapshots for the main ones |
 | Diagnose rules (§9.2) | ✅ | 12 areas, 61 catalogue ids, 76 rule tests over 42 fixtures + real-message corpus |
-| diagnose_pod / workload / node, find_problems | ✅ | |
+| diagnose_pod / workload / node, find_problems | ✅ | `find_problems` scans pods, workloads and nodes; Services and PVCs come in v0.2 (ADR 0008) |
 | Prompts and resources | ✅ | `investigate-incident`, `cluster-health-check`; `policy`, `contexts`, `rules` |
 | doctor, PATH handling | ✅ | `--path-prepend`, macOS Homebrew dirs, exec plugins forced non-interactive |
 | Eval scenarios, xtask eval | ✅ | 14 scenarios; results in `evals/results/0.1.0.md` |
@@ -63,7 +63,7 @@ row ends with the v0.2 acceptance criterion it serves.
 | 1 | Streamable HTTP transport: `--transport http`, `--listen` (default `127.0.0.1:8080`), rmcp `StreamableHttpService` in axum at `/mcp`, `/healthz`, `/readyz` (API server reachable) | ⏳ | rmcp validates `Host`/`Origin` itself (`allowed_hosts`, `allowed_origins`); stateless for `2026-07-28`, legacy sessions for `2025-11-25`; tower-http body limit and timeout. AC 1 |
 | 2 | Auth: `--auth tokenreview\|static\|none`, `--auth-token-file`; 401 without a valid bearer; `none` refused unless the bind is loopback; caller identity in the audit log | ⏳ | TokenReview results cached ~60 s. AC 1 |
 | 3 | Helm chart `deploy/helm/k8s-mcp`: Deployment, Service, ServiceAccount (IRSA / GKE WI / Azure WI values), read-only ClusterRole (Appendix C) + TokenReview binding, NetworkPolicy, PDB, hardened securityContext, `values.schema.json` | ⏳ | CI: helm lint, kubeconform, install on kind and k3s, HTTP smoke test (401, bad Origin 403, TokenReview client runs `diagnose_pod`). AC 1, 2 |
-| 4 | Rules and tools: `diagnose_service` (`svc.*`), `diagnose_pvc` (`pvc.*`), `diagnose_dns` (`dns.*`), `autoscaling_status` (Karpenter, Cluster Autoscaler, HPA), `recent_changes`, `rollout_history` | ⏳ | Fixtures for Karpenter NodePool limit reached and CA `NotTriggerScaleUp`. AC 5 |
+| 4 | Rules and tools: `diagnose_service` (`svc.*`), `diagnose_pvc` (`pvc.*`), `diagnose_dns` (`dns.*`), `autoscaling_status` (Karpenter, Cluster Autoscaler, HPA), `recent_changes`, `rollout_history` | ⏳ | Also add `services` and `pvcs` to `find_problems` `kinds` (ADR 0008). Fixtures for Karpenter NodePool limit reached and CA `NotTriggerScaleUp`. AC 5 |
 | 5 | Prompts `explain-workload`, `access-review`; resource template `k8s-mcp://cluster/{context}/overview` | ⏳ | |
 | 6 | Provider framework `k8s-mcp-provider`: shared types, detection from cluster signals (providerID, node labels, server host, exec args), `--providers auto\|none\|eks`, provider toolsets registered only when compiled in and detected | ⏳ | Enum dispatch, not `dyn` + async-trait (ADR 0006). AC 3 |
 | 7 | EKS provider `k8s-mcp-provider-eks` (feature `provider-eks`): `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check` (IRSA + Pod Identity), `eks_logs`; finding enrichment (VPC CNI IP exhaustion, ECR auth) | ⏳ | No credentials → Kubernetes-side checks plus `cloud_checks: skipped`. Mocked AWS goldens: IRSA trust mismatch, missing OIDC provider, missing Pod Identity association. AC 3, 4 |
@@ -92,3 +92,5 @@ formula. Pre-release tags (`-rc.N`) build and attest but do not publish the imag
 - ADR 0005: kind matrix is 1.34/1.37 (kind v0.33.0 ships no 1.33 image); `[profile.dist]` lives in `.cargo/config.toml`.
 - ADR 0006: providers dispatch through an enum instead of `dyn Provider` + async-trait.
 - ADR 0007: the AWS SDK runs on rustls + ring via `aws-smithy-http-client`.
+- ADR 0008: `find_problems` covers Services and PVCs from v0.2, with the §9.2 `svc.*`/`pvc.*` rules.
+- ADR 0009: logs are scrubbed of the exact values of the Secrets their pod references.

@@ -118,7 +118,7 @@ What this server's identity may do in a namespace (pods, logs, events, nodes, me
 |---|---|---|
 | `context` | string | Kubeconfig context. |
 | `namespace` | string | Namespace to check (default: the context's namespace). |
-| `verbs_for` | array | Extra resources to check `get`/`list` on, e.g. `["deployments.apps", "pods/log"]`. |
+| `verbs_for` | array | Extra resources to check, e.g. `["deployments.apps", "pods/log", "pods/exec"]`: `get` for `*/log`, `create` for `*/exec`, `*/attach`, `*/portforward` and `*/eviction`, else `get` and `list`. |
 
 ## Toolset `diagnose`
 

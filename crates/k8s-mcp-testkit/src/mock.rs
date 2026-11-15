@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 struct Route {
     method: &'static str,
     path: String,
+    /// When set, the request's query string must contain this.
+    query: Option<String>,
     status: u16,
     body: Value,
 }
@@ -49,6 +51,7 @@ impl MockApi {
         self.routes.push(Route {
             method,
             path: path.to_owned(),
+            query: None,
             status,
             body,
         });
@@ -60,6 +63,19 @@ impl MockApi {
     pub fn forbid(self, path: &str) -> Self {
         let body = status(403, "Forbidden", "forbidden by RBAC (mock)");
         self.route("GET", path, 403, body)
+    }
+
+    /// Answer `GET path` whose query contains `query` (checked before routes without a query).
+    #[must_use]
+    pub fn get_query(mut self, path: &str, query: &str, status: u16, body: Value) -> Self {
+        self.routes.push(Route {
+            method: "GET",
+            path: path.to_owned(),
+            query: Some(query.to_owned()),
+            status,
+            body,
+        });
+        self
     }
 
     /// Accept `GET path` and never answer, like a broken aggregated API.
@@ -95,10 +111,18 @@ impl MockApi {
                     .map(|q| format!("?{q}"))
                     .unwrap_or_default();
                 log.lock().unwrap().push(format!("{method} {path}{query}"));
+                let matches = |r: &&Route| r.method == method && r.path == path;
                 let route = self
                     .routes
                     .iter()
-                    .find(|r| r.method == method && r.path == path);
+                    .filter(matches)
+                    .find(|r| r.query.as_ref().is_some_and(|q| query.contains(q.as_str())))
+                    .or_else(|| {
+                        self.routes
+                            .iter()
+                            .filter(matches)
+                            .find(|r| r.query.is_none())
+                    });
                 if route.is_some_and(|r| r.status == 0) {
                     unanswered.push(send); // keep the request open forever
                     continue;

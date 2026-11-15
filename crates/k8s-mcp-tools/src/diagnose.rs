@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_cause, rank};
-use k8s_mcp_core::text::dedup_lines;
+use k8s_mcp_core::text::{dedup_lines, is_marker_line, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
     ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
@@ -30,8 +30,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::common::{
-    Scope, check_name, envelope, events_for, list_scoped, retain_recent, scope, selector_matches,
-    selector_string, soft,
+    Scope, check_name, ensure_namespace, envelope, events_for, list_scoped, retain_recent, scope,
+    selector_matches, selector_string, soft,
 };
 use crate::read::{add_notes, events_section};
 use crate::rows::{node_row, pod_row, pod_status, unhealthy};
@@ -141,6 +141,8 @@ async fn gather_pod(
     };
 
     let mut refs = Vec::new();
+    // Values of the Secrets the pod uses, kept only to mask them in its logs (never output).
+    let mut secret_values: Vec<String> = Vec::new();
     let mut pvcs = Vec::new();
     let mut service_account = None;
     for (kind, ref_name) in collect_refs(&pod).into_iter().take(MAX_REFS) {
@@ -167,16 +169,19 @@ async fn gather_pod(
                 .get_opt(&ref_name)
                 .await
             {
-                Ok(Some(s)) => (
-                    Some(true),
-                    Some(
-                        s.data
-                            .unwrap_or_default()
-                            .into_keys()
-                            .chain(s.string_data.unwrap_or_default().into_keys())
-                            .collect(),
-                    ),
-                ),
+                Ok(Some(s)) => {
+                    secret_values.extend(values_of(&s));
+                    (
+                        Some(true),
+                        Some(
+                            s.data
+                                .unwrap_or_default()
+                                .into_keys()
+                                .chain(s.string_data.unwrap_or_default().into_keys())
+                                .collect(),
+                        ),
+                    )
+                }
                 Ok(None) => (Some(false), None),
                 Err(e) => note(&mut un, &format!("Secret {ref_name} (existence only)"), &e),
             },
@@ -254,7 +259,7 @@ async fn gather_pod(
                     reason: "the runtime no longer has them (the container was removed after its crash)".into(),
                 }),
                 Ok(raw) => logs.push(ContainerLog {
-                    lines: dedup_lines(raw.lines().map(|l| ctx.redactor.text(&k8s_mcp_core::text::strip_ansi(l)).into_owned())),
+                    lines: dedup_lines(redact_log(ctx, &raw, &secret_values).into_iter().filter(|l| !is_marker_line(l))),
                     container,
                     previous,
                 }),
@@ -289,6 +294,51 @@ fn note(
         reason: Error::kube(format!("check {what}"), e).to_string(),
     });
     (None, None)
+}
+
+/// Redact one container log: exact Secret values first (every level), then patterns, tracking
+/// multi-line PEM keys.
+pub fn redact_log(ctx: &Ctx, raw: &str, secret_values: &[String]) -> Vec<String> {
+    let mut lines: Vec<String> = raw.lines().map(|l| strip_ansi(l).into_owned()).collect();
+    k8s_mcp_core::redact::scrub_values(&mut lines, secret_values);
+    ctx.redactor.lines(lines.iter().map(String::as_str))
+}
+
+/// Secret values as text (keys are not secret; values are kept in memory only for masking).
+fn values_of(s: &Secret) -> Vec<String> {
+    let data = s
+        .data
+        .iter()
+        .flatten()
+        .map(|(_, v)| String::from_utf8_lossy(&v.0).into_owned());
+    let string_data = s.string_data.iter().flatten().map(|(_, v)| v.clone());
+    data.chain(string_data).collect()
+}
+
+/// Values of the Secrets a pod references, for masking them in its logs. When RBAC forbids
+/// reading a Secret, records a note and returns what it could read.
+pub async fn pod_secret_values(sc: &Scope, pod: &Pod, notes: &mut Vec<Unavailable>) -> Vec<String> {
+    let ns = pod.metadata.namespace.clone().unwrap_or_default();
+    let api: Api<Secret> = Api::namespaced(sc.target.client.clone(), &ns);
+    let mut out = Vec::new();
+    for (_, name) in collect_refs(pod)
+        .into_iter()
+        .filter(|(k, _)| *k == RefKind::Secret)
+        .take(MAX_REFS)
+    {
+        match api.get_opt(&name).await {
+            Ok(Some(s)) => out.extend(values_of(&s)),
+            Ok(None) => {}
+            Err(e) => notes.push(Unavailable {
+                what: format!("Secret {name} values for masking in logs"),
+                reason: format!(
+                    "{}; only pattern redaction was applied",
+                    Error::kube(format!("read Secret {name}"), &e)
+                ),
+            }),
+        }
+    }
+    out
 }
 
 /// Every ConfigMap, Secret, PVC and ServiceAccount a pod references.
@@ -572,7 +622,12 @@ fn workload_selector(w: &Workload) -> Option<&LabelSelector> {
 }
 
 /// Objects of type K in `ns` owned by `owner_kind/owner`, newest first.
-async fn owned<K>(client: &kube::Client, ns: &str, owner_kind: &str, owner: &str) -> Result<Vec<K>>
+pub(crate) async fn owned<K>(
+    client: &kube::Client,
+    ns: &str,
+    owner_kind: &str,
+    owner: &str,
+) -> Result<Vec<K>>
 where
     K: Resource<Scope = k8s_openapi::NamespaceResourceScope>
         + Clone
@@ -941,9 +996,21 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     )
     .await?;
     let now = ctx.now();
+    // Nodes are cluster-wide: in a namespace scan, only nodes running its pods are reported,
+    // unless nodes were asked for explicitly.
+    let only_namespace_nodes = sc.namespace.is_some() && input.kinds.is_none();
     let kinds = input
         .kinds
         .unwrap_or_else(|| vec!["pods".into(), "workloads".into(), "nodes".into()]);
+    if let Some(bad) = kinds.iter().find(|k| {
+        !["pods", "workloads", "nodes"]
+            .iter()
+            .any(|v| k.eq_ignore_ascii_case(v))
+    }) {
+        return Err(Error::InvalidInput(format!(
+            "unknown kind {bad:?} in kinds; valid values are pods, workloads and nodes"
+        )));
+    }
     let want = |k: &str| kinds.iter().any(|x| x.eq_ignore_ascii_case(k));
     let min = input.min_severity.unwrap_or(Severity::Medium);
     let mut un = Vec::new();
@@ -1064,6 +1131,20 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             &mut un,
         )
     {
+        let mut nodes = nodes;
+        if only_namespace_nodes {
+            let used: BTreeSet<&str> = listed_pods
+                .iter()
+                .flatten()
+                .filter_map(|p| p.spec.as_ref()?.node_name.as_deref())
+                .collect();
+            nodes.retain(|n| {
+                n.metadata
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| used.contains(name))
+            });
+        }
         scanned.push(format!("{} nodes", nodes.len()));
         for n in nodes {
             let name = n.metadata.name.clone().unwrap_or_default();
@@ -1105,11 +1186,27 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             )];
         }
     }
+    if findings.is_empty() && listed_pods.as_ref().is_some_and(Vec::is_empty) {
+        ensure_namespace(&sc).await?;
+    }
     // One finding per root cause: after evidence is trimmed, so the merged list is kept.
     let mut findings = group_same_cause(findings);
     let total = findings.len();
+    let by_severity = [
+        Severity::Critical,
+        Severity::High,
+        Severity::Medium,
+        Severity::Low,
+        Severity::Info,
+    ]
+    .iter()
+    .filter_map(|s| {
+        let n = findings.iter().filter(|f| f.severity == *s).count();
+        (n > 0).then(|| format!("{n} {}", s.as_str()))
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
     findings.truncate(50);
-    let count = |s: Severity| findings.iter().filter(|f| f.severity == s).count();
     let mut e = envelope(
         &sc,
         if total == 0 {
@@ -1120,10 +1217,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             )
         } else {
             format!(
-                "{total} findings ({} critical, {} high, {} medium) across {}.",
-                count(Severity::Critical),
-                count(Severity::High),
-                count(Severity::Medium),
+                "{total} findings ({by_severity}) across {}.",
                 scanned.join(", ")
             )
         },

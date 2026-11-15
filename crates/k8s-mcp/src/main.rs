@@ -92,7 +92,7 @@ pub struct Opts {
         default_value_t = 24_000
     )]
     max_output_bytes: usize,
-    /// Audit log: a file path, `stderr` or `off` [default: $XDG_STATE_HOME/k8s-mcp/audit.jsonl; stderr in-cluster].
+    /// Audit log: a file path, `stderr` or `off` [default: ~/Library/Application Support/k8s-mcp/audit.jsonl on macOS, $XDG_STATE_HOME/k8s-mcp/audit.jsonl (else ~/.local/state/k8s-mcp/audit.jsonl) on Linux, %LOCALAPPDATA%\k8s-mcp\audit.jsonl on Windows; stderr in-cluster].
     #[arg(long, global = true, env = "K8S_MCP_AUDIT_LOG")]
     audit_log: Option<String>,
     /// Toolsets to expose (comma separated): core, diagnose.

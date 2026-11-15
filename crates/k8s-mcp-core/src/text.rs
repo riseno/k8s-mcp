@@ -76,6 +76,15 @@ pub fn truncate(s: &str, max: usize) -> String {
     format!("{}…", &s[..end])
 }
 
+/// True for lines made only of whitespace and `^`/`~` (the caret markers Python 3.11+ prints
+/// under traceback lines): they carry no information without fixed-width alignment.
+pub fn is_marker_line(line: &str) -> bool {
+    line.contains(['^', '~'])
+        && line
+            .chars()
+            .all(|c| c.is_whitespace() || c == '^' || c == '~')
+}
+
 /// Collapse consecutive duplicate lines into `[×N] line`.
 pub fn dedup_lines(lines: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut out: Vec<(String, usize)> = Vec::new();
@@ -147,6 +156,14 @@ mod tests {
     #[test]
     fn ansi_is_stripped() {
         assert_eq!(strip_ansi("\x1b[31mERROR\x1b[0m boom"), "ERROR boom");
+    }
+
+    #[test]
+    fn traceback_markers() {
+        assert!(is_marker_line("               ^^^^^^^^^^^^^^^^^^^^^"));
+        assert!(is_marker_line("    ~~~~~~~^^^^^^"));
+        assert!(!is_marker_line("   "));
+        assert!(!is_marker_line("x ^ y"));
     }
 
     #[test]

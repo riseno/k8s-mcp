@@ -1,0 +1,26 @@
+# riseno/k8s-mcp#19: exit 3, and the log tail shows a refused connection to a dependency.
+apiVersion: v1
+kind: Pod
+metadata: {name: worker-6f7d8-k2m3n, namespace: shop, creationTimestamp: "2026-11-14T11:30:00Z"}
+spec:
+  nodeName: node-1
+  containers: [{name: worker, image: ghcr.io/acme/worker:2.0}]
+status:
+  phase: Running
+  containerStatuses:
+    - name: worker
+      ready: false
+      restartCount: 12
+      image: ghcr.io/acme/worker:2.0
+      imageID: ""
+      state: {waiting: {reason: CrashLoopBackOff}}
+      lastState: {terminated: {exitCode: 3, reason: Error, startedAt: "2026-11-14T11:58:00Z", finishedAt: "2026-11-14T11:58:02Z"}}
+---
+kind: ContainerLog
+container: worker
+previous: true
+lines:
+  - "2026-11-14 11:58:01 INFO starting worker"
+  - "Traceback (most recent call last):"
+  - "  File \"/app/worker.py\", line 12, in <module>"
+  - "redis.exceptions.ConnectionError: Error 111 connecting to localhost:6379. Connection refused."

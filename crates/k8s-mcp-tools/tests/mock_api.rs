@@ -497,3 +497,479 @@ async fn find_problems_groups_one_root_cause_across_pods() {
         image[0].evidence
     );
 }
+
+/// riseno/k8s-mcp#11: the next-page call repeats the whole query, not just kind and namespace.
+#[tokio::test]
+async fn list_resources_next_page_keeps_the_query() {
+    let mock = with_discovery(MockApi::new())
+        .get(
+            "/api/v1/namespaces/kube-system/pods",
+            json!({"apiVersion": "v1", "kind": "List", "metadata": {"continue": "tok-2"}, "items": [pod("kube-system", "coredns-1", "Running", None, 0)]}),
+        )
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let input: ListResourcesInput = serde_json::from_value(json!({
+        "kind": "pods", "api_version": "v1", "namespace": "kube-system",
+        "label_selector": "k8s-app=kube-dns", "field_selector": "status.phase=Running", "limit": 1
+    }))
+    .unwrap();
+    let env = k8s_mcp_tools::list_resources(&c, input).await.unwrap();
+    let mut args = env.next[0].args.clone();
+    assert_eq!(args["continue"], "tok-2");
+    args.as_object_mut().unwrap().remove("continue");
+    assert_eq!(
+        args,
+        json!({
+            "kind": "pods", "api_version": "v1", "namespace": "kube-system",
+            "label_selector": "k8s-app=kube-dns", "field_selector": "status.phase=Running", "limit": 1
+        })
+    );
+    let reqs = mock.requests.lock().unwrap();
+    assert!(
+        reqs.iter()
+            .any(|r| r.contains("labelSelector=k8s-app%3Dkube-dns")),
+        "{reqs:?}"
+    );
+}
+
+/// riseno/k8s-mcp#13 and #14: a namespace scan reports only nodes running that namespace's
+/// pods, and the summary counts every severity present.
+#[tokio::test]
+async fn find_problems_in_a_namespace_scopes_nodes_and_counts_every_severity() {
+    let node = |name: &str| {
+        json!({"apiVersion": "v1", "kind": "Node", "metadata": {"name": name},
+        "status": {"conditions": [{"type": "Ready", "status": "False", "reason": "KubeletNotReady", "lastTransitionTime": "2026-11-14T11:00:00Z"}]}})
+    };
+    let deploy = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "web", "namespace": "shop"},
+        "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "web"}}, "template": {"metadata": {"labels": {"app": "web"}}, "spec": {"containers": [{"name": "app", "image": "nginx:1.27"}]}}},
+        "status": {"replicas": 1, "availableReplicas": 1, "readyReplicas": 1}});
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .list(
+            "/api/v1/namespaces/shop/pods",
+            vec![pod("shop", "web-1", "Running", None, 0)],
+        )
+        .list("/apis/apps/v1/namespaces/shop/deployments", vec![deploy])
+        .list("/api/v1/nodes", vec![node("node-1"), node("node-2")])
+        .start();
+    let input = FindProblemsInput {
+        namespace: Some("shop".into()),
+        min_severity: Some(k8s_mcp_core::finding::Severity::Low),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::find_problems(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let nodes: Vec<&str> = env
+        .findings
+        .iter()
+        .filter_map(|f| f.object.as_ref())
+        .filter(|o| o.kind == "Node")
+        .map(|o| o.name.as_str())
+        .collect();
+    assert!(
+        nodes.contains(&"node-1") && !nodes.contains(&"node-2"),
+        "{nodes:?}"
+    );
+    assert!(env.summary.contains("1 low"), "{}", env.summary);
+}
+
+/// riseno/k8s-mcp#21: the same event on many pods is one row (objects count + examples), and
+/// #14: the summary counts occurrences, not Event objects.
+#[tokio::test]
+async fn list_events_groups_one_cause_across_pods() {
+    let ev = |pod: &str, count: i32| {
+        json!({"apiVersion": "v1", "kind": "Event", "metadata": {"name": format!("{pod}.x"), "namespace": "shop"},
+        "involvedObject": {"kind": "Pod", "name": pod, "namespace": "shop"}, "reason": "Failed", "type": "Warning",
+        "message": "Error: ImagePullBackOff", "count": count, "lastTimestamp": "2026-11-14T11:59:00Z"})
+    };
+    let events = vec![
+        ev("web-a1", 100),
+        ev("web-b2", 200),
+        ev("web-c3", 300),
+        ev("web-d4", 400),
+    ];
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", events.clone())
+        .start();
+    let env = k8s_mcp_tools::list_events(
+        &ctx(&mock, Policy::permissive()),
+        ListEventsInput::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.items.len(), 1, "{:?}", env.items);
+    assert_eq!(env.items[0]["objects"], 4);
+    assert_eq!(
+        env.items[0]["object"],
+        "Pod/web-a1, Pod/web-b2, Pod/web-c3 (+1 more)"
+    );
+    assert!(
+        env.summary.starts_with("1 event groups (1000 occurrences)"),
+        "{}",
+        env.summary
+    );
+
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", events)
+        .start();
+    let one = ListEventsInput {
+        involved_name: Some("web-a1".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::list_events(&ctx(&mock, Policy::permissive()), one)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.items.len(),
+        4,
+        "per-object rows when an object is named (the mock ignores the field selector)"
+    );
+}
+
+/// riseno/k8s-mcp#12: a workload summary shows its pod-template containers, redacted.
+#[tokio::test]
+async fn workload_summary_shows_template_containers() {
+    let cronjob = json!({"apiVersion": "batch/v1", "kind": "CronJob", "metadata": {"name": "report", "namespace": "shop"},
+    "spec": {"schedule": "0 * * * *", "jobTemplate": {"spec": {"template": {"spec": {"restartPolicy": "Never", "containers": [{
+        "name": "job", "image": "registry.example/report:3",
+        "env": [{"name": "API_TOKEN", "value": "tok-123"}, {"name": "MODE", "value": "prod"}],
+        "resources": {"limits": {"memory": "256Mi"}},
+        "livenessProbe": {"httpGet": {"path": "/healthz", "port": 8080}}
+    }]}}}}}});
+    let mock = MockApi::new()
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [{"name": "events", "singularName": "", "kind": "Event", "namespaced": true, "verbs": ["list"]}]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [{"name": "batch", "versions": [{"groupVersion": "batch/v1", "version": "v1"}], "preferredVersion": {"groupVersion": "batch/v1", "version": "v1"}}]}))
+        .get("/apis/batch/v1", json!({"kind": "APIResourceList", "groupVersion": "batch/v1", "resources": [{"name": "cronjobs", "singularName": "", "kind": "CronJob", "namespaced": true, "shortNames": ["cj"], "verbs": ["get"]}]}))
+        .get("/apis/batch/v1/namespaces/shop/cronjobs/report", cronjob)
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input: GetResourceInput =
+        serde_json::from_value(json!({"kind": "cj", "name": "report"})).unwrap();
+    let env = k8s_mcp_tools::get_resource(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let yaml = env.sections[0].lines.join("\n");
+    assert!(
+        yaml.contains("containers:") && yaml.contains("image: registry.example/report:3"),
+        "{yaml}"
+    );
+    assert!(
+        yaml.contains("memory: 256Mi") && yaml.contains("path: /healthz"),
+        "{yaml}"
+    );
+    let all = env.to_json().to_string();
+    assert!(!all.contains("tok-123") && all.contains("prod"), "{all}");
+}
+
+/// riseno/k8s-mcp#20: traceback caret lines are dropped (and counted), and a second pod with
+/// identical output says "same as" instead of repeating it.
+#[tokio::test]
+async fn workload_logs_drop_markers_and_merge_identical_pods() {
+    let deploy = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "api", "namespace": "shop"},
+        "spec": {"replicas": 2, "selector": {"matchLabels": {"app": "api"}}, "template": {"spec": {"containers": [{"name": "app", "image": "i"}]}}}});
+    let mut pods = Vec::new();
+    for name in ["api-1", "api-2"] {
+        let mut p = pod("shop", name, "Running", Some("CrashLoopBackOff"), 5);
+        p["metadata"]["labels"] = json!({"app": "api"});
+        pods.push(p);
+    }
+    let log = json!(
+        "Traceback (most recent call last):\n  File \"main.py\", line 3, in <module>\n    connect()\n    ^^^^^^^^^\nConnectionError: refused\n"
+    );
+    let mock = MockApi::new()
+        .get("/apis/apps/v1/namespaces/shop/deployments/api", deploy)
+        .list("/api/v1/namespaces/shop/pods", pods)
+        .get("/api/v1/namespaces/shop/pods/api-1/log", log.clone())
+        .get("/api/v1/namespaces/shop/pods/api-2/log", log)
+        .start();
+    let input = GetLogsInput {
+        workload: Some("deployment/api".into()),
+        previous: true,
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::get_logs(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let first = &env.items[0];
+    assert!(
+        !env.sections[0].lines.iter().any(|l| l.contains("^^^")),
+        "{:?}",
+        env.sections[0].lines
+    );
+    assert_eq!(first["omitted_lines"], 1);
+    assert_eq!(env.items[1]["same_as"], first["pod"]);
+    assert!(env.sections[1].lines.is_empty() && env.sections[1].title.contains("same as"));
+}
+
+/// riseno/k8s-mcp#22: standard verbs collapse to "all", and the summary names every group so a
+/// truncated listing can be narrowed.
+#[tokio::test]
+async fn api_resources_compacts_verbs_and_names_groups() {
+    let mock = with_discovery(MockApi::new()).start();
+    let env = k8s_mcp_tools::api_resources(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::ApiResourcesInput::default(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        env.summary.contains("in 2 API groups") && env.summary.contains("apps, core"),
+        "{}",
+        env.summary
+    );
+    // The testkit discovery serves get/list/watch, which is not the full standard set.
+    assert_eq!(env.items[0]["verbs"], json!(["get", "list", "watch"]));
+
+    let full = json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [{"name": "configmaps", "singularName": "", "kind": "ConfigMap", "namespaced": true,
+        "verbs": ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]}]});
+    let mock = MockApi::new()
+        .get("/api/v1", full)
+        .get("/apis", json!({"kind": "APIGroupList", "groups": []}))
+        .start();
+    let env = k8s_mcp_tools::api_resources(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::ApiResourcesInput::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.items[0]["verbs"], "all");
+}
+
+/// riseno/k8s-mcp#24 and #25: a value from a Secret the pod uses, logged without any keyword,
+/// and a PEM key logged across lines, never come back from get_logs.
+#[tokio::test]
+async fn get_logs_masks_secret_values_and_multi_line_keys() {
+    let mut p = pod("shop", "api-1", "Running", None, 0);
+    p["spec"]["containers"][0]["env"] = json!([{"name": "FROM_SECRET", "valueFrom": {"secretKeyRef": {"name": "db", "key": "pw"}}}]);
+    let secret = json!({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "db", "namespace": "shop"}, "data": {"pw": "czNjcjN0LWZyb20tc2VjcmV0"}});
+    let log = json!(
+        "echoed: s3cr3t-from-secret\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAkeybodyline1\nkeybodyline2==\n-----END RSA PRIVATE KEY-----\nready\n"
+    );
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/pods/api-1", p)
+        .get("/api/v1/namespaces/shop/secrets/db", secret)
+        .get("/api/v1/namespaces/shop/pods/api-1/log", log)
+        .start();
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(
+            &mock,
+            Policy::new(
+                &[],
+                &[],
+                &[],
+                k8s_mcp_core::policy::RedactLevel::Off,
+                24_000,
+            )
+            .unwrap(),
+        ),
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let all = format!("{}{}", env.render(), env.to_json());
+    assert!(
+        !all.contains("s3cr3t-from-secret"),
+        "Secret value leaked even with --redact off: {all}"
+    );
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(&mock, Policy::permissive()),
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let all = format!("{}{}", env.render(), env.to_json());
+    assert!(
+        !all.contains("s3cr3t-from-secret") && !all.contains("keybody"),
+        "{all}"
+    );
+    assert!(all.contains("ready"));
+}
+
+/// riseno/k8s-mcp#28: between restarts the crashed run is the current instance; previous=true
+/// falls back to it instead of returning nothing.
+#[tokio::test]
+async fn previous_logs_fall_back_to_the_crashed_current_instance() {
+    let mut p = pod("shop", "job-1", "Running", None, 5);
+    p["status"]["containerStatuses"][0]["state"] =
+        json!({"terminated": {"exitCode": 1, "reason": "Error"}});
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/pods/job-1", p)
+        .get_query(
+            "/api/v1/namespaces/shop/pods/job-1/log",
+            "previous=true",
+            400,
+            status(
+                400,
+                "BadRequest",
+                "previous terminated container \"app\" in pod \"job-1\" not found",
+            ),
+        )
+        .get("/api/v1/namespaces/shop/pods/job-1/log", json!("boom\n"))
+        .start();
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(&mock, Policy::permissive()),
+        GetLogsInput {
+            pod: Some("job-1".into()),
+            previous: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.sections[0].lines, ["boom"]);
+    assert!(
+        env.sections[0].title.contains("the crashed run"),
+        "{}",
+        env.sections[0].title
+    );
+    assert_eq!(env.items[0]["previous"], false);
+}
+
+/// riseno/k8s-mcp#29: invalid inputs are rejected with the valid range or values instead of
+/// being clamped or ignored, and a namespace that does not exist is reported as such.
+#[tokio::test]
+async fn invalid_inputs_and_missing_namespaces_are_errors() {
+    let mock = with_discovery(MockApi::new())
+        .list("/api/v1/namespaces/no-such-ns/pods", vec![])
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let err = |r: k8s_mcp_core::Result<k8s_mcp_tools::Envelope>| {
+        r.err().map(|e| e.to_string()).unwrap_or_default()
+    };
+    assert!(
+        err(k8s_mcp_tools::get_logs(
+            &c,
+            GetLogsInput {
+                pod: Some("x".into()),
+                tail: Some(-5),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("tail must be between 1 and 2000")
+    );
+    assert!(
+        err(k8s_mcp_tools::list_resources(
+            &c,
+            ListResourcesInput {
+                kind: "pods".into(),
+                limit: Some(0),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("limit must be between 1 and 500")
+    );
+    assert!(
+        err(k8s_mcp_tools::find_problems(
+            &c,
+            FindProblemsInput {
+                kinds: Some(vec!["pods".into(), "bogus".into()]),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("unknown kind \"bogus\"")
+    );
+    assert!(
+        err(k8s_mcp_tools::list_events(
+            &c,
+            ListEventsInput {
+                types: Some(vec!["Bogus".into()]),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("use Normal and/or Warning")
+    );
+    let many = (0..11).map(|i| format!("r{i}")).collect();
+    assert!(
+        err(k8s_mcp_tools::check_permissions(
+            &c,
+            k8s_mcp_tools::CheckPermissionsInput {
+                verbs_for: Some(many),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("at most 10")
+    );
+    assert!(
+        err(k8s_mcp_tools::list_resources(
+            &c,
+            ListResourcesInput {
+                kind: "pods".into(),
+                namespace: Some("Bh-Redact".into()),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("not a valid namespace name")
+    );
+    let missing = err(k8s_mcp_tools::list_resources(
+        &c,
+        ListResourcesInput {
+            kind: "pods".into(),
+            namespace: Some("no-such-ns".into()),
+            ..Default::default()
+        },
+    )
+    .await);
+    assert!(
+        missing.contains("namespace \"no-such-ns\" does not exist"),
+        "{missing}"
+    );
+}
+
+/// riseno/k8s-mcp#30: a Service summary shows that its selector matches no pods and that it
+/// has no ready endpoints.
+#[tokio::test]
+async fn service_summary_shows_matching_pods_and_endpoints() {
+    let svc = json!({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "web", "namespace": "shop"},
+        "spec": {"selector": {"app": "nothing-matches"}, "ports": [{"port": 80}]}});
+    let mock = MockApi::new()
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [{"name": "services", "singularName": "", "kind": "Service", "namespaced": true, "shortNames": ["svc"], "verbs": ["get"]}]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": []}))
+        .get("/api/v1/namespaces/shop/services/web", svc)
+        .list("/api/v1/namespaces/shop/pods", vec![])
+        .list("/apis/discovery.k8s.io/v1/namespaces/shop/endpointslices", vec![])
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input: GetResourceInput =
+        serde_json::from_value(json!({"kind": "svc", "name": "web"})).unwrap();
+    let env = k8s_mcp_tools::get_resource(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let related = env
+        .sections
+        .iter()
+        .find(|s| s.title == "RELATED")
+        .expect("RELATED section");
+    assert!(
+        related.lines.contains(&"pods: 0/0 healthy".to_owned()),
+        "{:?}",
+        related.lines
+    );
+    assert!(
+        related
+            .lines
+            .iter()
+            .any(|l| l == "endpointslices: 0 with 0/0 ready endpoints"),
+        "{:?}",
+        related.lines
+    );
+    assert!(env.to_json().to_string().contains("RELATED"));
+    let reqs = mock.requests.lock().unwrap();
+    assert!(
+        reqs.iter()
+            .any(|r| r.contains("labelSelector=app%3Dnothing-matches")),
+        "{reqs:?}"
+    );
+}

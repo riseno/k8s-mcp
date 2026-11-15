@@ -15,6 +15,11 @@ use crate::evidence::PodEvidence;
 /// Rules emitted by this module.
 pub const RULES: &[RuleMeta] = &[
     RuleMeta {
+        id: "pod.crashloop.dependency_unreachable",
+        title: "Container crash-loops because a service it connects to refuses or drops the connection (from its logs)",
+        docs: docs::DEBUG_PODS,
+    },
+    RuleMeta {
         id: "pod.crashloop.app_error",
         title: "Container crash-loops because the application exits with an error (exit 1/2)",
         docs: docs::DEBUG_PODS,
@@ -50,6 +55,48 @@ pub const RULES: &[RuleMeta] = &[
         docs: docs::DEBUG_PODS,
     },
 ];
+
+/// What a crashed container's log says about the cause, when it says it clearly.
+enum LogCause {
+    /// A wrapper failed to start the real program.
+    CommandNotFound,
+    /// A connection the application needs was refused or timed out (`host:port` if shown).
+    Unreachable(Option<String>),
+}
+
+#[allow(clippy::unwrap_used)] // constant patterns
+static SPAWN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"(?i)failed to spawn|executable file not found|exec: "[^"]*": no such file or directory|: command not found"#).unwrap()
+});
+#[allow(clippy::unwrap_used)]
+static UNREACHABLE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)connection refused|econnrefused|connection timed out|no route to host|network is unreachable|errno 111").unwrap()
+});
+/// `host:port` with a hostname or IP (letters or dots required, so `12:30` times don't match).
+#[allow(clippy::unwrap_used)]
+static HOST_PORT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"\b((?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+):(\d{2,5})\b").unwrap()
+});
+
+/// Read the last lines of the crashed instance's log for a cause the exit code can't show.
+fn log_cause(ev: &PodEvidence, container: &str) -> Option<LogCause> {
+    let log = ev.logs.iter().find(|l| l.container == container)?;
+    let tail = &log.lines[log.lines.len().saturating_sub(30)..];
+    if tail.iter().any(|l| SPAWN.is_match(l)) {
+        return Some(LogCause::CommandNotFound);
+    }
+    // DNS failures belong to dns.app_resolution_errors.
+    let line = tail
+        .iter()
+        .rev()
+        .find(|l| UNREACHABLE.is_match(l) && !l.contains("no such host"))?;
+    let target = HOST_PORT
+        .captures_iter(line)
+        .find(|c| c[1].contains('.') || c[1].chars().any(|ch| ch.is_ascii_alphabetic()))
+        .map(|c| format!("{}:{}", c[1].to_ascii_lowercase(), &c[2]))
+        .filter(|t| super::dns_name(t.split(':').next().unwrap_or("")));
+    Some(LogCause::Unreachable(target))
+}
 
 /// Check every main container.
 pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
@@ -128,6 +175,26 @@ pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option
             "Run the server in the foreground (for example `nginx -g 'daemon off;'`, no `&` or daemon mode), fix a command that only prints and exits, or move one-shot work to a Job/CronJob.".to_owned(),
             Confidence::High,
         )
+    } else if let Some(cause) = log_cause(ev, name) {
+        match cause {
+            LogCause::CommandNotFound => (
+                "pod.crashloop.command_not_found",
+                format!("container {name:?} crash-loops: a command it runs was not found"),
+                "The logs show a program failing to start another executable (for example a `uv run` or shell wrapper reporting `Failed to spawn` or `executable file not found`). The wrapper then exits with its own code.".to_owned(),
+                format!("Check that the command container {name:?} runs exists in the image (installed, on PATH, right name), or fix `command`/`args`."),
+                Confidence::Medium,
+            ),
+            LogCause::Unreachable(target) => (
+                "pod.crashloop.dependency_unreachable",
+                match &target {
+                    Some(t) => format!("container {name:?} crash-loops: it cannot connect to {t}"),
+                    None => format!("container {name:?} crash-loops: a service it connects to is unreachable"),
+                },
+                "The application exits because a connection it needs at startup is refused or times out. The dependency is down, not listening yet, or the address is wrong (for example localhost inside a container, where nothing else listens).".to_owned(),
+                "Make sure the dependency is running and reachable from the pod (its Service, port and endpoints; NetworkPolicy), point the application at the right host and port, or make it retry instead of exiting while the dependency starts.".to_owned(),
+                Confidence::Medium,
+            ),
+        }
     } else if code == 1 || code == 2 {
         (
             "pod.crashloop.app_error",
@@ -162,7 +229,7 @@ pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option
         .docs(rule_docs(RULES, id))
         .next(
             "get_logs",
-            logs_args(&ev.pod, name, true),
+            logs_args(&ev.pod, name, !super::terminated_now(st)),
             "see the full output of the crashed instance",
         );
     if !message.is_empty() {
@@ -231,6 +298,80 @@ mod tests {
                 .iter()
                 .any(|e| e.source == Source::Log && e.text.contains("Exception"))
         );
+    }
+
+    #[test]
+    fn refused_connection_in_logs_is_dependency_unreachable() {
+        let ev = pod_fixture("pods/crashloop-dependency-refused.yaml");
+        let mut out = Vec::new();
+        check(&ev, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "pod.crashloop.dependency_unreachable");
+        assert_eq!(out[0].confidence, Confidence::Medium);
+        assert!(out[0].title.contains("localhost:6379"), "{}", out[0].title);
+    }
+
+    #[test]
+    fn wrapper_failing_to_spawn_is_command_not_found() {
+        assert_eq!(
+            ids("pods/crashloop-uv-spawn.yaml"),
+            ["pod.crashloop.command_not_found"]
+        );
+    }
+
+    #[test]
+    fn plain_app_errors_are_not_reclassified_from_logs() {
+        // Mentions a host:port but no refused connection.
+        assert_eq!(
+            ids("pods/crashloop-exit1.yaml"),
+            ["pod.crashloop.app_error"]
+        );
+    }
+
+    /// riseno/k8s-mcp#26: the quick scans list only Warning events, so the Normal `Killing`
+    /// event is missing; a failing liveness probe must still stop the exit-code rules.
+    #[test]
+    fn liveness_failures_without_killing_events_are_not_exit_code_crashes() {
+        let mut ev = pod_fixture("pods/probe-port-mismatch.yaml");
+        ev.events.retain(|e| e.type_.as_deref() == Some("Warning"));
+        assert!(
+            ev.events
+                .iter()
+                .any(|e| e.reason.as_deref() == Some("Unhealthy")),
+            "fixture has Warning Unhealthy events"
+        );
+        let mut out = Vec::new();
+        check(&ev, &mut out);
+        assert!(
+            out.iter().all(|f| !f.id.starts_with("pod.crashloop.")),
+            "{:?}",
+            out.iter().map(|f| &f.id).collect::<Vec<_>>()
+        );
+    }
+
+    /// riseno/k8s-mcp#28: suggest previous logs only when a previous instance exists.
+    #[test]
+    fn log_suggestion_uses_the_current_instance_while_it_is_the_crashed_run() {
+        let mut ev = pod_fixture("pods/crashloop-exit1.yaml");
+        let waiting = |ev: &PodEvidence| {
+            let mut out = Vec::new();
+            check(ev, &mut out);
+            out[0].next[0].args["previous"].clone()
+        };
+        assert_eq!(waiting(&ev), true);
+        let st = &mut ev
+            .pod
+            .status
+            .as_mut()
+            .unwrap()
+            .container_statuses
+            .as_mut()
+            .unwrap()[0];
+        st.state = Some(k8s_openapi::api::core::v1::ContainerState {
+            terminated: st.last_state.as_ref().and_then(|s| s.terminated.clone()),
+            ..Default::default()
+        });
+        assert_eq!(waiting(&ev), false);
     }
 
     #[test]

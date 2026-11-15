@@ -649,10 +649,15 @@ async fn workload_summary_shows_template_containers() {
     let env = k8s_mcp_tools::get_resource(&ctx(&mock, Policy::permissive()), input)
         .await
         .unwrap();
-    let c = &env.items[0]["containers"][0];
-    assert_eq!(c["image"], "registry.example/report:3");
-    assert_eq!(c["resources"]["limits"]["memory"], "256Mi");
-    assert_eq!(c["livenessProbe"]["httpGet"]["path"], "/healthz");
+    let yaml = env.sections[0].lines.join("\n");
+    assert!(
+        yaml.contains("containers:") && yaml.contains("image: registry.example/report:3"),
+        "{yaml}"
+    );
+    assert!(
+        yaml.contains("memory: 256Mi") && yaml.contains("path: /healthz"),
+        "{yaml}"
+    );
     let all = env.to_json().to_string();
     assert!(!all.contains("tok-123") && all.contains("prod"), "{all}");
 }
@@ -687,10 +692,14 @@ async fn workload_logs_drop_markers_and_merge_identical_pods() {
         .await
         .unwrap();
     let first = &env.items[0];
-    assert!(!first["lines"].to_string().contains("^^^"), "{first}");
+    assert!(
+        !env.sections[0].lines.iter().any(|l| l.contains("^^^")),
+        "{:?}",
+        env.sections[0].lines
+    );
     assert_eq!(first["omitted_lines"], 1);
     assert_eq!(env.items[1]["same_as"], first["pod"]);
-    assert_eq!(env.items[1]["lines"], json!([]));
+    assert!(env.sections[1].lines.is_empty() && env.sections[1].title.contains("same as"));
 }
 
 /// riseno/k8s-mcp#22: standard verbs collapse to "all", and the summary names every group so a

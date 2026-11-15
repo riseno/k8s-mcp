@@ -194,7 +194,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 .find(|(c, l, _)| *c == container && *l == lines)
                 .map(|(_, _, p)| p.clone())
             {
-                e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "same_as": first, "lines": [], "omitted_lines": omitted}));
+                e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "same_as": first, "line_count": lines.len(), "omitted_lines": omitted}));
                 e.sections.push(Section {
                     title: format!("LOGS {pod_name}/{container}: same as {first}"),
                     lines: Vec::new(),
@@ -204,7 +204,8 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             }
             seen.push((container.clone(), lines.clone(), pod_name.clone()));
             total += lines.len();
-            e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "lines": lines, "omitted_lines": omitted}));
+            // The lines go in the section (marked untrusted), not twice.
+            e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "line_count": lines.len(), "omitted_lines": omitted}));
             e.sections.push(Section {
                 title: format!(
                     "LOGS {pod_name}/{container}{} ({} lines{})",
@@ -244,7 +245,6 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             ""
         }
     );
-    e.untrusted_fields = vec!["items[*].lines".into()];
     add_notes(&mut e, &notes);
     Ok(e)
 }

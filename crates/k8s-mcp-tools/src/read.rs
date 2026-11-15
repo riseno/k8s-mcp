@@ -639,9 +639,7 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
         e.summary
             .push_str(" Secret values are never returned: only key names and sizes.");
     }
-    if view != View::Yaml {
-        e.items.push(shown.clone());
-    }
+    // The object goes only in the OBJECT section, which is marked untrusted in both renderings.
     let yaml = serde_saphyr::to_string(&shown).unwrap_or_else(|_| shown.to_string());
     e.sections.push(Section {
         title: format!(
@@ -658,11 +656,6 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
             ("kind".into(), info.kind.clone()),
         ]),
     });
-    e.untrusted_fields = vec![
-        "items[*].metadata.annotations".into(),
-        "items[*].status".into(),
-        "items[*].data".into(),
-    ];
     if input.include_events.unwrap_or(true) {
         let ns = if info.namespaced {
             sc.namespace.clone().unwrap_or_default()

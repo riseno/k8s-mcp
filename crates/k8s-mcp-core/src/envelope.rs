@@ -51,6 +51,7 @@ impl Section {
     }
 }
 
+#[allow(clippy::ref_option)] // serde `serialize_with` passes `&T`, and `T` is the Option
 fn attrs_as_map<S: serde::Serializer>(
     attrs: &Option<Vec<(String, String)>>,
     s: S,

@@ -1,6 +1,7 @@
 //! Core read tools (PROPOSAL §8.1).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write as _;
 
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
@@ -292,6 +293,18 @@ pub struct ApiResourcesInput {
     pub namespaced: Option<bool>,
 }
 
+/// The verbs every ordinary resource supports; shown as `all` to save output.
+const STANDARD_VERBS: [&str; 8] = [
+    "create",
+    "delete",
+    "deletecollection",
+    "get",
+    "list",
+    "patch",
+    "update",
+    "watch",
+];
+
 /// Kinds served by the cluster, CRDs included.
 pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelope> {
     let sc = scope(ctx, input.context.as_deref(), None, true).await?;
@@ -300,17 +313,6 @@ pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelo
         .group
         .as_deref()
         .map(|g| if g == "core" { "" } else { g });
-    /// The verbs every ordinary resource supports; shown as `all` to save output.
-    const STANDARD_VERBS: [&str; 8] = [
-        "create",
-        "delete",
-        "deletecollection",
-        "get",
-        "list",
-        "patch",
-        "update",
-        "watch",
-    ];
     let shown: Vec<_> = all
         .iter()
         .filter(|r| group.is_none_or(|g| r.group == g))
@@ -1010,7 +1012,7 @@ pub fn group_events(
         .map(|((ns, ty, reason, _, _, msg), g)| {
             let mut object = g.objects.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
             if g.objects.len() > 3 {
-                object.push_str(&format!(" (+{} more)", g.objects.len() - 3));
+                let _ = write!(object, " (+{} more)", g.objects.len() - 3);
             }
             let mut r = json!({
                 "type": ty, "reason": reason, "objects": g.objects.len(), "object": object, "count": g.count,

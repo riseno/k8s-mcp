@@ -44,7 +44,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | 7 | Eval gates (top-1 ≥ 85%, top-3 100%, forbidden 0) | ✅ | 14/14, 14/14, 0/14 on kind 1.37 |
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
-| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | Pipeline verified end to end with `v0.1.0-rc.3` (private): `release-gate` evals on kind 1.34 and 1.37, then 5 builds, installers, checksums, multi-arch `ghcr.io/riseno/k8s-mcp:v0.1.0-rc.3` (no `:latest` for pre-releases), image and crate SBOMs on the release, `Formula/k8s-mcp.rb` pushed to `riseno/homebrew-tap`. Remaining: signing and attestations (public repos only) and the final `v0.1.0` tag. rc.2 exposed two fixed bugs (OOM reported as reason Error; dist cannot block a release) |
+| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | Pipeline verified with `v0.1.0-rc.3`; repos made public and `v0.1.0` tagged through `release-gate` (signing and attestations on). rc.2 exposed two fixed bugs (OOM reported as reason Error; dist cannot block a release) |
 | 11 | README, docs site, references published; SECURITY.md | 🚧 | written; GitHub Pages publishing needs the repo |
 
 ## Not done yet (v0.1 follow-ups)
@@ -53,16 +53,14 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 - The 10 s list cache (ADR 0004) and the mdBook build in CI.
 - First CI run on GitHub (workflows are untested there; `release.yml` uses dist's `$/` self-repo syntax, which actionlint 1.7.12 does not know yet).
 
-## Going public (checklist)
+## Releasing
 
-The repos are private for now (PROPOSAL §17.3: check employment contracts before publishing).
-When making `riseno/k8s-mcp` and `riseno/homebrew-tap` public:
-
-1. `gh repo edit riseno/k8s-mcp --visibility public --accept-visibility-change-consequences` (same for `riseno/homebrew-tap`).
-2. Set `github-attestations = true` in `dist-workspace.toml` and run `dist generate` (dist 0.34.0): GitHub artifact attestations only work in public repos on Free/Pro/Team plans.
-3. Nothing to change for the container job: cosign keyless signing and provenance attestation switch on automatically for public repos (`github.event.repository.private == false`).
-4. Make the `ghcr.io/riseno/k8s-mcp` package public in its package settings.
-5. Set `publish-prereleases = false` in `dist-workspace.toml` if rc tags should stop publishing the image and formula, then tag the final release (`v0.1.0`). Pre-releases never move `:latest`.
+`riseno/k8s-mcp` and `riseno/homebrew-tap` are public from v0.1.0. To release: bump the
+workspace version, date the CHANGELOG section, push `main`, then push a `vX.Y.Z` tag.
+`release-gate.yml` runs the evals on kind 1.34 and 1.37 and only then dispatches
+`release.yml`, which builds, attests, publishes the signed image and pushes the Homebrew
+formula. Pre-release tags (`-rc.N`) build and attest but do not publish the image or formula
+(`publish-prereleases = false`).
 
 ## Deviations
 - ADR 0002: no separate `k8s-mcp-server` library crate (name clash with the published bin).

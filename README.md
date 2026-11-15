@@ -26,8 +26,6 @@
 k8s-mcp is read-only by default. It never returns Secret values and redacts
 credentials in logs and env vars. Nothing to configure.
 
-> Release artifacts (Homebrew tap, installer, images) are published from tagged releases. Until the first release, build from source: `cargo install --git https://github.com/riseno/k8s-mcp k8s-mcp-server --locked`.
-
 ## Client setup
 
 All snippets assume `k8s-mcp` is on `PATH`. If a GUI client cannot find it, use the absolute path (for example `/opt/homebrew/bin/k8s-mcp`).

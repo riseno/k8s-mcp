@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-15
+
 ### Fixed
 - `pod.oom.container` now also fires (medium confidence) for exit 137 under a memory limit
   when the runtime reports reason `Error` instead of `OOMKilled` and no probe kill, eviction

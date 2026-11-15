@@ -36,7 +36,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | 1 | Fresh-machine quickstart ≤ 60 s, ≤ 3 commands | ✅ | clean `ubuntu:24.04` + kind kubeconfig: `install` + `k8s-mcp doctor`, 0.15 s (binary mounted; no published archive yet) |
-| 2 | Claude Code, Claude Desktop, Cursor, Grok Build connect | ⛔ | manual; record in `docs/clients.md` |
+| 2 | Claude Code, Claude Desktop, Cursor, Grok Build connect | 🚧 | Claude Code 2.1.285 verified on macOS arm64 (`docs/clients.md`); Claude Desktop, Cursor and Grok Build still to check |
 | 3 | Default `tools/list` only has `readOnlyHint: true` tools | ✅ | `default_tool_list_is_read_only_and_well_formed` |
 | 4 | Secret canary never in output or audit | ✅ | `secret_canary_never_leaks` (kind, 19 calls over every tool) |
 | 5 | Redaction corpus, 0 false negatives | ✅ | `corpus_positive_has_zero_false_negatives` |
@@ -44,7 +44,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | 7 | Eval gates (top-1 ≥ 85%, top-3 100%, forbidden 0) | ✅ | 14/14, 14/14, 0/14 on kind 1.37 |
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
-| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | ✅ | Released 2026-11-15 through `release-gate` (evals on kind 1.34/1.37): 5 targets with GitHub build-provenance attestations (verified with `gh attestation verify`), shell/PowerShell installers, signed `sha256.sum`, cosign-signed and attested `ghcr.io/riseno/k8s-mcp:v0.1.0` and `:latest`, SBOMs, `brew install riseno/tap/k8s-mcp`. The ghcr package must still be made public in its package settings (no API for that) |
+| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | ✅ | Released 2026-11-15 through `release-gate` (evals on kind 1.34/1.37): 5 targets with GitHub build-provenance attestations (verified with `gh attestation verify`), shell/PowerShell installers, signed `sha256.sum`, cosign-signed and attested `ghcr.io/riseno/k8s-mcp:v0.1.0` and `:latest`, SBOMs, `brew install riseno/tap/k8s-mcp`. The ghcr package is public (anonymous pull of `v0.1.0` and `latest` verified) |
 | 11 | README, docs site, references published; SECURITY.md | ✅ | Repo public; docs published to the [wiki](https://github.com/riseno/k8s-mcp/wiki) by `wiki.yml` (instead of GitHub Pages) |
 
 ## Not done yet (v0.1 follow-ups)

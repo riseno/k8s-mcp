@@ -38,7 +38,8 @@
 //! A PVC fixture (`pvcs/`) holds one PersistentVolumeClaim, the cluster's StorageClasses, an
 //! optional PersistentVolume, the Pods that use the claim and Events about either.
 //!
-//! A DNS fixture (`dns/`): see [`dns_fixture`].
+//! A DNS fixture (`dns/`): see [`dns_fixture`]. An autoscaling fixture (`autoscaling/`): see
+//! [`autoscaling_fixture`].
 //!
 //! A node fixture (`nodes/`) holds one Node plus any Events, Pods (all taken as running on
 //! the node; with no Pod documents `pods` is `None`, i.e. unreadable), `Unavailable`, and
@@ -55,8 +56,8 @@ use k8s_openapi::api::core::v1::{Event, Node, Pod};
 use serde_json::Value;
 
 use crate::evidence::{
-    ContainerLog, DnsEvidence, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind,
-    ServiceEvidence, Unavailable, Workload, WorkloadEvidence,
+    AutoscalingEvidence, ContainerLog, DnsEvidence, NodeEvidence, PodEvidence, PvcEvidence,
+    RefCheck, RefKind, ServiceEvidence, Unavailable, Workload, WorkloadEvidence,
 };
 
 /// Load a pod fixture into a [`PodEvidence`].
@@ -283,6 +284,24 @@ pub fn dns_fixture(name: &str) -> DnsEvidence {
                 .count(),
         ),
         dns_logs,
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load an autoscaling fixture (`autoscaling/`): NodePools and NodeClaims (JSON, kept as is),
+/// a `ClusterAutoscalerStatus` pseudo-kind (the parsed `status` key of the
+/// `cluster-autoscaler-status` ConfigMap), HPAs and Events.
+pub fn autoscaling_fixture(name: &str) -> AutoscalingEvidence {
+    let fx = load(name);
+    let raw = |kind: &str| -> Vec<Value> { pseudo(&fx, kind).cloned().collect() };
+    let nodepools = raw("NodePool");
+    AutoscalingEvidence {
+        nodepools: (!nodepools.is_empty()).then_some(nodepools),
+        nodeclaims: raw("NodeClaim"),
+        ca_status: pseudo(&fx, "ClusterAutoscalerStatus").next().cloned(),
+        hpas: Some(fx.all("HorizontalPodAutoscaler")),
+        events: fx.all("Event"),
         unavailable: unavailable(&fx),
         now: now(),
     }

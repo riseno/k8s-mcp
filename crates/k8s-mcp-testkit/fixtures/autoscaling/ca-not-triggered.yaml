@@ -1,0 +1,32 @@
+# Cluster Autoscaler: the only fitting node group is at its maximum size.
+kind: ClusterAutoscalerStatus
+autoscalerStatus: Running
+clusterWide:
+  health: {status: Healthy, nodeCounts: {registered: {total: 3, ready: 3}, unregistered: 0}}
+  scaleUp: {status: NoActivity}
+nodeGroups:
+  - name: ng-1
+    health: {status: Healthy, cloudProviderTarget: 3, minSize: 1, maxSize: 3}
+    scaleUp: {status: NoActivity}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web-1.ntsu, namespace: shop}
+involvedObject: {kind: Pod, name: web-7d9f8-a1b2c, namespace: shop}
+reason: NotTriggerScaleUp
+type: Normal
+source: {component: cluster-autoscaler}
+message: "pod didn't trigger scale-up: 1 max node group size reached"
+count: 12
+lastTimestamp: "2026-11-14T11:58:00Z"
+---
+apiVersion: v1
+kind: Event
+metadata: {name: web-2.ntsu, namespace: shop}
+involvedObject: {kind: Pod, name: web-7d9f8-d3e4f, namespace: shop}
+reason: NotTriggerScaleUp
+type: Normal
+source: {component: cluster-autoscaler}
+message: "pod didn't trigger scale-up: 1 max node group size reached"
+count: 12
+lastTimestamp: "2026-11-14T11:58:00Z"

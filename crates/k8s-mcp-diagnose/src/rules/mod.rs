@@ -8,6 +8,7 @@
 //! - Names parsed out of messages must pass [`dns_name`].
 //! - Confidence is `High` only for definitive status fields or event reasons.
 
+pub mod autoscaling;
 pub mod config;
 pub mod crashloop;
 pub mod creating;
@@ -118,6 +119,17 @@ pub mod docs {
     /// NetworkPolicies.
     pub const NETWORK_POLICY: &str =
         "https://kubernetes.io/docs/concepts/services-networking/network-policies/";
+    /// Node autoscaling (Karpenter, Cluster Autoscaler).
+    pub const NODE_AUTOSCALING: &str =
+        "https://kubernetes.io/docs/concepts/cluster-administration/node-autoscaling/";
+    /// Karpenter NodePools.
+    pub const KARPENTER_NODEPOOL: &str = "https://karpenter.sh/docs/concepts/nodepools/";
+    /// Cluster Autoscaler FAQ.
+    pub const CLUSTER_AUTOSCALER: &str =
+        "https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md";
+    /// Horizontal Pod Autoscaling.
+    pub const HPA: &str =
+        "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/";
     /// Network plugins.
     pub const NETWORK: &str = "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/";
 }

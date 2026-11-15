@@ -90,6 +90,15 @@ pub fn diagnose_dns(ev: &DnsEvidence) -> Vec<Finding> {
     out
 }
 
+/// Check the cluster's autoscalers: Karpenter NodePools and NodeClaims, the Cluster
+/// Autoscaler and HorizontalPodAutoscalers.
+pub fn diagnose_autoscaling(ev: &AutoscalingEvidence) -> Vec<Finding> {
+    let mut out = Vec::new();
+    rules::autoscaling::check(ev, &mut out);
+    rank(&mut out);
+    out
+}
+
 /// Every rule id this engine can emit, with title and docs link.
 pub fn catalogue() -> Vec<RuleMeta> {
     let mut all: Vec<RuleMeta> = [
@@ -107,6 +116,7 @@ pub fn catalogue() -> Vec<RuleMeta> {
         rules::node::RULES,
         rules::service::RULES,
         rules::pvc::RULES,
+        rules::autoscaling::RULES,
     ]
     .concat();
     all.sort_by_key(|r| r.id);
@@ -117,7 +127,8 @@ pub fn catalogue() -> Vec<RuleMeta> {
 mod tests {
     use super::*;
     use crate::test_support::{
-        dns_fixture, node_fixture, pod_fixture, pvc_fixture, service_fixture, workload_fixture,
+        autoscaling_fixture, dns_fixture, node_fixture, pod_fixture, pvc_fixture, service_fixture,
+        workload_fixture,
     };
 
     /// Every fixture under `dir`, sorted, as `dir/<file>` names.
@@ -180,6 +191,11 @@ mod tests {
         assert!(!dns.is_empty());
         for f in &dns {
             check(f, diagnose_dns(&dns_fixture(f)));
+        }
+        let autoscaling = fixtures("autoscaling");
+        assert!(!autoscaling.is_empty());
+        for f in &autoscaling {
+            check(f, diagnose_autoscaling(&autoscaling_fixture(f)));
         }
     }
 

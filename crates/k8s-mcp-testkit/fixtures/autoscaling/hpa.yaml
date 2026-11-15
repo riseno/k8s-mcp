@@ -1,0 +1,28 @@
+# api cannot read its CPU metric; worker sits at maxReplicas.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: api, namespace: shop}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api}
+  minReplicas: 2
+  maxReplicas: 10
+status:
+  currentReplicas: 2
+  desiredReplicas: 2
+  conditions:
+    - {type: AbleToScale, status: "True", reason: SucceededGetScale}
+    - {type: ScalingActive, status: "False", reason: FailedGetResourceMetric, message: "the HPA was unable to compute the replica count: failed to get cpu utilization: missing request for cpu in container app"}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: worker, namespace: shop}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: worker}
+  maxReplicas: 6
+status:
+  currentReplicas: 6
+  desiredReplicas: 6
+  conditions:
+    - {type: AbleToScale, status: "True", reason: ReadyForNewScale}
+    - {type: ScalingActive, status: "True", reason: ValidMetricFound}
+    - {type: ScalingLimited, status: "True", reason: TooManyReplicas, message: "the desired replica count is more than the maximum replica count"}

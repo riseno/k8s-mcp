@@ -6,6 +6,12 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 
 | Id | Detects | Docs |
 |---|---|---|
+| `autoscaling.ca.not_triggered` | The Cluster Autoscaler would not scale up for pending pods | [link](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md) |
+| `autoscaling.ca.unhealthy` | The Cluster Autoscaler reports an unhealthy cluster or node group | [link](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md) |
+| `autoscaling.hpa.at_max` | A HorizontalPodAutoscaler is pinned at maxReplicas | [link](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) |
+| `autoscaling.hpa.not_scaling` | A HorizontalPodAutoscaler cannot compute or apply a scale | [link](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) |
+| `autoscaling.karpenter.limit_reached` | A Karpenter NodePool has reached its resource limits | [link](https://karpenter.sh/docs/concepts/nodepools/) |
+| `autoscaling.karpenter.nodeclaim_not_launched` | A Karpenter NodeClaim failed to launch or to join the cluster | [link](https://karpenter.sh/docs/concepts/nodepools/) |
 | `cronjob.not_scheduling` | CronJob is suspended or not starting Jobs on schedule | [link](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) |
 | `dns.app_resolution_errors` | The application logs DNS resolution failures | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
 | `dns.coredns_unhealthy` | The cluster DNS pods (CoreDNS) are not healthy | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |

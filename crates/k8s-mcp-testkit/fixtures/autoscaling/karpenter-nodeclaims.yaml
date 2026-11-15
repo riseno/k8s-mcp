@@ -1,0 +1,28 @@
+# One NodeClaim failed to launch, one launched but never registered, one is still young.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata: {name: general}
+spec: {limits: {cpu: "1000"}}
+status: {resources: {cpu: "64"}}
+---
+apiVersion: karpenter.sh/v1
+kind: NodeClaim
+metadata: {name: general-x7k2p, creationTimestamp: "2026-11-14T11:40:00Z", labels: {karpenter.sh/nodepool: general}}
+status:
+  conditions:
+    - {type: Launched, status: "False", reason: LaunchFailed, message: "creating instance, insufficient capacity, all requested instance types were unavailable during launch"}
+---
+apiVersion: karpenter.sh/v1
+kind: NodeClaim
+metadata: {name: general-q9w8e, creationTimestamp: "2026-11-14T11:30:00Z", labels: {karpenter.sh/nodepool: general}}
+status:
+  conditions:
+    - {type: Launched, status: "True"}
+    - {type: Registered, status: "Unknown", reason: AwaitingReconciliation}
+---
+apiVersion: karpenter.sh/v1
+kind: NodeClaim
+metadata: {name: general-m3n4b, creationTimestamp: "2026-11-14T11:58:30Z", labels: {karpenter.sh/nodepool: general}}
+status:
+  conditions:
+    - {type: Launched, status: "False", reason: Pending}

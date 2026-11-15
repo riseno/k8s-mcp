@@ -1,0 +1,33 @@
+# Karpenter below its limits, CA healthy, an HPA scaling normally.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata: {name: general}
+spec: {limits: {cpu: "1000", memory: 4000Gi}}
+status: {resources: {cpu: "120", memory: 480Gi}}
+---
+apiVersion: karpenter.sh/v1
+kind: NodeClaim
+metadata: {name: general-a1b2c, creationTimestamp: "2026-11-14T10:00:00Z", labels: {karpenter.sh/nodepool: general}}
+status:
+  conditions: [{type: Launched, status: "True"}, {type: Registered, status: "True"}, {type: Ready, status: "True"}]
+---
+kind: ClusterAutoscalerStatus
+autoscalerStatus: Running
+clusterWide:
+  health: {status: Healthy}
+nodeGroups:
+  - {name: ng-1, health: {status: Healthy}, scaleUp: {status: NoActivity}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: api, namespace: shop}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api}
+  maxReplicas: 10
+status:
+  currentReplicas: 3
+  desiredReplicas: 3
+  conditions:
+    - {type: AbleToScale, status: "True", reason: ReadyForNewScale}
+    - {type: ScalingActive, status: "True", reason: ValidMetricFound}
+    - {type: ScalingLimited, status: "False", reason: DesiredWithinRange}

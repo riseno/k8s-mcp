@@ -1100,6 +1100,8 @@ dependencies = [
  "k8s-mcp-core",
  "k8s-mcp-diagnose",
  "k8s-mcp-tools",
+ "k8s-openapi",
+ "kube",
  "rmcp",
  "serde",
  "serde_json",

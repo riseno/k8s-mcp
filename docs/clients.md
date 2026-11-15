@@ -10,7 +10,7 @@ Manual verification (PROPOSAL §16 v0.1 criterion 2) is recorded here with clien
 
 | Client | Version | Platform | Result |
 |---|---|---|---|
-| Claude Code | not yet verified | | |
+| Claude Code | 2.1.285 | macOS 26.6.2 (arm64), k8s-mcp 0.1.0 via `brew install riseno/tap/k8s-mcp` | ✅ `claude mcp add k8s -- k8s-mcp` connects; `k8s-mcp doctor` passes (2026-11-15) |
 | Claude Desktop | not yet verified | macOS | |
 | Cursor | not yet verified | | |
 | Grok Build | not yet verified | | |

@@ -29,6 +29,7 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 | `pod.config.mount_failed` | Container cannot start because a volume mount failed | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.app_error` | Container crash-loops because the application exits with an error (exit 1/2) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.command_not_found` | Container crash-loops because its command was not found (exit 127) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
+| `pod.crashloop.dependency_unreachable` | Container crash-loops because a service it connects to refuses or drops the connection (from its logs) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.exit_zero` | Container exits successfully (exit 0) but the restart policy is Always | [link](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/) |
 | `pod.crashloop.not_executable` | Container crash-loops because its command is not executable (exit 126) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.other` | Container crash-loops with an unusual exit code | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |

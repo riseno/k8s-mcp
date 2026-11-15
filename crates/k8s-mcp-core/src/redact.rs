@@ -98,6 +98,16 @@ static PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     ]
 });
 
+/// Lines that open or close a PEM private key block (logs carry keys across many lines).
+static PEM_BEGIN: LazyLock<Regex> = LazyLock::new(|| re(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"));
+static PEM_END: LazyLock<Regex> = LazyLock::new(|| re(r"-----END [A-Z0-9 ]*PRIVATE KEY-----"));
+/// An AWS access key id or the word "secret": context in which a bare 40-character token is
+/// treated as an AWS secret access key.
+static AWS_SECRET_CONTEXT: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|\bsecret"));
+static AWS_SECRET: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?P<a>^|[^A-Za-z0-9/+])[A-Za-z0-9/+]{40}(?P<b>[^A-Za-z0-9/+=]|$)"));
+
 static IPV4: LazyLock<Regex> = LazyLock::new(|| re(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"));
 static EMAIL: LazyLock<Regex> =
     LazyLock::new(|| re(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"));
@@ -119,7 +129,15 @@ impl Redactor {
         if self.level == RedactLevel::Off {
             return Cow::Borrowed(s);
         }
+        let aws_context = AWS_SECRET_CONTEXT.is_match(s);
         let mut out = Cow::Borrowed(s);
+        if aws_context && AWS_SECRET.is_match(&out) {
+            out = Cow::Owned(
+                AWS_SECRET
+                    .replace_all(&out, "${a}«redacted»${b}")
+                    .into_owned(),
+            );
+        }
         for (pattern, rep) in PATTERNS.iter() {
             if pattern.is_match(&out) {
                 out = Cow::Owned(pattern.replace_all(&out, *rep).into_owned());
@@ -134,6 +152,26 @@ impl Redactor {
             }
         }
         out
+    }
+
+    /// Redact consecutive lines of one stream (a container log). Like [`Self::text`] per line,
+    /// and also masks every line inside a PEM private key block, which spans lines.
+    pub fn lines<'a>(self, lines: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+        let mut in_key = false;
+        lines
+            .into_iter()
+            .map(|l| {
+                if self.level == RedactLevel::Off {
+                    return l.to_owned();
+                }
+                if in_key {
+                    in_key = !PEM_END.is_match(l);
+                    return MASK.to_owned();
+                }
+                in_key = PEM_BEGIN.is_match(l) && !PEM_END.is_match(l);
+                self.text(l).into_owned()
+            })
+            .collect()
     }
 
     /// Redact a named value (env var, ConfigMap entry, annotation): masked entirely when the
@@ -173,6 +211,29 @@ impl Redactor {
         for (k, v) in m.iter_mut() {
             if let Value::String(s) = v {
                 *s = self.named(k, s);
+            }
+        }
+    }
+}
+
+/// Mask exact occurrences of known secret values (for example the values of Secrets a pod
+/// references) in `lines`. Applied at every redaction level: Secret values are never returned.
+/// Values shorter than 6 characters are ignored to avoid masking common words.
+pub fn scrub_values(lines: &mut [String], values: &[String]) {
+    let mut values: Vec<&str> = values
+        .iter()
+        .map(|v| v.trim())
+        .filter(|v| v.len() >= 6)
+        .collect();
+    values.sort_by_key(|v| std::cmp::Reverse(v.len()));
+    values.dedup();
+    if values.is_empty() {
+        return;
+    }
+    for line in lines.iter_mut() {
+        for v in &values {
+            if line.contains(v) {
+                *line = line.replace(v, MASK);
             }
         }
     }

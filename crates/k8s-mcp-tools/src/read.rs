@@ -1,6 +1,7 @@
 //! Core read tools (PROPOSAL §8.1).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write as _;
 
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
@@ -21,10 +22,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::common::{
-    Scope, check_name, clean, envelope, events_for, fallback_namespaces, list_scoped,
-    retain_recent, scope, soft,
+    Scope, bounded, check_name, clean, ensure_namespace, envelope, events_for, fallback_namespaces,
+    list_scoped, retain_recent, scope, soft,
 };
-use crate::discovery::{api_resource, resolve, resources};
+use crate::discovery::{Resolved, api_resource, resolve, resources};
 use crate::rows::{self, node_pool, pod_row, provider_from_nodes, unhealthy};
 use crate::{Ctx, Envelope};
 
@@ -292,6 +293,18 @@ pub struct ApiResourcesInput {
     pub namespaced: Option<bool>,
 }
 
+/// The verbs every ordinary resource supports; shown as `all` to save output.
+const STANDARD_VERBS: [&str; 8] = [
+    "create",
+    "delete",
+    "deletecollection",
+    "get",
+    "list",
+    "patch",
+    "update",
+    "watch",
+];
+
 /// Kinds served by the cluster, CRDs included.
 pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelope> {
     let sc = scope(ctx, input.context.as_deref(), None, true).await?;
@@ -300,13 +313,41 @@ pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelo
         .group
         .as_deref()
         .map(|g| if g == "core" { "" } else { g });
-    let items: Vec<Value> = all
+    let shown: Vec<_> = all
         .iter()
         .filter(|r| group.is_none_or(|g| r.group == g))
         .filter(|r| input.namespaced.is_none_or(|n| r.namespaced == n))
-        .map(|r| json!({"kind": r.kind, "api_version": r.api_version(), "namespaced": r.namespaced, "short_names": r.short_names, "verbs": r.verbs}))
         .collect();
-    let mut e = envelope(&sc, format!("{} resource kinds.", items.len()));
+    let items: Vec<Value> = shown
+        .iter()
+        .map(|r| {
+            let mut verbs = r.verbs.clone();
+            verbs.sort();
+            let verbs = if verbs == STANDARD_VERBS { json!("all") } else { json!(verbs) };
+            json!({"kind": r.kind, "api_version": r.api_version(), "namespaced": r.namespaced, "short_names": r.short_names, "verbs": verbs})
+        })
+        .collect();
+    let mut summary = format!("{} resource kinds.", items.len());
+    if group.is_none() {
+        // Name every group, so a truncated table can always be narrowed with `group`.
+        let groups: BTreeSet<&str> = shown
+            .iter()
+            .map(|r| {
+                if r.group.is_empty() {
+                    "core"
+                } else {
+                    r.group.as_str()
+                }
+            })
+            .collect();
+        summary = format!(
+            "{} resource kinds in {} API groups; pass group=<name> to list one group: {}.",
+            items.len(),
+            groups.len(),
+            groups.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    let mut e = envelope(&sc, summary);
     e.columns = vec!["kind", "api_version", "namespaced", "short_names", "verbs"];
     e.items = items;
     Ok(e)
@@ -347,7 +388,8 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
         .clusters
         .target(input.context.as_deref(), &ctx.policy)
         .await?;
-    let info = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let resolved = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let info = resolved.info.clone();
     let ar = api_resource(&info);
     let all_ns = !info.namespaced || input.all_namespaces;
     let sc = scope(
@@ -357,7 +399,7 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
         all_ns,
     )
     .await?;
-    let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let limit = bounded("limit", input.limit, DEFAULT_LIMIT, MAX_LIMIT)?;
     let mut lp = ListParams::default().limit(limit);
     if let Some(l) = &input.label_selector {
         lp = lp.labels(&truncate(l, 1000));
@@ -370,6 +412,9 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
     }
     let mut notes = Vec::new();
     let (objects, cont) = list_dynamic(ctx, &sc, &ar, info.namespaced, &lp, &mut notes).await?;
+    if objects.is_empty() && info.namespaced {
+        ensure_namespace(&sc).await?;
+    }
     let now = ctx.now();
     let mut items: Vec<Value> = objects
         .iter()
@@ -403,15 +448,49 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
     e.columns = rows::columns(&info.kind, info.namespaced && sc.namespace.is_none());
     e.items = items;
     if let Some(c) = cont {
-        let mut args = json!({"kind": info.kind, "continue": c, "limit": limit});
-        if let Some(ns) = &sc.namespace {
-            args["namespace"] = json!(ns);
+        // Repeat the whole query: a page cursor is only valid for the same selectors.
+        let mut args = json!({"kind": input.kind, "continue": c, "limit": limit});
+        let fields = [
+            ("api_version", input.api_version.as_ref()),
+            ("namespace", input.namespace.as_ref()),
+            ("label_selector", input.label_selector.as_ref()),
+            ("field_selector", input.field_selector.as_ref()),
+            ("context", input.context.as_ref()),
+        ];
+        for (k, v) in fields {
+            if let Some(v) = v {
+                args[k] = json!(v);
+            }
+        }
+        if input.all_namespaces {
+            args["all_namespaces"] = json!(true);
         }
         e.next
             .push(NextCall::new("list_resources", args, "fetch the next page"));
     }
+    let mut args = json!({"kind": input.kind});
+    if let Some(ns) = &input.namespace {
+        args["namespace"] = json!(ns);
+    }
+    add_alternatives(&mut e, &resolved, "list_resources", &args);
     add_notes(&mut e, &notes);
     Ok(e)
+}
+
+/// Say which other API groups serve an ambiguous kind, with a call for each (riseno/k8s-mcp#27).
+fn add_alternatives(e: &mut Envelope, resolved: &Resolved, tool: &str, args: &Value) {
+    if let Some(note) = resolved.note() {
+        e.summary.push_str(&note);
+    }
+    for alt in resolved.alternatives.iter().take(3) {
+        let mut a = args.clone();
+        a["api_version"] = json!(alt.api_version());
+        e.next.push(NextCall::new(
+            tool,
+            a,
+            &format!("the {} served by {}", alt.kind, alt.api_version()),
+        ));
+    }
 }
 
 async fn list_dynamic(
@@ -526,7 +605,8 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
         .clusters
         .target(input.context.as_deref(), &ctx.policy)
         .await?;
-    let info = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let resolved = resolve(ctx, &target, &input.kind, input.api_version.as_deref()).await?;
+    let info = resolved.info.clone();
     let ar = api_resource(&info);
     let sc = scope(
         ctx,
@@ -558,7 +638,10 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
     };
     let shown = match view {
         View::Summary if info.kind == "Pod" => prune(pod_summary(&cleaned, now)),
-        View::Summary => prune(depth_limited(&cleaned, 0)),
+        View::Summary => prune(with_template_containers(
+            depth_limited(&cleaned, 0),
+            &cleaned,
+        )),
         View::Yaml | View::Full => cleaned.clone(),
     };
     let mut e = envelope(
@@ -582,9 +665,7 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
         e.summary
             .push_str(" Secret values are never returned: only key names and sizes.");
     }
-    if view != View::Yaml {
-        e.items.push(shown.clone());
-    }
+    // The object goes only in the OBJECT section, which is marked untrusted in both renderings.
     let yaml = serde_saphyr::to_string(&shown).unwrap_or_else(|_| shown.to_string());
     e.sections.push(Section {
         title: format!(
@@ -601,11 +682,16 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
             ("kind".into(), info.kind.clone()),
         ]),
     });
-    e.untrusted_fields = vec![
-        "items[*].metadata.annotations".into(),
-        "items[*].status".into(),
-        "items[*].data".into(),
-    ];
+    if view == View::Summary {
+        let lines = related(&sc, &info.kind, &input.name, &cleaned, now).await;
+        if !lines.is_empty() {
+            e.sections.push(Section {
+                title: "RELATED".into(),
+                lines,
+                untrusted: None,
+            });
+        }
+    }
     if input.include_events.unwrap_or(true) {
         let ns = if info.namespaced {
             sc.namespace.clone().unwrap_or_default()
@@ -624,7 +710,230 @@ pub async fn get_resource(ctx: &Ctx, input: GetResourceInput) -> Result<Envelope
             ),
         }
     }
+    let mut args = json!({"kind": input.kind, "name": input.name});
+    if let Some(ns) = &input.namespace {
+        args["namespace"] = json!(ns);
+    }
+    add_alternatives(&mut e, &resolved, "get_resource", &args);
     Ok(e)
+}
+
+/// Rows shown per related list.
+const RELATED_ROWS: usize = 5;
+
+/// Objects that explain this one (PROPOSAL §8.1, riseno/k8s-mcp#30): a Service's matching pods
+/// and endpoints, a workload's pods and revisions, a Pod's owner chain and node, a PVC's volume
+/// and StorageClass. Lists are capped; failed reads are reported as lines.
+async fn related(
+    sc: &Scope,
+    kind: &str,
+    name: &str,
+    obj: &Value,
+    now: jiff::Timestamp,
+) -> Vec<String> {
+    use k8s_openapi::api::apps::v1::ReplicaSet;
+    use k8s_openapi::api::batch::v1::Job;
+    use k8s_openapi::api::core::v1::PersistentVolume;
+    use k8s_openapi::api::discovery::v1::EndpointSlice;
+    use k8s_openapi::api::storage::v1::StorageClass;
+
+    let client = sc.target.client.clone();
+    let ns = sc.namespace.clone().unwrap_or_default();
+    let mut out = Vec::new();
+    let failed =
+        |what: &str, e: &kube::Error| format!("{what}: {}", Error::kube(format!("read {what}"), e));
+    let pod_rows = |pods: &[Pod], out: &mut Vec<String>| {
+        let ready = pods.iter().filter(|p| unhealthy(p, now).is_none()).count();
+        out.push(format!("pods: {ready}/{} healthy", pods.len()));
+        for p in pods.iter().take(RELATED_ROWS) {
+            let r = pod_row(p);
+            out.push(format!(
+                "  pod {}: {} ready {} restarts {}",
+                p.metadata.name.as_deref().unwrap_or("?"),
+                r["status"].as_str().unwrap_or("?"),
+                r["ready"].as_str().unwrap_or("?"),
+                r["restarts"]
+            ));
+        }
+        if pods.len() > RELATED_ROWS {
+            out.push(format!("  … and {} more", pods.len() - RELATED_ROWS));
+        }
+    };
+    match kind {
+        "Service" => {
+            let selector: Vec<String> = obj
+                .pointer("/spec/selector")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("")))
+                .collect();
+            if selector.is_empty() {
+                out.push("no selector: endpoints are managed outside Kubernetes".into());
+            } else {
+                match Api::<Pod>::namespaced(client.clone(), &ns)
+                    .list(&ListParams::default().labels(&selector.join(",")))
+                    .await
+                {
+                    Ok(l) => pod_rows(&l.items, &mut out),
+                    Err(e) => out.push(failed("pods matching the selector", &e)),
+                }
+            }
+            match Api::<EndpointSlice>::namespaced(client, &ns)
+                .list(&ListParams::default().labels(&format!("kubernetes.io/service-name={name}")))
+                .await
+            {
+                Ok(l) => {
+                    let endpoints: Vec<_> =
+                        l.items.iter().flat_map(|s| s.endpoints.iter()).collect();
+                    let ready = endpoints
+                        .iter()
+                        .filter(|e| e.conditions.as_ref().and_then(|c| c.ready).unwrap_or(false))
+                        .count();
+                    out.push(format!(
+                        "endpointslices: {} with {ready}/{} ready endpoints",
+                        l.items.len(),
+                        endpoints.len()
+                    ));
+                }
+                Err(e) => out.push(failed("EndpointSlices", &e)),
+            }
+        }
+        "Deployment" | "StatefulSet" | "DaemonSet" | "ReplicaSet" | "Job" | "CronJob" => {
+            match crate::diagnose::workload_pods(sc, kind, name).await {
+                Ok((_, pods)) => pod_rows(&pods, &mut out),
+                Err(e) => out.push(format!("pods: {e}")),
+            }
+            if kind == "Deployment" {
+                match crate::diagnose::owned::<ReplicaSet>(&client, &ns, "Deployment", name).await {
+                    Ok(rss) => {
+                        for rs in rss.iter().take(RELATED_ROWS) {
+                            let rev = rs
+                                .metadata
+                                .annotations
+                                .as_ref()
+                                .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                                .map_or("?", String::as_str);
+                            let images: Vec<&str> = rs
+                                .spec
+                                .iter()
+                                .flat_map(|s| s.template.iter())
+                                .flat_map(|t| t.spec.iter())
+                                .flat_map(|s| s.containers.iter())
+                                .map(|c| c.image.as_deref().unwrap_or("?"))
+                                .collect();
+                            let st = rs.status.as_ref();
+                            out.push(format!(
+                                "replicaset {} (revision {rev}): {}/{} ready, images {}",
+                                rs.metadata.name.as_deref().unwrap_or("?"),
+                                st.and_then(|s| s.ready_replicas).unwrap_or(0),
+                                rs.spec.as_ref().and_then(|s| s.replicas).unwrap_or(0),
+                                images.join(", ")
+                            ));
+                        }
+                    }
+                    Err(e) => out.push(format!("replicasets: {e}")),
+                }
+            }
+            if kind == "CronJob" {
+                match crate::diagnose::owned::<Job>(&client, &ns, "CronJob", name).await {
+                    Ok(jobs) => {
+                        for j in jobs.iter().take(RELATED_ROWS) {
+                            let st = j.status.as_ref();
+                            out.push(format!(
+                                "job {}: {} succeeded, {} failed",
+                                j.metadata.name.as_deref().unwrap_or("?"),
+                                st.and_then(|s| s.succeeded).unwrap_or(0),
+                                st.and_then(|s| s.failed).unwrap_or(0)
+                            ));
+                        }
+                    }
+                    Err(e) => out.push(format!("jobs: {e}")),
+                }
+            }
+        }
+        "Pod" => {
+            let mut chain = vec![format!("Pod/{name}")];
+            let mut owner = obj.pointer("/metadata/ownerReferences/0").cloned();
+            for _ in 0..3 {
+                let Some(o) = owner.take() else { break };
+                let (ok, on) = (
+                    o["kind"].as_str().unwrap_or("?").to_owned(),
+                    o["name"].as_str().unwrap_or("?").to_owned(),
+                );
+                chain.push(format!("{ok}/{on}"));
+                if ok == "ReplicaSet" {
+                    owner = Api::<ReplicaSet>::namespaced(client.clone(), &ns)
+                        .get_opt(&on)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|rs| {
+                            rs.metadata
+                                .owner_references
+                                .and_then(|r| r.into_iter().next())
+                        })
+                        .map(|r| json!({"kind": r.kind, "name": r.name}));
+                }
+            }
+            chain.reverse();
+            out.push(format!("owner chain: {}", chain.join(" → ")));
+            if let Some(node) = obj.pointer("/spec/nodeName").and_then(Value::as_str) {
+                match Api::<Node>::all(client).get(node).await {
+                    Ok(n) => out.push(format!(
+                        "node {node}: {}",
+                        rows::node_row(&n)["status"].as_str().unwrap_or("?")
+                    )),
+                    Err(e) => out.push(failed(&format!("node {node}"), &e)),
+                }
+            }
+        }
+        "PersistentVolumeClaim" => {
+            if let Some(pv) = obj
+                .pointer("/spec/volumeName")
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+            {
+                match Api::<PersistentVolume>::all(client.clone()).get(pv).await {
+                    Ok(v) => out.push(format!(
+                        "volume {pv}: {}, capacity {}, reclaim {}",
+                        v.status
+                            .as_ref()
+                            .and_then(|s| s.phase.as_deref())
+                            .unwrap_or("?"),
+                        v.spec
+                            .as_ref()
+                            .and_then(|s| s.capacity.as_ref())
+                            .and_then(|c| c.get("storage"))
+                            .map_or("?", |q| q.0.as_str()),
+                        v.spec
+                            .as_ref()
+                            .and_then(|s| s.persistent_volume_reclaim_policy.as_deref())
+                            .unwrap_or("?")
+                    )),
+                    Err(e) => out.push(failed(&format!("PersistentVolume {pv}"), &e)),
+                }
+            } else {
+                out.push("volume: not bound yet".into());
+            }
+            if let Some(sc_name) = obj
+                .pointer("/spec/storageClassName")
+                .and_then(Value::as_str)
+            {
+                match Api::<StorageClass>::all(client).get_opt(sc_name).await {
+                    Ok(Some(c)) => out.push(format!(
+                        "storageclass {sc_name}: provisioner {}, binding {}",
+                        c.provisioner,
+                        c.volume_binding_mode.as_deref().unwrap_or("Immediate")
+                    )),
+                    Ok(None) => out.push(format!("storageclass {sc_name}: does not exist")),
+                    Err(e) => out.push(failed(&format!("StorageClass {sc_name}"), &e)),
+                }
+            }
+        }
+        _ => {}
+    }
+    out
 }
 
 /// Curated pod summary.
@@ -706,6 +1015,49 @@ fn prune(v: Value) -> Value {
     }
 }
 
+/// Workloads keep their pod template deep in the object, where the depth limit hides it: add
+/// its containers (already redacted) at the top level of the summary.
+fn with_template_containers(mut summary: Value, cleaned: &Value) -> Value {
+    const FIELDS: &[&str] = &[
+        "name",
+        "image",
+        "command",
+        "args",
+        "ports",
+        "env",
+        "envFrom",
+        "resources",
+        "livenessProbe",
+        "readinessProbe",
+        "startupProbe",
+    ];
+    let Some(spec) = [
+        "/spec/template/spec",
+        "/spec/jobTemplate/spec/template/spec",
+    ]
+    .iter()
+    .find_map(|p| cleaned.pointer(p)) else {
+        return summary;
+    };
+    for key in ["initContainers", "containers"] {
+        if let Some(cs) = spec.get(key).and_then(Value::as_array) {
+            let picked: Vec<Value> = cs
+                .iter()
+                .map(|c| {
+                    Value::Object(
+                        FIELDS
+                            .iter()
+                            .filter_map(|f| c.get(*f).map(|v| ((*f).to_owned(), v.clone())))
+                            .collect(),
+                    )
+                })
+                .collect();
+            summary[key] = Value::Array(picked);
+        }
+    }
+    summary
+}
+
 /// Replace values nested deeper than 4 levels or long arrays with short placeholders.
 fn depth_limited(v: &Value, depth: usize) -> Value {
     match v {
@@ -769,6 +1121,14 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     let since =
         parse_duration(input.since.as_deref().unwrap_or("1h")).map_err(Error::InvalidInput)?;
     let types = input.types.unwrap_or_else(|| vec!["Warning".into()]);
+    if let Some(bad) = types
+        .iter()
+        .find(|t| !matches!(t.as_str(), "Normal" | "Warning"))
+    {
+        return Err(Error::InvalidInput(format!(
+            "event type {bad:?} is not valid; use Normal and/or Warning"
+        )));
+    }
     let mut fields = Vec::new();
     if let [t] = types.as_slice() {
         fields.push(format!("type={t}"));
@@ -790,14 +1150,25 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     events.retain(|e| types.iter().any(|t| e.type_.as_deref() == Some(t)));
     let now = ctx.now();
     retain_recent(&mut events, now, since);
-    let rows = group_events(ctx, &events, now, sc.namespace.is_none());
+    if events.is_empty() {
+        ensure_namespace(&sc).await?;
+    }
+    // One row per cause across objects, unless the caller asked about one object.
+    let rows = group_events(
+        ctx,
+        &events,
+        now,
+        sc.namespace.is_none(),
+        input.involved_name.is_none(),
+    );
     let total = rows.len();
-    let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
+    let occurrences: i64 = rows.iter().filter_map(|r| r["count"].as_i64()).sum();
+    let limit = bounded("limit", input.limit, DEFAULT_LIMIT, MAX_LIMIT)? as usize;
     let mut e = envelope(
         &sc,
         format!(
-            "{total} event groups ({} events) of type {} in the last {}.",
-            events.len(),
+            "{total} event groups ({} occurrences) of type {} in the last {}.",
+            human_count(occurrences),
             types.join("/"),
             input.since.as_deref().unwrap_or("1h")
         ),
@@ -807,6 +1178,7 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
             "ns",
             "type",
             "reason",
+            "objects",
             "object",
             "count",
             "first_seen",
@@ -817,6 +1189,7 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
         vec![
             "type",
             "reason",
+            "objects",
             "object",
             "count",
             "first_seen",
@@ -835,50 +1208,78 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     Ok(e)
 }
 
-/// Group events by (type, reason, object, message), warnings first, then most recent.
+/// Group events by (namespace, type, reason, message), warnings first, then most recent.
+/// With `across_objects`, events that differ only in the object they are about (one root cause
+/// on many pods) share a row that counts the objects and names up to three of them.
 pub fn group_events(
     ctx: &Ctx,
     events: &[Event],
     now: jiff::Timestamp,
     with_ns: bool,
+    across_objects: bool,
 ) -> Vec<Value> {
-    // (ns, type, reason, object, message) -> (count, first seen, last seen)
-    type Key = (String, String, String, String, String);
-    let mut groups: HashMap<Key, (i32, Option<jiff::Timestamp>, Option<jiff::Timestamp>)> =
+    #[derive(Default)]
+    struct Group {
+        count: i32,
+        first: Option<jiff::Timestamp>,
+        last: Option<jiff::Timestamp>,
+        objects: BTreeSet<String>,
+    }
+    // (ns, type, reason, kind, object or "", message)
+    let mut groups: HashMap<(String, String, String, String, String, String), Group> =
         HashMap::new();
     for ev in events {
-        let obj = format!(
-            "{}/{}",
-            ev.involved_object.kind.as_deref().unwrap_or("?"),
-            ev.involved_object.name.as_deref().unwrap_or("?")
-        );
+        let kind = ev
+            .involved_object
+            .kind
+            .clone()
+            .unwrap_or_else(|| "?".into());
+        let name = ev
+            .involved_object
+            .name
+            .clone()
+            .unwrap_or_else(|| "?".into());
+        let mut msg = strip_uids(&ctx.redactor.text(ev.message.as_deref().unwrap_or("")));
+        if across_objects && name.len() >= 3 {
+            msg = msg.replace(&name, &format!("<{}>", kind.to_ascii_lowercase()));
+        }
         let key = (
             ev.metadata.namespace.clone().unwrap_or_default(),
             ev.type_.clone().unwrap_or_default(),
             ev.reason.clone().unwrap_or_default(),
-            obj,
-            strip_uids(&ctx.redactor.text(ev.message.as_deref().unwrap_or(""))),
+            kind.clone(),
+            if across_objects {
+                String::new()
+            } else {
+                name.clone()
+            },
+            msg,
         );
         let t = k8s_mcp_diagnose::rules::last_seen(ev);
         let first = ev.first_timestamp.as_ref().map(|t| t.0).or(t);
-        let g = groups.entry(key).or_insert((0, first, t));
-        g.0 += k8s_mcp_diagnose::rules::count(ev);
-        g.1 = g.1.min(first).or(first);
-        g.2 = g.2.max(t);
+        let g = groups.entry(key).or_default();
+        g.count += k8s_mcp_diagnose::rules::count(ev);
+        g.first = g.first.min(first).or(first);
+        g.last = g.last.max(t);
+        g.objects.insert(format!("{kind}/{name}"));
     }
     let mut rows: Vec<_> = groups.into_iter().collect();
-    rows.sort_by(|a, b| {
-        (a.0.1 != "Warning", std::cmp::Reverse(a.1.2), &a.0.3).cmp(&(
-            b.0.1 != "Warning",
-            std::cmp::Reverse(b.1.2),
-            &b.0.3,
+    rows.sort_by(|(a, ga), (b, gb)| {
+        (a.1 != "Warning", std::cmp::Reverse(ga.last), &ga.objects).cmp(&(
+            b.1 != "Warning",
+            std::cmp::Reverse(gb.last),
+            &gb.objects,
         ))
     });
     rows.into_iter()
-        .map(|((ns, ty, reason, obj, msg), (count, first, last))| {
+        .map(|((ns, ty, reason, _, _, msg), g)| {
+            let mut object = g.objects.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+            if g.objects.len() > 3 {
+                let _ = write!(object, " (+{} more)", g.objects.len() - 3);
+            }
             let mut r = json!({
-                "type": ty, "reason": reason, "object": obj, "count": count,
-                "first_seen": first.map(|t| age(now, t)), "last_seen": last.map(|t| age(now, t)),
+                "type": ty, "reason": reason, "objects": g.objects.len(), "object": object, "count": g.count,
+                "first_seen": g.first.map(|t| age(now, t)), "last_seen": g.last.map(|t| age(now, t)),
                 "message": truncate(&msg, 300),
             });
             if with_ns {
@@ -887,6 +1288,17 @@ pub fn group_events(
             r
         })
         .collect()
+}
+
+/// `950`, `12.3k`, `1.1M`.
+fn human_count(n: i64) -> String {
+    #[allow(clippy::cast_precision_loss)]
+    let f = n as f64;
+    match n {
+        n if n >= 1_000_000 => format!("{:.1}M", f / 1e6),
+        n if n >= 10_000 => format!("{:.1}k", f / 1e3),
+        n => n.to_string(),
+    }
 }
 
 /// Drop object UIDs such as `(ac5c6640-378b-4786-b7a7-35da71d94376)` from event messages.
@@ -903,7 +1315,7 @@ fn strip_uids(msg: &str) -> String {
 pub fn events_section(ctx: &Ctx, events: &[Event], now: jiff::Timestamp) -> Section {
     Section {
         title: "EVENTS (last 1h)".into(),
-        lines: group_events(ctx, events, now, false)
+        lines: group_events(ctx, events, now, false, false)
             .iter()
             .take(15)
             .map(|r| {
@@ -994,7 +1406,10 @@ pub async fn top(ctx: &Ctx, input: TopInput) -> Result<Envelope> {
         &mut notes,
     )
     .await?;
-    let limit = input.limit.unwrap_or(20).clamp(1, MAX_LIMIT) as usize;
+    if metrics.is_empty() && !nodes_mode {
+        ensure_namespace(&sc).await?;
+    }
+    let limit = bounded("limit", input.limit, 20, MAX_LIMIT)? as usize;
     let mut items: Vec<Value> = if nodes_mode {
         let nodes: HashMap<String, Node> = Api::<Node>::all(sc.target.client.clone())
             .list(&ListParams::default())
@@ -1103,46 +1518,45 @@ fn pct(used: i64, total: Option<i64>) -> Option<i64> {
     total.filter(|t| *t > 0).map(|t| used * 100 / t)
 }
 
-/// (cpu request, cpu limit, mem request, mem limit) summed over containers.
+/// (cpu request, cpu limit, mem request, mem limit) for a pod. Requests add up what is set; a
+/// limit is `None` (unbounded) as soon as one container has none, since usage covers them all.
 fn pod_resources(p: &Pod) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>) {
-    let mut out = (None, None, None, None);
-    let add = |acc: &mut Option<i64>, v: Option<i64>| {
-        if let Some(v) = v {
-            *acc = Some(acc.unwrap_or(0) + v);
-        }
+    let containers: Vec<&k8s_openapi::api::core::v1::Container> =
+        p.spec.iter().flat_map(|s| &s.containers).collect();
+    let value =
+        |c: &k8s_openapi::api::core::v1::Container, limit: bool, key: &str| -> Option<i64> {
+            let r = c.resources.as_ref()?;
+            let q = if limit {
+                r.limits.as_ref()
+            } else {
+                r.requests.as_ref()
+            }?
+            .get(key)?;
+            if key == "cpu" {
+                cpu_millis(&q.0)
+            } else {
+                bytes(&q.0)
+            }
+        };
+    let requests = |key: &str| {
+        let set: Vec<i64> = containers
+            .iter()
+            .filter_map(|c| value(c, false, key))
+            .collect();
+        (!set.is_empty()).then(|| set.iter().sum())
     };
-    for c in p.spec.iter().flat_map(|s| &s.containers) {
-        let r = c.resources.as_ref();
-        let get = |m: Option<
-            &BTreeMap<String, k8s_openapi::apimachinery::pkg::api::resource::Quantity>,
-        >,
-                   k: &str| m.and_then(|m| m.get(k)).map(|q| q.0.clone());
-        add(
-            &mut out.0,
-            get(r.and_then(|r| r.requests.as_ref()), "cpu")
-                .as_deref()
-                .and_then(cpu_millis),
-        );
-        add(
-            &mut out.1,
-            get(r.and_then(|r| r.limits.as_ref()), "cpu")
-                .as_deref()
-                .and_then(cpu_millis),
-        );
-        add(
-            &mut out.2,
-            get(r.and_then(|r| r.requests.as_ref()), "memory")
-                .as_deref()
-                .and_then(bytes),
-        );
-        add(
-            &mut out.3,
-            get(r.and_then(|r| r.limits.as_ref()), "memory")
-                .as_deref()
-                .and_then(bytes),
-        );
-    }
-    out
+    let limits = |key: &str| {
+        containers
+            .iter()
+            .map(|c| value(c, true, key))
+            .sum::<Option<i64>>()
+    };
+    (
+        requests("cpu"),
+        limits("cpu"),
+        requests("memory"),
+        limits("memory"),
+    )
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1154,7 +1568,7 @@ fn pod_resources(p: &Pod) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>
 pub struct CheckPermissionsInput {
     /// Namespace to check (default: the context's namespace).
     pub namespace: Option<String>,
-    /// Extra resources to check `get`/`list` on, e.g. `["deployments.apps", "pods/log"]`.
+    /// Extra resources to check, e.g. `["deployments.apps", "pods/log", "pods/exec"]`: `get` for `*/log`, `create` for `*/exec`, `*/attach`, `*/portforward` and `*/eviction`, else `get` and `list`.
     pub verbs_for: Option<Vec<String>>,
     /// Kubeconfig context.
     pub context: Option<String>,
@@ -1230,13 +1644,28 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
             false,
         ),
     ];
-    for r in input.verbs_for.unwrap_or_default().into_iter().take(10) {
+    let extra = input.verbs_for.unwrap_or_default();
+    if extra.len() > 10 {
+        return Err(Error::InvalidInput(format!(
+            "verbs_for takes at most 10 resources, got {}",
+            extra.len()
+        )));
+    }
+    for r in extra {
         let (res, group) = r
             .split_once('.')
             .map_or((r.clone(), String::new()), |(a, b)| {
                 (a.to_owned(), b.to_owned())
             });
-        checks.push((format!("list {r}"), "list", group, res, true));
+        for verb in verbs_for(&res) {
+            checks.push((
+                format!("{verb} {r}"),
+                verb,
+                group.clone(),
+                res.clone(),
+                true,
+            ));
+        }
     }
     let api: Api<SelfSubjectAccessReview> = Api::all(client.clone());
     let mut items = Vec::new();
@@ -1329,4 +1758,56 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
         });
     }
     Ok(e)
+}
+
+/// The verbs that answer "can I use this resource?": subresources are not listed.
+fn verbs_for(resource: &str) -> &'static [&'static str] {
+    match resource.split_once('/').map(|(_, sub)| sub) {
+        Some("log") => &["get"],
+        Some("exec" | "attach" | "portforward" | "eviction") => &["create"],
+        _ => &["get", "list"],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// riseno/k8s-mcp#17: subresources are checked with the verb that governs them.
+    #[test]
+    fn verbs_match_the_resource() {
+        assert_eq!(verbs_for("pods/log"), ["get"]);
+        assert_eq!(verbs_for("pods/exec"), ["create"]);
+        assert_eq!(verbs_for("pods/eviction"), ["create"]);
+        assert_eq!(verbs_for("deployments"), ["get", "list"]);
+    }
+
+    /// riseno/k8s-mcp#10: a limit set on only some containers does not bound the pod.
+    #[test]
+    fn pod_limit_is_unbounded_when_a_container_has_none() {
+        let p: Pod = serde_json::from_value(json!({
+            "metadata": {"name": "anetd"},
+            "spec": {"containers": [
+                {"name": "a", "image": "i", "resources": {"requests": {"cpu": "100m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "65Mi"}}},
+                {"name": "b", "image": "i", "resources": {"requests": {"memory": "32Mi"}}}
+            ]}
+        }))
+        .unwrap();
+        let (cpu_req, cpu_lim, mem_req, mem_lim) = pod_resources(&p);
+        assert_eq!(
+            (cpu_req, cpu_lim, mem_req, mem_lim),
+            (Some(100), None, Some(100_663_296), None)
+        );
+        assert_eq!(pct(430 << 20, mem_lim), None);
+
+        let all_set: Pod = serde_json::from_value(json!({
+            "metadata": {"name": "x"},
+            "spec": {"containers": [
+                {"name": "a", "image": "i", "resources": {"limits": {"memory": "64Mi"}}},
+                {"name": "b", "image": "i", "resources": {"limits": {"memory": "64Mi"}}}
+            ]}
+        }))
+        .unwrap();
+        assert_eq!(pod_resources(&all_set).3, Some(128 << 20));
+    }
 }

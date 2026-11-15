@@ -108,6 +108,15 @@ const POSITIVE: &[(&str, &str)] = &[
     ),
     (r#"msg="auth ok" token=abc.def.ghi"#, "abc.def.ghi"),
     (r#"{\"password\":\"escaped-in-json\"}"#, "escaped-in-json"),
+    // riseno/k8s-mcp#25: AWS secret key without a key=value keyword.
+    (
+        "aws key AKIAIOSFODNN7EXAMPLE secret wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    ),
+    (
+        "AKIAIOSFODNN7EXAMPLE wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    ),
 ];
 
 /// Lines that must pass through `standard` redaction unchanged.
@@ -125,6 +134,7 @@ const NEGATIVE: &[&str] = &[
     "https://kubernetes.io/docs/concepts/configuration/secret/",
     "level=info msg=\"cache warmed\" keys=1200",
     "AKIA is a prefix but AKIASHORT is too short",
+    "deployed commit 3f2a1b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a to prod",
 ];
 
 #[test]
@@ -155,6 +165,36 @@ fn redaction_is_idempotent_on_corpus() {
         let once = r.text(line).into_owned();
         assert_eq!(r.text(&once), once);
     }
+}
+
+/// riseno/k8s-mcp#24: a PEM key logged across lines must not leak its body.
+#[test]
+fn multi_line_pem_keys_in_logs_are_masked() {
+    let log = [
+        "starting",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "MIIEpAIBAAKCAQEAsecretbody1",
+        "secretbody2line+/==",
+        "-----END RSA PRIVATE KEY-----",
+        "ready",
+    ];
+    let out = Redactor::new(RedactLevel::Standard).lines(log);
+    let all = out.join("\n");
+    assert!(!all.contains("secretbody"), "{all}");
+    assert_eq!(out[0], "starting");
+    assert_eq!(out[5], "ready", "lines after the END line are untouched");
+}
+
+/// riseno/k8s-mcp#25: exact Secret values are masked even when nothing marks them as secret,
+/// and at every redaction level.
+#[test]
+fn exact_secret_values_are_scrubbed() {
+    let mut lines = vec![
+        "echoed env: s3cr3t-from-secret and $OTHER".to_owned(),
+        "ok".to_owned(),
+    ];
+    k8s_mcp_core::redact::scrub_values(&mut lines, &["s3cr3t-from-secret".into(), "1".into()]);
+    assert_eq!(lines, ["echoed env: «redacted» and $OTHER", "ok"]);
 }
 
 fn safe_text() -> impl Strategy<Value = String> {

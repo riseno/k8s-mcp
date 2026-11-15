@@ -186,6 +186,11 @@ async fn audit_log_records_calls_with_redacted_args() {
     let log = std::fs::read_to_string(&audit).unwrap();
     let rec: Value = serde_json::from_str(log.lines().next().unwrap()).unwrap();
     assert_eq!(rec["tool"], "get_logs");
+    // riseno/k8s-mcp#16: the client's name/version is recorded, not null.
+    assert!(
+        rec["client"].as_str().is_some_and(|c| c.contains('/')),
+        "{rec}"
+    );
     assert_eq!(rec["context"], "test");
     assert_eq!(rec["result"], "error");
     assert!(!log.contains("hunter2"), "{log}");

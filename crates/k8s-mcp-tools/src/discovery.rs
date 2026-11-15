@@ -86,14 +86,39 @@ fn push_list(out: &mut Vec<ResourceInfo>, group: &str, list: &APIResourceList) {
     }
 }
 
-/// Resolve a user-supplied kind (`Deployment`, `deployments`, `deploy`, `NodePool`) and
-/// optional `api_version` to a resource. Refreshes discovery once on a miss.
+/// A resolved kind, plus other API groups serving the same name when the request was ambiguous.
+pub struct Resolved {
+    /// The chosen resource.
+    pub info: ResourceInfo,
+    /// Other groups serving the same kind name (empty when `api_version` or a group was given).
+    pub alternatives: Vec<ResourceInfo>,
+}
+
+impl Resolved {
+    /// "Kind X is also served by …" for the summary, when there are alternatives.
+    pub fn note(&self) -> Option<String> {
+        (!self.alternatives.is_empty()).then(|| {
+            format!(
+                " Kind {} is also served by {}; pass api_version to choose.",
+                self.info.kind,
+                self.alternatives
+                    .iter()
+                    .map(ResourceInfo::api_version)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+    }
+}
+
+/// Resolve a user-supplied kind (`Deployment`, `deployments`, `deploy`, a CRD kind, or kubectl's
+/// `plural.group` / `Kind.group`) and optional `api_version`. Refreshes discovery once on a miss.
 pub async fn resolve(
     ctx: &Ctx,
     target: &Target,
     kind: &str,
     api_version: Option<&str>,
-) -> Result<ResourceInfo> {
+) -> Result<Resolved> {
     for attempt in 0..2 {
         let all = resources(ctx, target).await?;
         if let Some(r) = find(&all, kind, api_version) {
@@ -109,23 +134,39 @@ pub async fn resolve(
     )))
 }
 
-fn find(all: &[ResourceInfo], kind: &str, api_version: Option<&str>) -> Option<ResourceInfo> {
-    let k = kind.to_ascii_lowercase();
-    let matches = |r: &&ResourceInfo| {
-        (r.kind.to_ascii_lowercase() == k || r.plural == k || r.short_names.contains(&k))
-            && api_version.is_none_or(|v| r.api_version() == v || r.group == v)
+fn find(all: &[ResourceInfo], kind: &str, api_version: Option<&str>) -> Option<Resolved> {
+    // kubectl's `plural.group` / `Kind.group`, when the suffix is a served group.
+    let (name, group) = match kind.split_once('.') {
+        Some((n, g)) if api_version.is_none() && all.iter().any(|r| r.group == g) => (n, Some(g)),
+        _ => (kind, None),
     };
-    // Prefer the core group and well-known groups over CRDs that reuse a kind name.
-    all.iter()
-        .filter(matches)
-        .min_by_key(|r| match r.group.as_str() {
-            "" => 0,
-            "apps" | "batch" | "networking.k8s.io" | "policy" | "storage.k8s.io"
-            | "autoscaling" => 1,
-            g if g.ends_with(".k8s.io") => 2,
-            _ => 3,
-        })
-        .cloned()
+    let k = name.to_ascii_lowercase();
+    let mut matches: Vec<&ResourceInfo> = all
+        .iter()
+        .filter(|r| r.kind.to_ascii_lowercase() == k || r.plural == k || r.short_names.contains(&k))
+        .filter(|r| api_version.is_none_or(|v| r.api_version() == v || r.group == v))
+        .filter(|r| group.is_none_or(|g| r.group == g))
+        .collect();
+    // Prefer the core group and well-known groups over CRDs that reuse a kind name; then by
+    // group name, so the choice does not depend on discovery order.
+    let rank = |r: &ResourceInfo| match r.group.as_str() {
+        "" => 0,
+        "apps" | "batch" | "networking.k8s.io" | "policy" | "storage.k8s.io" | "autoscaling" => 1,
+        g if g.ends_with(".k8s.io") => 2,
+        _ => 3,
+    };
+    matches.sort_by(|a, b| (rank(a), &a.group).cmp(&(rank(b), &b.group)));
+    let info = (*matches.first()?).clone();
+    let alternatives = if api_version.is_none() && group.is_none() {
+        matches[1..]
+            .iter()
+            .filter(|r| r.group != info.group)
+            .map(|r| (*r).clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Some(Resolved { info, alternatives })
 }
 
 /// Convert to a kube `ApiResource` for dynamic calls.
@@ -163,15 +204,38 @@ mod tests {
             r("", "Pod", "pods", &["po"]),
         ];
         for q in ["Deployment", "deployments", "deploy", "DEPLOYMENT"] {
-            assert_eq!(find(&all, q, None).unwrap().group, "apps");
+            assert_eq!(find(&all, q, None).unwrap().info.group, "apps");
         }
         assert_eq!(
             find(&all, "deployment", Some("example.com/v1"))
                 .unwrap()
+                .info
                 .group,
             "example.com"
         );
-        assert_eq!(find(&all, "po", None).unwrap().kind, "Pod");
+        assert_eq!(find(&all, "po", None).unwrap().info.kind, "Pod");
         assert!(find(&all, "nope", None).is_none());
+    }
+
+    /// riseno/k8s-mcp#27: ambiguous kinds name the other groups; kubectl's group forms work.
+    #[test]
+    fn ambiguous_kinds_and_group_qualified_names() {
+        let all = vec![
+            r("bh.example.com", "Widget", "widgets", &[]),
+            r("other.example.com", "Widget", "widgets", &[]),
+        ];
+        let w = find(&all, "Widget", None).unwrap();
+        assert_eq!(w.info.group, "bh.example.com");
+        assert_eq!(w.alternatives.len(), 1);
+        assert!(
+            w.note().unwrap().contains("other.example.com/v1"),
+            "{:?}",
+            w.note()
+        );
+        for q in ["widgets.other.example.com", "Widget.other.example.com"] {
+            let w = find(&all, q, None).unwrap();
+            assert_eq!(w.info.group, "other.example.com", "{q}");
+            assert!(w.alternatives.is_empty());
+        }
     }
 }

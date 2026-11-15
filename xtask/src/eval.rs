@@ -51,7 +51,8 @@ struct Score {
 }
 
 /// Top-1: the primary id ranks first. Top-3: the primary or an acceptable id is in the
-/// first three. Forbidden: any forbidden id appears anywhere.
+/// first three. Forbidden: any forbidden id appears anywhere (also checked against
+/// `find_problems` on the scenario's namespace).
 fn score(s: &Scenario, ids: &[String]) -> Score {
     let expected = |id: &String| *id == s.expected.primary || s.expected.acceptable.contains(id);
     Score {
@@ -158,11 +159,19 @@ pub fn main(args: &[String]) -> Result<()> {
         .iter()
         .map(|(dir, s)| {
             println!("{dir}: {}", s.symptom);
-            let response = call(&bin, s);
-            let score = response
+            let response = call(&bin, &s.tool, &s.args);
+            let mut score = response
                 .as_ref()
                 .map(|r| score(s, &r.ids))
                 .unwrap_or_default();
+            // The quick scan must not contradict the diagnosis either (riseno/k8s-mcp#26).
+            match call(&bin, "find_problems", &json!({"namespace": s.namespace()})) {
+                Ok(quick) => score.forbidden |= quick.ids.iter().any(|id| s.forbidden.contains(id)),
+                Err(e) => {
+                    println!("  find_problems failed: {e:#}");
+                    score.forbidden = true;
+                }
+            }
             Outcome { score, response }
         })
         .collect();
@@ -239,7 +248,7 @@ fn load_scenarios(only: Option<&str>) -> Result<Vec<(String, Scenario)>> {
 }
 
 /// One server process per scenario: initialize, initialized, then the scenario's tool call.
-fn call(bin: &Path, s: &Scenario) -> Result<Response> {
+fn call(bin: &Path, tool: &str, args: &Value) -> Result<Response> {
     let mut server = Server::spawn(bin)?;
     server.request(
         "initialize",
@@ -251,10 +260,10 @@ fn call(bin: &Path, s: &Scenario) -> Result<Response> {
     )?;
     server.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))?;
     let start = Instant::now();
-    let result = server.request("tools/call", json!({"name": s.tool, "arguments": s.args}))?;
+    let result = server.request("tools/call", json!({"name": tool, "arguments": args}))?;
     let latency = start.elapsed();
     if result["isError"] == true {
-        bail!("{} returned an error: {}", s.tool, result["content"]);
+        bail!("{tool} returned an error: {}", result["content"]);
     }
     let ids = result["structuredContent"]["findings"]
         .as_array()

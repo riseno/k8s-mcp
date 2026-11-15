@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use k8s_mcp_core::envelope::Section;
-use k8s_mcp_core::text::{dedup_lines, parse_duration, strip_ansi};
+use k8s_mcp_core::text::{dedup_lines, is_marker_line, parse_duration};
 use k8s_mcp_core::{Error, Result};
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, LogParams};
@@ -12,8 +12,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::common::{check_name, envelope, scope};
-use crate::diagnose::workload_pods;
+use crate::common::{bounded, check_name, envelope, scope};
+use crate::diagnose::{pod_secret_values, redact_log, workload_pods};
 use crate::read::add_notes;
 use crate::rows::unhealthy;
 use crate::{Ctx, Envelope};
@@ -70,6 +70,27 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
         false,
     )
     .await?;
+    // Validate every input before calling the API.
+    let grep = input
+        .grep
+        .as_deref()
+        .map(|g| {
+            RegexBuilder::new(g)
+                .case_insensitive(true)
+                .size_limit(1 << 20)
+                .build()
+        })
+        .transpose()
+        .map_err(|e| Error::InvalidInput(format!("grep is not a valid regex: {e}")))?;
+    let since = input
+        .since
+        .as_deref()
+        .map(parse_duration)
+        .transpose()
+        .map_err(Error::InvalidInput)?;
+    let tail = bounded("tail", input.tail, DEFAULT_TAIL, MAX_TAIL)?;
+    let ctx_lines = input.context_lines.unwrap_or(0).min(10);
+    let max_pods = bounded("max_pods", input.max_pods, 3, 10)?;
     let ns = sc.namespace.clone().unwrap_or_default();
     let api: Api<Pod> = Api::namespaced(sc.target.client.clone(), &ns);
     let now = ctx.now();
@@ -91,7 +112,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             check_name("workload", name)?;
             let mut pods = workload_pods(&sc, kind, name).await?.1;
             pods.sort_by_key(|p| unhealthy(p, now).is_none());
-            pods.truncate(input.max_pods.unwrap_or(3).clamp(1, 10));
+            pods.truncate(max_pods);
             pods
         }
         _ => {
@@ -100,31 +121,15 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             ));
         }
     };
-    let grep = input
-        .grep
-        .as_deref()
-        .map(|g| {
-            RegexBuilder::new(g)
-                .case_insensitive(true)
-                .size_limit(1 << 20)
-                .build()
-        })
-        .transpose()
-        .map_err(|e| Error::InvalidInput(format!("grep is not a valid regex: {e}")))?;
-    let since = input
-        .since
-        .as_deref()
-        .map(parse_duration)
-        .transpose()
-        .map_err(Error::InvalidInput)?;
-    let tail = input.tail.unwrap_or(DEFAULT_TAIL).clamp(1, MAX_TAIL);
-    let ctx_lines = input.context_lines.unwrap_or(0).min(10);
 
     let mut e = envelope(&sc, String::new());
     let mut notes = Vec::new();
     let mut total = 0;
+    // (container, lines, pod) of every output already returned.
+    let mut seen: Vec<(String, Vec<String>, String)> = Vec::new();
     for pod in &pods {
         let pod_name = pod.metadata.name.clone().unwrap_or_default();
+        let secret_values = pod_secret_values(&sc, pod, &mut notes).await;
         let containers: Vec<String> = if let Some(c) = &input.container {
             vec![c.clone()]
         } else {
@@ -141,9 +146,9 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             }
         };
         for container in containers {
-            let lp = LogParams {
+            let params = |previous: bool| LogParams {
                 container: Some(container.clone()),
-                previous: input.previous,
+                previous,
                 tail_lines: Some(if grep.is_some() || input.errors_only {
                     MAX_TAIL
                 } else {
@@ -152,13 +157,34 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 since_seconds: since.map(|d| d.as_secs()),
                 ..LogParams::default()
             };
-            let raw = match api.logs(&pod_name, &lp).await {
+            let mut fetched = api.logs(&pod_name, &params(input.previous)).await;
+            // Between crash-loop restarts the crashed run is the *current* instance and the
+            // previous one may already be gone (riseno/k8s-mcp#28): fall back to it.
+            let crashed_now = pod
+                .status
+                .iter()
+                .flat_map(|s| s.container_statuses.iter().flatten())
+                .any(|s| {
+                    s.name == container
+                        && s.state.as_ref().is_some_and(|st| st.terminated.is_some())
+                });
+            let missing = |r: &kube::Result<String>| {
+                r.as_ref().map_or(true, |raw| {
+                    raw.starts_with("unable to retrieve container logs")
+                })
+            };
+            let fell_back = input.previous && crashed_now && missing(&fetched);
+            if fell_back {
+                fetched = api.logs(&pod_name, &params(false)).await;
+            }
+            let previous = input.previous && !fell_back;
+            let raw = match fetched {
                 Ok(r) => r,
                 Err(err) => {
                     notes.push(k8s_mcp_diagnose::Unavailable {
                         what: format!(
                             "logs of {pod_name}/{container}{}",
-                            if input.previous { " (previous)" } else { "" }
+                            if previous { " (previous)" } else { "" }
                         ),
                         reason: Error::kube(
                             format!("get logs of pod {pod_name} container {container}"),
@@ -183,14 +209,33 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 ctx_lines,
                 input.errors_only,
                 usize::try_from(tail).unwrap_or(200),
+                &secret_values,
             );
+            // Pods of one workload often fail identically: send each distinct output once.
+            if let Some(first) = seen
+                .iter()
+                .find(|(c, l, _)| *c == container && *l == lines)
+                .map(|(_, _, p)| p.clone())
+            {
+                e.items.push(json!({"pod": pod_name, "container": container, "previous": previous, "same_as": first, "line_count": lines.len(), "omitted_lines": omitted}));
+                e.sections.push(Section {
+                    title: format!("LOGS {pod_name}/{container}: same as {first}"),
+                    lines: Vec::new(),
+                    untrusted: None,
+                });
+                continue;
+            }
+            seen.push((container.clone(), lines.clone(), pod_name.clone()));
             total += lines.len();
-            e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "lines": lines, "omitted_lines": omitted}));
+            // The lines go in the section (marked untrusted), not twice.
+            e.items.push(json!({"pod": pod_name, "container": container, "previous": previous, "line_count": lines.len(), "omitted_lines": omitted}));
             e.sections.push(Section {
                 title: format!(
                     "LOGS {pod_name}/{container}{} ({} lines{})",
-                    if input.previous {
+                    if previous {
                         " previous instance"
+                    } else if fell_back {
+                        " current instance (the crashed run; no previous instance is kept)"
                     } else {
                         ""
                     },
@@ -225,7 +270,6 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             ""
         }
     );
-    e.untrusted_fields = vec!["items[*].lines".into()];
     add_notes(&mut e, &notes);
     Ok(e)
 }
@@ -238,11 +282,9 @@ fn shape(
     context: usize,
     errors_only: bool,
     tail: usize,
+    secret_values: &[String],
 ) -> (Vec<String>, usize) {
-    let lines: Vec<String> = raw
-        .lines()
-        .map(|l| ctx.redactor.text(&strip_ansi(l)).into_owned())
-        .collect();
+    let lines = redact_log(ctx, raw, secret_values);
     let keep: Vec<bool> = if let (None, false) = (grep, errors_only) {
         vec![true; lines.len()]
     } else {
@@ -258,14 +300,20 @@ fn shape(
             })
             .collect()
     };
+    let mut markers = 0;
     let filtered = lines
         .into_iter()
         .zip(keep)
-        .filter_map(|(l, k)| k.then_some(l));
+        .filter_map(|(l, k)| k.then_some(l))
+        .filter(|l| {
+            let marker = is_marker_line(l);
+            markers += usize::from(marker);
+            !marker
+        });
     let mut out = dedup_lines(filtered);
     let omitted = out.len().saturating_sub(tail);
     out.drain(..omitted);
-    (out, omitted)
+    (out, omitted + markers)
 }
 
 #[cfg(test)]
@@ -291,7 +339,7 @@ mod tests {
     #[tokio::test]
     async fn shapes_logs() {
         let raw = "\x1b[32mINFO\x1b[0m start\nretry\nretry\nretry\nERROR connect failed password=hunter2\nINFO ok\n";
-        let (lines, omitted) = shape(&ctx(), raw, None, 0, false, 10);
+        let (lines, omitted) = shape(&ctx(), raw, None, 0, false, 10, &[]);
         assert_eq!(omitted, 0);
         assert_eq!(
             lines,
@@ -302,13 +350,13 @@ mod tests {
                 "INFO ok"
             ]
         );
-        let (errs, _) = shape(&ctx(), raw, None, 0, true, 10);
+        let (errs, _) = shape(&ctx(), raw, None, 0, true, 10, &[]);
         assert_eq!(errs, ["ERROR connect failed password=«redacted»"]);
         let grep = RegexBuilder::new("connect")
             .case_insensitive(true)
             .build()
             .unwrap();
-        let (ctx_lines, _) = shape(&ctx(), raw, Some(&grep), 1, false, 10);
+        let (ctx_lines, _) = shape(&ctx(), raw, Some(&grep), 1, false, 10, &[]);
         assert_eq!(
             ctx_lines,
             [
@@ -317,7 +365,7 @@ mod tests {
                 "INFO ok"
             ]
         );
-        let (tail, omitted) = shape(&ctx(), raw, None, 0, false, 2);
+        let (tail, omitted) = shape(&ctx(), raw, None, 0, false, 2, &[]);
         assert_eq!((tail.len(), omitted), (2, 2));
     }
 }

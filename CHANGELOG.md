@@ -19,3 +19,6 @@ All notable changes are documented here. The format follows
 - Kubeconfig exec plugins run non-interactively with `--path-prepend` and macOS
   Homebrew PATH handling.
 - `doctor`, `version` and `completions` subcommands.
+- `cargo xtask kind-up | kind-down | eval | docs`; 14 eval scenarios (top-1 14/14 on kind 1.37).
+- CI, integration and eval workflows; cargo-deny config; dist release config, Dockerfile
+  (distroless, non-root) and container signing/SBOM workflow.

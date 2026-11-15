@@ -53,6 +53,29 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 - The 10 s list cache (ADR 0004) and the mdBook build in CI.
 - First CI run on GitHub (workflows are untested there; `release.yml` uses dist's `$/` self-repo syntax, which actionlint 1.7.12 does not know yet).
 
+## v0.2: In-cluster and EKS (plan)
+
+Order follows PROPOSAL §5/§16 and Appendix A (provider trait and detection before EKS). Each
+row ends with the v0.2 acceptance criterion it serves.
+
+| # | Task | Status | Notes / criterion |
+|---|---|---|---|
+| 1 | Streamable HTTP transport: `--transport http`, `--listen` (default `127.0.0.1:8080`), rmcp `StreamableHttpService` in axum at `/mcp`, `/healthz`, `/readyz` (API server reachable) | ⏳ | rmcp validates `Host`/`Origin` itself (`allowed_hosts`, `allowed_origins`); stateless for `2026-07-28`, legacy sessions for `2025-11-25`; tower-http body limit and timeout. AC 1 |
+| 2 | Auth: `--auth tokenreview\|static\|none`, `--auth-token-file`; 401 without a valid bearer; `none` refused unless the bind is loopback; caller identity in the audit log | ⏳ | TokenReview results cached ~60 s. AC 1 |
+| 3 | Helm chart `deploy/helm/k8s-mcp`: Deployment, Service, ServiceAccount (IRSA / GKE WI / Azure WI values), read-only ClusterRole (Appendix C) + TokenReview binding, NetworkPolicy, PDB, hardened securityContext, `values.schema.json` | ⏳ | CI: helm lint, kubeconform, install on kind and k3s, HTTP smoke test (401, bad Origin 403, TokenReview client runs `diagnose_pod`). AC 1, 2 |
+| 4 | Rules and tools: `diagnose_service` (`svc.*`), `diagnose_pvc` (`pvc.*`), `diagnose_dns` (`dns.*`), `autoscaling_status` (Karpenter, Cluster Autoscaler, HPA), `recent_changes`, `rollout_history` | ⏳ | Fixtures for Karpenter NodePool limit reached and CA `NotTriggerScaleUp`. AC 5 |
+| 5 | Prompts `explain-workload`, `access-review`; resource template `k8s-mcp://cluster/{context}/overview` | ⏳ | |
+| 6 | Provider framework `k8s-mcp-provider`: shared types, detection from cluster signals (providerID, node labels, server host, exec args), `--providers auto\|none\|eks`, provider toolsets registered only when compiled in and detected | ⏳ | Enum dispatch, not `dyn` + async-trait (ADR 0006). AC 3 |
+| 7 | EKS provider `k8s-mcp-provider-eks` (feature `provider-eks`): `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check` (IRSA + Pod Identity), `eks_logs`; finding enrichment (VPC CNI IP exhaustion, ECR auth) | ⏳ | No credentials → Kubernetes-side checks plus `cloud_checks: skipped`. Mocked AWS goldens: IRSA trust mismatch, missing OIDC provider, missing Pod Identity association. AC 3, 4 |
+| 8 | Eval scenarios: DNS blocked by NetworkPolicy, Service selector mismatch, targetPort mismatch, autoscaler cannot scale (CA status ConfigMap fixture) | ⏳ | 18 scenarios, same gates. AC 6 |
+| 9 | Features and size: `default = ["provider-eks", "http"]`, `lite` = no providers and no HTTP; report both sizes | ⏳ | |
+| 10 | Docs: `in-cluster.md`, `providers/eks.md`, chart values reference, regenerated tool/rule references, CHANGELOG | ⏳ | |
+
+**Decisions before coding**
+- *Crypto (ADR 0001 follow-up):* the AWS SDK defaults to `aws-lc-rs`. Keeping `ring` means disabling SDK default features and building the HTTP client with `aws-smithy-http-client`'s `rustls-ring` feature. That adds `aws-smithy-http-client` as a direct dependency, which is not in the §7.2 table (needs approval).
+- *AWS mocks:* `aws-smithy-mocks` (0.3, named in §13 but not in the §7.2 table) for EKS tests (needs approval). `wiremock` (listed) stays for GKE/AKS in v0.3.
+- *Local testing:* the HTTP smoke test, Helm installs and evals need Docker running (kind and k3s).
+
 ## Releasing
 
 `riseno/k8s-mcp` and `riseno/homebrew-tap` are public from v0.1.0. To release: bump the
@@ -67,3 +90,4 @@ formula. Pre-release tags (`-rc.N`) build and attest but do not publish the imag
 - ADR 0003: serde-saphyr and jiff.
 - ADR 0004: list cache and empty provider crates deferred.
 - ADR 0005: kind matrix is 1.34/1.37 (kind v0.33.0 ships no 1.33 image); `[profile.dist]` lives in `.cargo/config.toml`.
+- ADR 0006: providers dispatch through an enum instead of `dyn Provider` + async-trait.

@@ -326,6 +326,12 @@ pub fn probe_killed(events: &[Event], container: &str) -> bool {
     })
 }
 
+/// True while a container sits in `terminated` between crash-loop restarts: the crashed run is
+/// then the current instance, and asking for the previous one can return nothing.
+pub fn terminated_now(st: &ContainerStatus) -> bool {
+    st.state.as_ref().is_some_and(|s| s.terminated.is_some())
+}
+
 /// Last termination of a container (lastState, else current state).
 pub fn last_termination(
     st: &ContainerStatus,

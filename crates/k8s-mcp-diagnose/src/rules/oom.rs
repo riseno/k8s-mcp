@@ -115,7 +115,7 @@ pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
             f.fix(fix)
                 .next(
                     "get_logs",
-                    logs_args(&ev.pod, &c.name, true),
+                    logs_args(&ev.pod, &c.name, !super::terminated_now(st)),
                     "see what the process was doing before the kill",
                 )
                 .next(

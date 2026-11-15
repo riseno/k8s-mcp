@@ -144,9 +144,9 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             }
         };
         for container in containers {
-            let lp = LogParams {
+            let params = |previous: bool| LogParams {
                 container: Some(container.clone()),
-                previous: input.previous,
+                previous,
                 tail_lines: Some(if grep.is_some() || input.errors_only {
                     MAX_TAIL
                 } else {
@@ -155,13 +155,34 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 since_seconds: since.map(|d| d.as_secs()),
                 ..LogParams::default()
             };
-            let raw = match api.logs(&pod_name, &lp).await {
+            let mut fetched = api.logs(&pod_name, &params(input.previous)).await;
+            // Between crash-loop restarts the crashed run is the *current* instance and the
+            // previous one may already be gone (riseno/k8s-mcp#28): fall back to it.
+            let crashed_now = pod
+                .status
+                .iter()
+                .flat_map(|s| s.container_statuses.iter().flatten())
+                .any(|s| {
+                    s.name == container
+                        && s.state.as_ref().is_some_and(|st| st.terminated.is_some())
+                });
+            let missing = |r: &kube::Result<String>| {
+                r.as_ref().map_or(true, |raw| {
+                    raw.starts_with("unable to retrieve container logs")
+                })
+            };
+            let fell_back = input.previous && crashed_now && missing(&fetched);
+            if fell_back {
+                fetched = api.logs(&pod_name, &params(false)).await;
+            }
+            let previous = input.previous && !fell_back;
+            let raw = match fetched {
                 Ok(r) => r,
                 Err(err) => {
                     notes.push(k8s_mcp_diagnose::Unavailable {
                         what: format!(
                             "logs of {pod_name}/{container}{}",
-                            if input.previous { " (previous)" } else { "" }
+                            if previous { " (previous)" } else { "" }
                         ),
                         reason: Error::kube(
                             format!("get logs of pod {pod_name} container {container}"),
@@ -194,7 +215,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 .find(|(c, l, _)| *c == container && *l == lines)
                 .map(|(_, _, p)| p.clone())
             {
-                e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "same_as": first, "line_count": lines.len(), "omitted_lines": omitted}));
+                e.items.push(json!({"pod": pod_name, "container": container, "previous": previous, "same_as": first, "line_count": lines.len(), "omitted_lines": omitted}));
                 e.sections.push(Section {
                     title: format!("LOGS {pod_name}/{container}: same as {first}"),
                     lines: Vec::new(),
@@ -205,12 +226,14 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             seen.push((container.clone(), lines.clone(), pod_name.clone()));
             total += lines.len();
             // The lines go in the section (marked untrusted), not twice.
-            e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "line_count": lines.len(), "omitted_lines": omitted}));
+            e.items.push(json!({"pod": pod_name, "container": container, "previous": previous, "line_count": lines.len(), "omitted_lines": omitted}));
             e.sections.push(Section {
                 title: format!(
                     "LOGS {pod_name}/{container}{} ({} lines{})",
-                    if input.previous {
+                    if previous {
                         " previous instance"
+                    } else if fell_back {
+                        " current instance (the crashed run; no previous instance is kept)"
                     } else {
                         ""
                     },

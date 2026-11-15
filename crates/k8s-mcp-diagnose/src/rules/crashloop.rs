@@ -229,7 +229,7 @@ pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option
         .docs(rule_docs(RULES, id))
         .next(
             "get_logs",
-            logs_args(&ev.pod, name, true),
+            logs_args(&ev.pod, name, !super::terminated_now(st)),
             "see the full output of the crashed instance",
         );
     if !message.is_empty() {
@@ -347,6 +347,31 @@ mod tests {
             "{:?}",
             out.iter().map(|f| &f.id).collect::<Vec<_>>()
         );
+    }
+
+    /// riseno/k8s-mcp#28: suggest previous logs only when a previous instance exists.
+    #[test]
+    fn log_suggestion_uses_the_current_instance_while_it_is_the_crashed_run() {
+        let mut ev = pod_fixture("pods/crashloop-exit1.yaml");
+        let waiting = |ev: &PodEvidence| {
+            let mut out = Vec::new();
+            check(ev, &mut out);
+            out[0].next[0].args["previous"].clone()
+        };
+        assert_eq!(waiting(&ev), true);
+        let st = &mut ev
+            .pod
+            .status
+            .as_mut()
+            .unwrap()
+            .container_statuses
+            .as_mut()
+            .unwrap()[0];
+        st.state = Some(k8s_openapi::api::core::v1::ContainerState {
+            terminated: st.last_state.as_ref().and_then(|s| s.terminated.clone()),
+            ..Default::default()
+        });
+        assert_eq!(waiting(&ev), false);
     }
 
     #[test]

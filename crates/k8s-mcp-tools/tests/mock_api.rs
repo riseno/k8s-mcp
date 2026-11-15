@@ -791,3 +791,43 @@ async fn get_logs_masks_secret_values_and_multi_line_keys() {
     );
     assert!(all.contains("ready"));
 }
+
+/// riseno/k8s-mcp#28: between restarts the crashed run is the current instance; previous=true
+/// falls back to it instead of returning nothing.
+#[tokio::test]
+async fn previous_logs_fall_back_to_the_crashed_current_instance() {
+    let mut p = pod("shop", "job-1", "Running", None, 5);
+    p["status"]["containerStatuses"][0]["state"] =
+        json!({"terminated": {"exitCode": 1, "reason": "Error"}});
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/pods/job-1", p)
+        .get_query(
+            "/api/v1/namespaces/shop/pods/job-1/log",
+            "previous=true",
+            400,
+            status(
+                400,
+                "BadRequest",
+                "previous terminated container \"app\" in pod \"job-1\" not found",
+            ),
+        )
+        .get("/api/v1/namespaces/shop/pods/job-1/log", json!("boom\n"))
+        .start();
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(&mock, Policy::permissive()),
+        GetLogsInput {
+            pod: Some("job-1".into()),
+            previous: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.sections[0].lines, ["boom"]);
+    assert!(
+        env.sections[0].title.contains("the crashed run"),
+        "{}",
+        env.sections[0].title
+    );
+    assert_eq!(env.items[0]["previous"], false);
+}

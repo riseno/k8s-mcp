@@ -16,3 +16,4 @@
   - [0005 kind matrix and dist profile](adr/0005-kind-matrix-and-dist-profile.md)
   - [0006 Provider enum dispatch](adr/0006-provider-enum-dispatch.md)
   - [0007 AWS SDK on ring](adr/0007-aws-sdk-on-ring.md)
+  - [0008 find_problems: Services and PVCs in v0.2](adr/0008-find-problems-services-pvcs-in-v0.2.md)

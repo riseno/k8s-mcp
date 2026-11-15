@@ -12,7 +12,7 @@ schema) and a compact text rendering in `content`, which is what most models rea
                  "next": [{"tool": "get_logs", "args": {}, "why": "..."}] }],
   "items": [],
   "truncated": false,
-  "omitted": { "items": 0, "log_lines": 0 },
+  "omitted": { "findings": 0, "items": 0, "log_lines": 0 },
   "next": [],
   "context": "staging",
   "namespace": "shop",
@@ -21,9 +21,14 @@ schema) and a compact text rendering in `content`, which is what most models rea
 ```
 
 - **Ranking**: severity, then confidence, then rule order (root causes before symptoms).
+- **Grouping**: in `find_problems` and `cluster_overview`, findings with the same id and title on
+  different objects (one root cause seen on many pods) become one finding whose evidence lists
+  the other objects.
 - **Caps**: `--max-output-bytes` (24,000) per response covers text plus JSON; list limit 50
-  with a `continue` cursor; log tail 200 (max 2,000). When a cap is hit `truncated` is true
-  and the text says how to get more.
+  with a `continue` cursor; log tail 200 (max 2,000). When a cap is hit `truncated` is true,
+  `omitted` counts what was dropped, and the text says how to get more. Output is shortened
+  in this order: oldest section lines, findings beyond the top three, table rows, the
+  remaining findings.
 - **Logs**: ANSI stripped, credentials redacted, consecutive duplicates collapsed
   (`[×37] connection refused`), optional `grep` with `context_lines` and `errors_only`.
 - **Events**: grouped by reason, object and message with counts and first/last seen;

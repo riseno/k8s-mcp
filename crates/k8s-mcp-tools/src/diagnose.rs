@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
-use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, rank};
+use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_cause, rank};
 use k8s_mcp_core::text::dedup_lines;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
@@ -1105,6 +1105,8 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             )];
         }
     }
+    // One finding per root cause: after evidence is trimmed, so the merged list is kept.
+    let mut findings = group_same_cause(findings);
     let total = findings.len();
     findings.truncate(50);
     let count = |s: Severity| findings.iter().filter(|f| f.severity == s).count();
@@ -1128,7 +1130,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     );
     if total > findings.len() {
         e.truncated = true;
-        e.omitted.items = total - findings.len();
+        e.omitted.findings = total - findings.len();
     }
     e.findings = findings;
     e.untrusted_fields =

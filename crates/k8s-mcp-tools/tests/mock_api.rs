@@ -434,3 +434,66 @@ async fn find_problems_counts_existing_pods_for_workload_findings() {
         unavailable(&env)
     );
 }
+
+/// riseno/k8s-mcp#4: one missing image on many pods is one finding that lists the other pods,
+/// so it cannot crowd every other finding out of the output cap.
+#[tokio::test]
+async fn find_problems_groups_one_root_cause_across_pods() {
+    let msg = "rpc error: code = NotFound desc = failed to pull and unpack image \"registry.example/app:latest\": failed to resolve reference \"registry.example/app:latest\": registry.example/app:latest: not found";
+    let pods: Vec<Value> = (0..6)
+        .map(|i| {
+            let mut p = pod(
+                "shop",
+                &format!("web-{i}"),
+                "Pending",
+                Some("ErrImagePull"),
+                0,
+            );
+            p["spec"]["containers"][0]["image"] = json!("registry.example/app:latest");
+            p["status"]["containerStatuses"][0]["image"] = json!("registry.example/app:latest");
+            p["status"]["containerStatuses"][0]["state"]["waiting"]["message"] = json!(msg);
+            p
+        })
+        .collect();
+    let events: Vec<Value> = (0..6)
+        .map(|i| json!({"apiVersion": "v1", "kind": "Event", "metadata": {"name": format!("e{i}"), "namespace": "shop"},
+            "involvedObject": {"kind": "Pod", "name": format!("web-{i}"), "namespace": "shop", "fieldPath": "spec.containers{app}"},
+            "reason": "Failed", "type": "Warning", "message": format!("Failed to pull image \"registry.example/app:latest\": {msg}"),
+            "count": 3, "lastTimestamp": "2026-11-14T11:59:00Z"}))
+        .collect();
+    let mock = MockApi::new()
+        .list("/api/v1/events", events)
+        .list("/api/v1/pods", pods)
+        .start();
+    let env = k8s_mcp_tools::find_problems(
+        &ctx(&mock, Policy::permissive()),
+        FindProblemsInput {
+            kinds: Some(vec!["pods".into()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let image: Vec<_> = env
+        .findings
+        .iter()
+        .filter(|f| f.id.starts_with("pod.image."))
+        .collect();
+    assert_eq!(
+        image.len(),
+        1,
+        "{:?}",
+        env.findings
+            .iter()
+            .map(|f| (&f.id, &f.title))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        image[0]
+            .evidence
+            .iter()
+            .any(|e| e.text.starts_with("same finding on 5 more: Pod/web-")),
+        "{:?}",
+        image[0].evidence
+    );
+}

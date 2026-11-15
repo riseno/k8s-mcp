@@ -1116,46 +1116,45 @@ fn pct(used: i64, total: Option<i64>) -> Option<i64> {
     total.filter(|t| *t > 0).map(|t| used * 100 / t)
 }
 
-/// (cpu request, cpu limit, mem request, mem limit) summed over containers.
+/// (cpu request, cpu limit, mem request, mem limit) for a pod. Requests add up what is set; a
+/// limit is `None` (unbounded) as soon as one container has none, since usage covers them all.
 fn pod_resources(p: &Pod) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>) {
-    let mut out = (None, None, None, None);
-    let add = |acc: &mut Option<i64>, v: Option<i64>| {
-        if let Some(v) = v {
-            *acc = Some(acc.unwrap_or(0) + v);
-        }
+    let containers: Vec<&k8s_openapi::api::core::v1::Container> =
+        p.spec.iter().flat_map(|s| &s.containers).collect();
+    let value =
+        |c: &k8s_openapi::api::core::v1::Container, limit: bool, key: &str| -> Option<i64> {
+            let r = c.resources.as_ref()?;
+            let q = if limit {
+                r.limits.as_ref()
+            } else {
+                r.requests.as_ref()
+            }?
+            .get(key)?;
+            if key == "cpu" {
+                cpu_millis(&q.0)
+            } else {
+                bytes(&q.0)
+            }
+        };
+    let requests = |key: &str| {
+        let set: Vec<i64> = containers
+            .iter()
+            .filter_map(|c| value(c, false, key))
+            .collect();
+        (!set.is_empty()).then(|| set.iter().sum())
     };
-    for c in p.spec.iter().flat_map(|s| &s.containers) {
-        let r = c.resources.as_ref();
-        let get = |m: Option<
-            &BTreeMap<String, k8s_openapi::apimachinery::pkg::api::resource::Quantity>,
-        >,
-                   k: &str| m.and_then(|m| m.get(k)).map(|q| q.0.clone());
-        add(
-            &mut out.0,
-            get(r.and_then(|r| r.requests.as_ref()), "cpu")
-                .as_deref()
-                .and_then(cpu_millis),
-        );
-        add(
-            &mut out.1,
-            get(r.and_then(|r| r.limits.as_ref()), "cpu")
-                .as_deref()
-                .and_then(cpu_millis),
-        );
-        add(
-            &mut out.2,
-            get(r.and_then(|r| r.requests.as_ref()), "memory")
-                .as_deref()
-                .and_then(bytes),
-        );
-        add(
-            &mut out.3,
-            get(r.and_then(|r| r.limits.as_ref()), "memory")
-                .as_deref()
-                .and_then(bytes),
-        );
-    }
-    out
+    let limits = |key: &str| {
+        containers
+            .iter()
+            .map(|c| value(c, true, key))
+            .sum::<Option<i64>>()
+    };
+    (
+        requests("cpu"),
+        limits("cpu"),
+        requests("memory"),
+        limits("memory"),
+    )
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1342,4 +1341,38 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
         });
     }
     Ok(e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// riseno/k8s-mcp#10: a limit set on only some containers does not bound the pod.
+    #[test]
+    fn pod_limit_is_unbounded_when_a_container_has_none() {
+        let p: Pod = serde_json::from_value(json!({
+            "metadata": {"name": "anetd"},
+            "spec": {"containers": [
+                {"name": "a", "image": "i", "resources": {"requests": {"cpu": "100m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "65Mi"}}},
+                {"name": "b", "image": "i", "resources": {"requests": {"memory": "32Mi"}}}
+            ]}
+        }))
+        .unwrap();
+        let (cpu_req, cpu_lim, mem_req, mem_lim) = pod_resources(&p);
+        assert_eq!(
+            (cpu_req, cpu_lim, mem_req, mem_lim),
+            (Some(100), None, Some(100_663_296), None)
+        );
+        assert_eq!(pct(430 << 20, mem_lim), None);
+
+        let all_set: Pod = serde_json::from_value(json!({
+            "metadata": {"name": "x"},
+            "spec": {"containers": [
+                {"name": "a", "image": "i", "resources": {"limits": {"memory": "64Mi"}}},
+                {"name": "b", "image": "i", "resources": {"limits": {"memory": "64Mi"}}}
+            ]}
+        }))
+        .unwrap();
+        assert_eq!(pod_resources(&all_set).3, Some(128 << 20));
+    }
 }

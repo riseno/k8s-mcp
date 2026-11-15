@@ -62,7 +62,7 @@ row ends with the v0.2 acceptance criterion it serves.
 |---|---|---|---|
 | 1 | Streamable HTTP transport: `--transport http`, `--listen` (default `127.0.0.1:8080`), rmcp `StreamableHttpService` in axum at `/mcp`, `/healthz`, `/readyz` (API server reachable) | ✅ | rmcp validates `Host`/`Origin` itself (`allowed_hosts`, `allowed_origins`); stateless for `2026-07-28`, legacy sessions for `2025-11-25`; rmcp caps the body (1 MiB); tool calls keep the 30 s timeout, so no tower-http. AC 1 |
 | 2 | Auth: `--auth tokenreview\|static\|none`, `--auth-token-file`; 401 without a valid bearer; `none` refused unless the bind is loopback; caller identity in the audit log | ✅ | TokenReview results cached 60 s; the audit `caller` field. Verified on kind with a ServiceAccount token. AC 1 |
-| 3 | Helm chart `deploy/helm/k8s-mcp`: Deployment, Service, ServiceAccount (IRSA / GKE WI / Azure WI values), read-only ClusterRole (Appendix C) + TokenReview binding, NetworkPolicy, PDB, hardened securityContext, `values.schema.json` | ⏳ | CI: helm lint, kubeconform, install on kind and k3s, HTTP smoke test (401, bad Origin 403, TokenReview client runs `diagnose_pod`). AC 1, 2 |
+| 3 | Helm chart `deploy/helm/k8s-mcp`: Deployment, Service, ServiceAccount (IRSA / GKE WI / Azure WI values), read-only ClusterRole (Appendix C) + TokenReview binding, NetworkPolicy, PDB, hardened securityContext, `values.schema.json` | ✅ | `deploy/helm/smoke.sh` (kind and k3d only): probes, 401, bad Origin 403, a TokenReview client lists tools and runs `diagnose_pod`, the audit names the caller and not the token. Integration CI: lint, kubeconform (3 value sets), install on kind and k3s. The release pushes and signs the chart (OCI). AC 1, 2 |
 | 4 | Rules and tools: `diagnose_service` (`svc.*`), `diagnose_pvc` (`pvc.*`), `diagnose_dns` (`dns.*`), `autoscaling_status` (Karpenter, Cluster Autoscaler, HPA), `recent_changes`, `rollout_history` | ✅ | Done: `diagnose_service` (`svc.*`), `diagnose_pvc` (`pvc.*`), `diagnose_dns` (`dns.*`), `services` and `pvcs` in `find_problems` (ADR 0008), `autoscaling_status` (`autoscaling.*`; Karpenter NodePool limit and CA `NotTriggerScaleUp` fixtures). `recent_changes` and `rollout_history` (diffs never show env values; metadata-only lists). The Secret-canary kind test covers every tool. AC 5 |
 | 5 | Prompts `explain-workload`, `access-review`; resource template `k8s-mcp://cluster/{context}/overview` | ✅ | The template is computed on read through the tool path (no cache yet, ADR 0004). |
 | 6 | Provider framework `k8s-mcp-provider`: shared types, detection from cluster signals (providerID, node labels, server host, exec args), `--providers auto\|none\|eks`, provider toolsets registered only when compiled in and detected | ⏳ | Enum dispatch, not `dyn` + async-trait (ADR 0006). AC 3 |
@@ -82,7 +82,8 @@ row ends with the v0.2 acceptance criterion it serves.
 workspace version, date the CHANGELOG section, push `main`, then push a `vX.Y.Z` tag.
 `release-gate.yml` runs the evals on kind 1.34 and 1.37 and only then dispatches
 `release.yml`, which builds, attests, publishes the signed image and pushes the Homebrew
-formula. Pre-release tags (`-rc.N`) build and attest but do not publish the image or formula
+formula, and pushes and signs the Helm chart at `oci://ghcr.io/riseno/charts/k8s-mcp` (make
+that ghcr package public after its first push, as was done for the image). Pre-release tags (`-rc.N`) build and attest but do not publish the image or formula
 (`publish-prereleases = false`).
 
 ## Deviations

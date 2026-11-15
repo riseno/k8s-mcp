@@ -96,11 +96,6 @@ impl Error {
     pub fn is_forbidden(&self) -> bool {
         matches!(self, Self::Forbidden(_))
     }
-
-    /// True when the object or kind does not exist.
-    pub fn is_not_found(&self) -> bool {
-        matches!(self, Self::NotFound(_))
-    }
 }
 
 fn after<'a>(s: &'a str, marker: &str) -> &'a str {
@@ -144,6 +139,9 @@ mod tests {
 
     #[test]
     fn not_found_maps() {
-        assert!(Error::kube("get pod x", &api_err(404)).is_not_found());
+        assert!(matches!(
+            Error::kube("get pod x", &api_err(404)),
+            Error::NotFound(_)
+        ));
     }
 }

@@ -378,10 +378,13 @@ fn kubeconfig_error(e: &KubeconfigError, paths: &[PathBuf]) -> Error {
 }
 
 /// Force non-interactive exec plugins and extend their PATH. Returns the plugin commands.
-fn harden_exec_plugins(kc: &mut Kubeconfig, prepend: &[PathBuf]) -> Vec<String> {
-    let current = std::env::var_os("PATH").unwrap_or_default();
+/// Directories searched for exec plugins: `prepend`, then `PATH`, then (macOS) the Homebrew
+/// dirs GUI clients usually lack.
+pub fn exec_search_path(prepend: &[PathBuf]) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = prepend.to_vec();
-    dirs.extend(std::env::split_paths(&current));
+    dirs.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
     if cfg!(target_os = "macos") {
         for extra in ["/opt/homebrew/bin", "/usr/local/bin"] {
             let p = PathBuf::from(extra);
@@ -391,7 +394,11 @@ fn harden_exec_plugins(kc: &mut Kubeconfig, prepend: &[PathBuf]) -> Vec<String> 
             }
         }
     }
-    let path = std::env::join_paths(dirs)
+    dirs
+}
+
+fn harden_exec_plugins(kc: &mut Kubeconfig, prepend: &[PathBuf]) -> Vec<String> {
+    let path = std::env::join_paths(exec_search_path(prepend))
         .ok()
         .and_then(|p| p.into_string().ok());
     let mut plugins = Vec::new();

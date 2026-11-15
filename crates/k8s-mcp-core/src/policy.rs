@@ -93,8 +93,6 @@ pub struct Policy {
     pub redact: RedactLevel,
     /// Hard cap on each tool response, in bytes.
     pub max_output_bytes: usize,
-    /// Write tier enabled (always false in v0.1: no write tools exist).
-    pub allow_write: bool,
 }
 
 impl Policy {
@@ -112,7 +110,6 @@ impl Policy {
             deny_namespaces: Patterns::new(deny_namespaces)?,
             redact,
             max_output_bytes,
-            allow_write: false,
         })
     }
 
@@ -124,7 +121,6 @@ impl Policy {
             deny_namespaces: Patterns::none(),
             redact: RedactLevel::Standard,
             max_output_bytes: 24_000,
-            allow_write: false,
         }
     }
 

@@ -114,11 +114,6 @@ impl Redactor {
         Self { level }
     }
 
-    /// The configured level.
-    pub fn level(self) -> RedactLevel {
-        self.level
-    }
-
     /// Redact credentials in free text (log lines, messages, annotation values, args).
     pub fn text(self, s: &str) -> Cow<'_, str> {
         if self.level == RedactLevel::Off {
@@ -181,11 +176,6 @@ impl Redactor {
             }
         }
     }
-}
-
-/// Whether an env var or key name is treated as sensitive.
-pub fn is_sensitive_name(name: &str) -> bool {
-    SENSITIVE_NAME.is_match(name)
 }
 
 /// Reduce a Secret (as JSON) to key names and sizes: `data` and `stringData` values become

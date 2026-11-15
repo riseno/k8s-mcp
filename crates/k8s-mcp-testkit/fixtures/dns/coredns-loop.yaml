@@ -1,0 +1,42 @@
+# CoreDNS forwards to itself (systemd-resolved stub) and crash-loops.
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: coredns-7db6d-aaaaa, namespace: kube-system, labels: {k8s-app: kube-dns}, creationTimestamp: "2026-11-14T08:00:00Z"}
+spec: {containers: [{name: coredns, image: registry.k8s.io/coredns/coredns:v1.12.1}]}
+status:
+  phase: Running
+  conditions: [{type: Ready, status: "False", reason: ContainersNotReady}]
+  containerStatuses: [{name: coredns, ready: false, restartCount: 9, image: coredns, imageID: "", state: {waiting: {reason: CrashLoopBackOff}}}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: coredns-7db6d-bbbbb, namespace: kube-system, labels: {k8s-app: kube-dns}, creationTimestamp: "2026-11-14T08:00:00Z"}
+spec: {containers: [{name: coredns, image: registry.k8s.io/coredns/coredns:v1.12.1}]}
+status:
+  phase: Running
+  conditions: [{type: Ready, status: "False", reason: ContainersNotReady}]
+  containerStatuses: [{name: coredns, ready: false, restartCount: 9, image: coredns, imageID: "", state: {waiting: {reason: CrashLoopBackOff}}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kube-dns, namespace: kube-system}
+spec:
+  clusterIP: 10.96.0.10
+  selector: {k8s-app: kube-dns}
+  ports: [{name: dns, port: 53, protocol: UDP}, {name: dns-tcp, port: 53, protocol: TCP}]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata: {name: kube-dns-x1, namespace: kube-system, labels: {kubernetes.io/service-name: kube-dns}}
+addressType: IPv4
+endpoints:
+  - {addresses: [10.244.0.2], conditions: {ready: false}}
+  - {addresses: [10.244.0.3], conditions: {ready: false}}
+---
+kind: ContainerLog
+pod: coredns-7db6d-aaaaa
+container: coredns
+lines:
+  - '[INFO] plugin/reload: Running configuration SHA512 = 1b22'
+  - '[FATAL] plugin/loop: Loop (127.0.0.1:55953 -> :53) detected for zone ".", see https://coredns.io/plugins/loop#troubleshooting. Query: "HINFO 4547991504243258144.3688648895315093531."'

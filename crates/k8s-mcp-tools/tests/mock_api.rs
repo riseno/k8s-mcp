@@ -9,8 +9,9 @@ use k8s_mcp_core::policy::{Policy, RedactLevel};
 use k8s_mcp_testkit::mock::{MockApi, status, with_discovery};
 use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
-    Ctx, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput,
-    GetResourceInput, ListEventsInput, ListResourcesInput,
+    Ctx, DiagnoseDnsInput, DiagnosePodInput, DiagnosePvcInput, DiagnoseServiceInput,
+    DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput, GetResourceInput, ListEventsInput,
+    ListResourcesInput,
 };
 use serde_json::{Value, json};
 
@@ -1001,5 +1002,240 @@ async fn service_summary_shows_matching_pods_and_endpoints() {
         reqs.iter()
             .any(|r| r.contains("labelSelector=app%3Dnothing-matches")),
         "{reqs:?}"
+    );
+}
+
+fn web_service() -> Value {
+    json!({"apiVersion": "v1", "kind": "Service",
+        "metadata": {"name": "web", "namespace": "shop", "creationTimestamp": "2026-11-14T10:00:00Z"},
+        "spec": {"selector": {"app": "web"}, "ports": [{"name": "http", "port": 80, "targetPort": 8080}]}})
+}
+
+/// A Service whose selector matches no pod names the label difference and shows its ports.
+#[tokio::test]
+async fn diagnose_service_shows_the_label_diff_and_port_table() {
+    let mut p = pod("shop", "web-1", "Running", None, 0);
+    p["metadata"]["labels"] = json!({"app": "web-v2"});
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/services/web", web_service())
+        .list("/api/v1/namespaces/shop/pods", vec![p])
+        .list(
+            "/apis/discovery.k8s.io/v1/namespaces/shop/endpointslices",
+            vec![],
+        )
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input = DiagnoseServiceInput {
+        name: "web".into(),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_service(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "Service web (shop, ClusterIP): selector app=web matches 0 pods (0 Ready); 0 ready endpoints. Top finding: Service web selects no pods (app=web)."
+    );
+    let f = &env.findings[0];
+    assert!(
+        f.evidence
+            .iter()
+            .any(|e| e.text == "pod web-1 has app=web-v2 (selector wants app=web)"),
+        "{:?}",
+        f.evidence
+    );
+    assert_eq!(
+        env.items,
+        [json!({"port": "http 80", "target": "8080", "protocol": "TCP", "exposed_by": "0/0 pods"})]
+    );
+}
+
+/// ADR 0008: find_problems scans Services (listing pods for their selectors when it was not
+/// asked to scan pods) and points at diagnose_service.
+#[tokio::test]
+async fn find_problems_reports_services_that_select_no_pods() {
+    let mut p = pod("shop", "web-1", "Running", None, 0);
+    p["metadata"]["labels"] = json!({"app": "web-v2"});
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .list("/api/v1/namespaces/shop/pods", vec![p])
+        .list("/api/v1/namespaces/shop/services", vec![web_service()])
+        .start();
+    let input = FindProblemsInput {
+        namespace: Some("shop".into()),
+        kinds: Some(vec!["services".into()]),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::find_problems(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert!(
+        env.summary.ends_with("across 1 services."),
+        "{}",
+        env.summary
+    );
+    let f = &env.findings[0];
+    assert_eq!(f.id, "svc.no_matching_pods");
+    assert_eq!(f.object.as_ref().unwrap().kind, "Service");
+    assert_eq!(f.next[0].tool, "diagnose_service");
+}
+
+fn pvc_and_class() -> (Value, Value) {
+    (
+        json!({"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+            "metadata": {"name": "data", "namespace": "shop", "creationTimestamp": "2026-11-14T11:40:00Z"},
+            "spec": {"storageClassName": "fast-ssd", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+            "status": {"phase": "Pending"}}),
+        json!({"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass",
+            "metadata": {"name": "standard", "annotations": {"storageclass.kubernetes.io/is-default-class": "true"}},
+            "provisioner": "rancher.io/local-path", "volumeBindingMode": "WaitForFirstConsumer"}),
+    )
+}
+
+fn pod_using_data() -> Value {
+    let mut p = pod("shop", "db-0", "Pending", None, 0);
+    p["spec"]["volumes"] =
+        json!([{"name": "data", "persistentVolumeClaim": {"claimName": "data"}}]);
+    p
+}
+
+#[tokio::test]
+async fn diagnose_pvc_names_the_missing_storage_class_and_its_consumers() {
+    let (pvc, class) = pvc_and_class();
+    let other = pod("shop", "web-1", "Running", None, 0);
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/persistentvolumeclaims/data", pvc)
+        .list("/apis/storage.k8s.io/v1/storageclasses", vec![class])
+        .list(
+            "/api/v1/namespaces/shop/pods",
+            vec![pod_using_data(), other],
+        )
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let input = DiagnosePvcInput {
+        name: "data".into(),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_pvc(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "PVC data (shop): Pending, StorageClass fast-ssd (not found), 10Gi ReadWriteOnce, used by 1 pod(s). Top finding: PVC data names StorageClass \"fast-ssd\", which does not exist."
+    );
+    assert_eq!(env.items[0]["used_by"], "db-0");
+    assert_eq!(env.sections[0].lines, ["db-0  Pending  node=node-1"]);
+}
+
+/// ADR 0008: find_problems scans PVCs and points at diagnose_pvc.
+#[tokio::test]
+async fn find_problems_reports_pvcs_with_a_missing_storage_class() {
+    let (pvc, class) = pvc_and_class();
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .list("/api/v1/namespaces/shop/pods", vec![pod_using_data()])
+        .list("/api/v1/namespaces/shop/persistentvolumeclaims", vec![pvc])
+        .list("/apis/storage.k8s.io/v1/storageclasses", vec![class])
+        .start();
+    let input = FindProblemsInput {
+        namespace: Some("shop".into()),
+        kinds: Some(vec!["pvcs".into()]),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::find_problems(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let f = &env.findings[0];
+    assert_eq!(f.id, "pvc.pending.no_storageclass");
+    assert_eq!(
+        f.severity,
+        k8s_mcp_core::finding::Severity::Critical,
+        "a pod waits on it"
+    );
+    assert_eq!(f.next[0].tool, "diagnose_pvc");
+}
+
+fn dns_mock(extra: impl FnOnce(MockApi) -> MockApi) -> k8s_mcp_testkit::mock::Mock {
+    let mut app = pod("shop", "api-1", "Running", None, 0);
+    app["metadata"]["labels"] = json!({"app": "api"});
+    let mut coredns = pod("kube-system", "coredns-1", "Running", None, 0);
+    coredns["metadata"]["labels"] = json!({"k8s-app": "kube-dns"});
+    coredns["status"]["conditions"] = json!([{"type": "Ready", "status": "True"}]);
+    let policy = json!({"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+        "metadata": {"name": "api-egress", "namespace": "shop"},
+        "spec": {"podSelector": {"matchLabels": {"app": "api"}}, "policyTypes": ["Egress"],
+            "egress": [{"to": [{"podSelector": {"matchLabels": {"app": "db"}}}], "ports": [{"port": 5432}]}]}});
+    let service = json!({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "kube-dns", "namespace": "kube-system"},
+        "spec": {"selector": {"k8s-app": "kube-dns"}, "ports": [{"port": 53, "protocol": "UDP"}]}});
+    let slice = json!({"apiVersion": "discovery.k8s.io/v1", "kind": "EndpointSlice", "metadata": {"name": "kube-dns-1", "namespace": "kube-system"},
+        "addressType": "IPv4", "endpoints": [{"addresses": ["10.244.0.2"], "conditions": {"ready": true}}]});
+    extra(
+        MockApi::new()
+            .get("/api/v1/namespaces/shop/pods/api-1", app)
+            .get(
+                "/api/v1/namespaces/shop/pods/api-1/log",
+                json!("dial tcp: lookup db.shop.svc.cluster.local on 10.96.0.10:53: read udp 10.244.1.7:40112->10.96.0.10:53: i/o timeout\n"),
+            )
+            .list("/apis/networking.k8s.io/v1/namespaces/shop/networkpolicies", vec![policy])
+            .list("/api/v1/namespaces/kube-system/pods", vec![coredns])
+            .get("/api/v1/namespaces/kube-system/services/kube-dns", service)
+            .list("/apis/discovery.k8s.io/v1/namespaces/kube-system/endpointslices", vec![slice])
+            .get("/api/v1/namespaces/kube-system/pods/coredns-1/log", json!("[INFO] plugin/reload: Running configuration\n")),
+    )
+    .start()
+}
+
+#[tokio::test]
+async fn diagnose_dns_finds_the_policy_that_blocks_port_53() {
+    let mock = dns_mock(|m| m);
+    let input = DiagnoseDnsInput {
+        pod: Some("api-1".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_dns(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "DNS for pod api-1 (shop): CoreDNS 1/1 Ready, kube-dns has 1 ready endpoints, 1 NetworkPolicies in shop. Top finding: NetworkPolicy api-egress blocks DNS for pod api-1."
+    );
+    let ids: Vec<&str> = env.findings.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["dns.netpol_blocks_egress", "dns.app_resolution_errors"]
+    );
+    assert_eq!(env.items[0]["name"], "coredns-1");
+    assert_eq!(env.sections[0].lines, ["dnsPolicy: ClusterFirst"]);
+}
+
+/// The namespace policy is applied to kube-system too: no request goes there.
+#[tokio::test]
+async fn diagnose_dns_does_not_read_kube_system_outside_the_namespace_policy() {
+    let mock = dns_mock(|m| m);
+    let input = DiagnoseDnsInput {
+        pod: Some("api-1".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::diagnose_dns(&ctx(&mock, policy(&["shop"], &[])), input)
+        .await
+        .unwrap();
+    let requests = mock.requests.lock().unwrap().clone();
+    assert!(
+        !requests.iter().any(|r| r.contains("kube-system")),
+        "{requests:?}"
+    );
+    assert_eq!(env.findings[0].id, "dns.netpol_blocks_egress");
+    let notes = env
+        .sections
+        .iter()
+        .find(|s| s.title.starts_with("UNAVAILABLE"))
+        .unwrap();
+    assert!(
+        notes
+            .lines
+            .iter()
+            .any(|l| l.contains("kube-system is outside")),
+        "{:?}",
+        notes.lines
     );
 }

@@ -1,0 +1,9 @@
+id: dns-netpol-blocked
+symptom: The client pod in eval-dns-netpol-blocked cannot resolve any hostname. Is DNS the problem?
+tool: diagnose_dns
+args: {pod: client, namespace: eval-dns-netpol-blocked}
+settle_seconds: 20
+expected:
+  primary: dns.netpol_blocks_egress
+  acceptable: [dns.app_resolution_errors]
+forbidden: [dns.coredns_unhealthy, dns.no_endpoints]

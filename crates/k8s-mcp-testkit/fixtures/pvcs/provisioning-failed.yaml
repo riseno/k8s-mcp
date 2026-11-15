@@ -1,0 +1,33 @@
+# The CSI driver failed to create the volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: data, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 10Gi}}
+  storageClassName: gp3
+status: {phase: Pending}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: {name: gp3}
+provisioner: ebs.csi.aws.com
+volumeBindingMode: Immediate
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: db-0, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  containers: [{name: db, image: postgres:17}]
+  volumes: [{name: data, persistentVolumeClaim: {claimName: data}}]
+status: {phase: Pending}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: data.1, namespace: shop}
+involvedObject: {kind: PersistentVolumeClaim, name: data, namespace: shop}
+type: Warning
+reason: ProvisioningFailed
+message: 'failed to provision volume with StorageClass "gp3": rpc error: code = Internal desc = Could not create volume: UnauthorizedOperation: You are not authorized to perform this operation'
+count: 3
+lastTimestamp: "2026-11-14T11:58:00Z"

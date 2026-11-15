@@ -13,15 +13,17 @@ use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_caus
 use k8s_mcp_core::text::{dedup_lines, is_marker_line, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
-    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
-    WorkloadEvidence,
+    ContainerLog, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind, ServiceEvidence,
+    Unavailable, Workload, WorkloadEvidence,
 };
 use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet};
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, Secret, ServiceAccount,
+    ConfigMap, Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, Secret, Service,
+    ServiceAccount,
 };
+use k8s_openapi::api::storage::v1::StorageClass;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Resource;
 use kube::api::{Api, ListParams, LogParams};
@@ -35,6 +37,7 @@ use crate::common::{
 };
 use crate::read::{add_notes, events_section};
 use crate::rows::{node_row, pod_row, pod_status, unhealthy};
+use crate::storage::uses_claim;
 use crate::{Ctx, Envelope};
 
 /// Max referenced objects checked per pod.
@@ -218,58 +221,10 @@ async fn gather_pod(
         });
     }
 
-    let mut logs = Vec::new();
-    if let Some(tail) = log_tail {
-        let api: Api<Pod> = Api::namespaced(client.clone(), &ns);
-        // (container, read previous instance?) for containers that have run at least once.
-        let wanted: Vec<(String, bool)> = pod
-            .status
-            .iter()
-            .flat_map(|s| {
-                s.init_container_statuses
-                    .iter()
-                    .flatten()
-                    .chain(s.container_statuses.iter().flatten())
-            })
-            .filter_map(|st| {
-                let restarted = st.restart_count > 0
-                    && st
-                        .last_state
-                        .as_ref()
-                        .and_then(|s| s.terminated.as_ref())
-                        .is_some();
-                let terminated_now = st.state.as_ref().is_some_and(|s| s.terminated.is_some());
-                let running = st.state.as_ref().is_some_and(|s| s.running.is_some());
-                // A container that just crashed sits in `terminated` for a while; its own
-                // logs hold the crash output and the previous instance may already be gone.
-                let previous = restarted && !terminated_now;
-                (restarted || running || terminated_now).then(|| (st.name.clone(), previous))
-            })
-            .collect();
-        for (container, previous) in wanted {
-            let lp = LogParams {
-                container: Some(container.clone()),
-                previous,
-                tail_lines: Some(tail),
-                ..LogParams::default()
-            };
-            match api.logs(&name, &lp).await {
-                Ok(raw) if raw.starts_with("unable to retrieve container logs") => un.push(Unavailable {
-                    what: format!("{}logs of container {container}", if previous { "previous " } else { "" }),
-                    reason: "the runtime no longer has them (the container was removed after its crash)".into(),
-                }),
-                Ok(raw) => logs.push(ContainerLog {
-                    lines: dedup_lines(redact_log(ctx, &raw, &secret_values).into_iter().filter(|l| !is_marker_line(l))),
-                    container,
-                    previous,
-                }),
-                Err(e) => un.push(Unavailable {
-                    what: format!("{}logs of container {container}", if previous { "previous " } else { "" }),
-                    reason: Error::kube(format!("get logs of pod {name}"), &e).to_string(),
-                }),
-            }
-        }
-    }
+    let logs = match log_tail {
+        Some(tail) => container_logs(ctx, sc, &pod, tail, &secret_values, &mut un).await,
+        None => Vec::new(),
+    };
     PodEvidence {
         pod,
         events,
@@ -282,6 +237,86 @@ async fn gather_pod(
         unavailable: un,
         now,
     }
+}
+
+/// Why logs of a container that crashed and was removed cannot be read.
+const LOGS_GONE: &str =
+    "the runtime no longer has them (the container was removed after its crash)";
+
+/// Log tails of the pod's containers that have run (the previous instance of restarted ones),
+/// redacted, with `secret_values` (from [`pod_secret_values`]) masked. Failures become notes.
+pub(crate) async fn container_logs(
+    ctx: &Ctx,
+    sc: &Scope,
+    pod: &Pod,
+    tail: i64,
+    secret_values: &[String],
+    un: &mut Vec<Unavailable>,
+) -> Vec<ContainerLog> {
+    let name = pod.metadata.name.clone().unwrap_or_default();
+    let ns = pod.metadata.namespace.clone().unwrap_or_default();
+    let client = sc.target.client.clone();
+    let mut logs = Vec::new();
+    let api: Api<Pod> = Api::namespaced(client.clone(), &ns);
+    // (container, read previous instance?) for containers that have run at least once.
+    let wanted: Vec<(String, bool)> = pod
+        .status
+        .iter()
+        .flat_map(|s| {
+            s.init_container_statuses
+                .iter()
+                .flatten()
+                .chain(s.container_statuses.iter().flatten())
+        })
+        .filter_map(|st| {
+            let restarted = st.restart_count > 0
+                && st
+                    .last_state
+                    .as_ref()
+                    .and_then(|s| s.terminated.as_ref())
+                    .is_some();
+            let terminated_now = st.state.as_ref().is_some_and(|s| s.terminated.is_some());
+            let running = st.state.as_ref().is_some_and(|s| s.running.is_some());
+            // A container that just crashed sits in `terminated` for a while; its own
+            // logs hold the crash output and the previous instance may already be gone.
+            let previous = restarted && !terminated_now;
+            (restarted || running || terminated_now).then(|| (st.name.clone(), previous))
+        })
+        .collect();
+    for (container, previous) in wanted {
+        let lp = LogParams {
+            container: Some(container.clone()),
+            previous,
+            tail_lines: Some(tail),
+            ..LogParams::default()
+        };
+        let what = format!(
+            "{}logs of container {container}",
+            if previous { "previous " } else { "" }
+        );
+        match api.logs(&name, &lp).await {
+            Ok(raw) if raw.starts_with("unable to retrieve container logs") => {
+                un.push(Unavailable {
+                    what,
+                    reason: LOGS_GONE.into(),
+                });
+            }
+            Ok(raw) => logs.push(ContainerLog {
+                lines: dedup_lines(
+                    redact_log(ctx, &raw, secret_values)
+                        .into_iter()
+                        .filter(|l| !is_marker_line(l)),
+                ),
+                container,
+                previous,
+            }),
+            Err(e) => un.push(Unavailable {
+                what,
+                reason: Error::kube(format!("get logs of pod {name}"), &e).to_string(),
+            }),
+        }
+    }
+    logs
 }
 
 fn note(
@@ -977,6 +1012,9 @@ pub async fn diagnose_node(ctx: &Ctx, input: DiagnoseNodeInput) -> Result<Envelo
 // ---------------------------------------------------------------------------------------
 // find_problems
 
+/// What `find_problems` can scan (its `kinds` values), all by default.
+const KINDS: &[&str] = &["pods", "workloads", "nodes", "services", "pvcs"];
+
 /// Inputs for `find_problems`.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -985,7 +1023,7 @@ pub struct FindProblemsInput {
     pub namespace: Option<String>,
     /// Scan all allowed namespaces (default true unless `namespace` is set).
     pub all_namespaces: Option<bool>,
-    /// What to scan: any of `pods`, `workloads`, `nodes` (default all).
+    /// What to scan: any of `pods`, `workloads`, `nodes`, `services`, `pvcs` (default all).
     pub kinds: Option<Vec<String>>,
     /// Lowest severity to report (default `medium`).
     pub min_severity: Option<Severity>,
@@ -1009,14 +1047,14 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     let only_namespace_nodes = sc.namespace.is_some() && input.kinds.is_none();
     let kinds = input
         .kinds
-        .unwrap_or_else(|| vec!["pods".into(), "workloads".into(), "nodes".into()]);
-    if let Some(bad) = kinds.iter().find(|k| {
-        !["pods", "workloads", "nodes"]
-            .iter()
-            .any(|v| k.eq_ignore_ascii_case(v))
-    }) {
+        .unwrap_or_else(|| KINDS.iter().map(|k| (*k).to_owned()).collect());
+    if let Some(bad) = kinds
+        .iter()
+        .find(|k| !KINDS.iter().any(|v| k.eq_ignore_ascii_case(v)))
+    {
         return Err(Error::InvalidInput(format!(
-            "unknown kind {bad:?} in kinds; valid values are pods, workloads and nodes"
+            "unknown kind {bad:?} in kinds; valid values are {}",
+            KINDS.join(", ")
         )));
     }
     let want = |k: &str| kinds.iter().any(|x| x.eq_ignore_ascii_case(k));
@@ -1169,6 +1207,106 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             );
         }
     }
+    // Service selectors and PVC consumers need the pods: reuse the pod scan when there was one.
+    let extra_pods = if (want("services") || want("pvcs")) && listed_pods.is_none() {
+        soft(
+            list_scoped::<Pod>(ctx, &sc, &ListParams::default(), "pods", &mut un).await,
+            "pods (for Services and PVCs)",
+            &mut un,
+        )
+    } else {
+        None
+    };
+    let all_pods = listed_pods.as_ref().or(extra_pods.as_ref());
+    let pods_in = |ns: &str| -> Option<Vec<Pod>> {
+        all_pods.map(|all| {
+            all.iter()
+                .filter(|p| p.metadata.namespace.as_deref() == Some(ns))
+                .cloned()
+                .collect()
+        })
+    };
+    if want("services")
+        && let Some(services) = soft(
+            list_scoped::<Service>(ctx, &sc, &ListParams::default(), "services", &mut un).await,
+            "services",
+            &mut un,
+        )
+    {
+        scanned.push(format!("{} services", services.len()));
+        for svc in services {
+            let (name, ns) = (
+                svc.metadata.name.clone().unwrap_or_default(),
+                svc.metadata.namespace.clone().unwrap_or_default(),
+            );
+            let ev = ServiceEvidence {
+                service: svc,
+                pods: pods_in(&ns),
+                events: events_about("Service", &ns, &|n| n == name),
+                now,
+                ..ServiceEvidence::default()
+            };
+            findings.extend(
+                k8s_mcp_diagnose::diagnose_service(&ev)
+                    .into_iter()
+                    .map(|f| f.object(ObjectRef::new("Service", Some(&ns), &name))),
+            );
+        }
+    }
+    if want("pvcs")
+        && let Some(pvcs) = soft(
+            list_scoped::<PersistentVolumeClaim>(
+                ctx,
+                &sc,
+                &ListParams::default(),
+                "persistentvolumeclaims",
+                &mut un,
+            )
+            .await,
+            "PVCs",
+            &mut un,
+        )
+    {
+        scanned.push(format!("{} PVCs", pvcs.len()));
+        let storage_classes = soft(
+            Api::<StorageClass>::all(sc.target.client.clone())
+                .list(&ListParams::default())
+                .await
+                .map(|l| l.items)
+                .map_err(|e| Error::kube("list storageclasses", &e)),
+            "StorageClasses",
+            &mut un,
+        );
+        for pvc in pvcs {
+            let (name, ns) = (
+                pvc.metadata.name.clone().unwrap_or_default(),
+                pvc.metadata.namespace.clone().unwrap_or_default(),
+            );
+            let pods: Vec<Pod> = pods_in(&ns)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| uses_claim(p, &name))
+                .collect();
+            let pod_names: Vec<String> = pods
+                .iter()
+                .filter_map(|p| p.metadata.name.clone())
+                .collect();
+            let ev = PvcEvidence {
+                pvc,
+                storage_classes: storage_classes.clone(),
+                events: events_about("PersistentVolumeClaim", &ns, &|n| n == name),
+                pod_events: events_about("Pod", &ns, &|n| pod_names.iter().any(|p| p == n)),
+                pods,
+                now,
+                ..PvcEvidence::default()
+            };
+            findings.extend(
+                k8s_mcp_diagnose::diagnose_pvc(&ev)
+                    .into_iter()
+                    .map(|f| f.object(ObjectRef::new("PersistentVolumeClaim", Some(&ns), &name))),
+            );
+        }
+    }
     findings.retain(|f| f.severity <= min);
     rank(&mut findings);
     dedup(&mut findings);
@@ -1182,6 +1320,14 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                     json!({"name": o.name, "namespace": o.namespace}),
                 ),
                 "Node" => ("diagnose_node", json!({"name": o.name})),
+                "Service" => (
+                    "diagnose_service",
+                    json!({"name": o.name, "namespace": o.namespace}),
+                ),
+                "PersistentVolumeClaim" => (
+                    "diagnose_pvc",
+                    json!({"name": o.name, "namespace": o.namespace}),
+                ),
                 k => (
                     "diagnose_workload",
                     json!({"kind": k, "name": o.name, "namespace": o.namespace}),

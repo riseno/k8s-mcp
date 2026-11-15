@@ -9,8 +9,11 @@ use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet}
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 use k8s_openapi::api::batch::v1::{CronJob, Job};
 use k8s_openapi::api::core::v1::{
-    Event, Node, PersistentVolumeClaim, Pod, ResourceQuota, ServiceAccount,
+    Event, Node, PersistentVolume, PersistentVolumeClaim, Pod, ResourceQuota, Service,
+    ServiceAccount,
 };
+use k8s_openapi::api::networking::v1::NetworkPolicy;
+use k8s_openapi::api::storage::v1::StorageClass;
 
 /// A piece of evidence that could not be gathered, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +146,67 @@ pub struct NodeEvidence {
     pub pods: Option<Vec<Pod>>,
     /// API server version as (major, minor), if known.
     pub server_version: Option<(u32, u32)>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}
+
+/// Everything `diagnose_service` knows about one Service.
+#[derive(Debug, Clone, Default)]
+pub struct ServiceEvidence {
+    /// The Service.
+    pub service: Service,
+    /// Pods in the Service's namespace (the rules apply its selector); `None` if unreadable.
+    pub pods: Option<Vec<Pod>>,
+    /// Events whose involvedObject is the Service (last hour).
+    pub events: Vec<Event>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}
+
+/// Everything `diagnose_pvc` knows about one PersistentVolumeClaim.
+#[derive(Debug, Clone, Default)]
+pub struct PvcEvidence {
+    /// The claim.
+    pub pvc: PersistentVolumeClaim,
+    /// All StorageClasses (to find the named or default one); `None` if unreadable.
+    pub storage_classes: Option<Vec<StorageClass>>,
+    /// The bound PersistentVolume, if any and readable.
+    pub pv: Option<PersistentVolume>,
+    /// Events whose involvedObject is the claim (last hour).
+    pub events: Vec<Event>,
+    /// Pods in the namespace that mount the claim.
+    pub pods: Vec<Pod>,
+    /// Events of those pods (attach, mount and scheduling failures).
+    pub pod_events: Vec<Event>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}
+
+/// Everything `diagnose_dns` knows about the DNS path of a pod (or of a namespace).
+#[derive(Debug, Clone, Default)]
+pub struct DnsEvidence {
+    /// The pod being checked, if one was named.
+    pub pod: Option<Pod>,
+    /// The namespace being checked (the pod's).
+    pub namespace: String,
+    /// Log tails of the pod's containers.
+    pub pod_logs: Vec<ContainerLog>,
+    /// NetworkPolicies in the namespace; `None` if unreadable.
+    pub network_policies: Option<Vec<NetworkPolicy>>,
+    /// Cluster DNS pods (`k8s-app=kube-dns` in kube-system); `None` if unreadable.
+    pub dns_pods: Option<Vec<Pod>>,
+    /// The kube-dns Service: `Some(None)` when it does not exist, `None` if unreadable.
+    pub dns_service: Option<Option<Service>>,
+    /// Ready endpoints in the kube-dns EndpointSlices; `None` if unreadable.
+    pub dns_ready_endpoints: Option<usize>,
+    /// Recent log lines of the cluster DNS pods.
+    pub dns_logs: Vec<ContainerLog>,
     /// Evidence that could not be gathered.
     pub unavailable: Vec<Unavailable>,
     /// Current time.

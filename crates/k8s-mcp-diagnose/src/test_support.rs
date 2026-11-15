@@ -32,6 +32,14 @@
 //! pod; the remaining Events are the workload's. Pseudo-kinds apply to every pod unless they
 //! carry `pod: <name>`.
 //!
+//! A Service fixture (`services/`) holds one Service, the Pods of its namespace and the
+//! Service's Events.
+//!
+//! A PVC fixture (`pvcs/`) holds one PersistentVolumeClaim, the cluster's StorageClasses, an
+//! optional PersistentVolume, the Pods that use the claim and Events about either.
+//!
+//! A DNS fixture (`dns/`): see [`dns_fixture`].
+//!
 //! A node fixture (`nodes/`) holds one Node plus any Events, Pods (all taken as running on
 //! the node; with no Pod documents `pods` is `None`, i.e. unreadable), `Unavailable`, and
 //! this pseudo-kind for the API server version:
@@ -47,8 +55,8 @@ use k8s_openapi::api::core::v1::{Event, Node, Pod};
 use serde_json::Value;
 
 use crate::evidence::{
-    ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
-    WorkloadEvidence,
+    ContainerLog, DnsEvidence, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind,
+    ServiceEvidence, Unavailable, Workload, WorkloadEvidence,
 };
 
 /// Load a pod fixture into a [`PodEvidence`].
@@ -177,6 +185,104 @@ pub fn node_fixture(name: &str) -> NodeEvidence {
         server_version: pseudo(&fx, "ServerVersion")
             .next()
             .map(|o| (version(o, "major"), version(o, "minor"))),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load a Service fixture (`services/`): one Service plus the namespace's Pods and the
+/// Service's Events.
+pub fn service_fixture(name: &str) -> ServiceEvidence {
+    let fx = load(name);
+    ServiceEvidence {
+        service: fx.one("Service"),
+        pods: Some(fx.all("Pod")),
+        events: fx.all("Event"),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load a PVC fixture (`pvcs/`): one PersistentVolumeClaim, the StorageClasses, an optional
+/// PersistentVolume, the Pods using the claim, and Events (about the claim, or about a Pod).
+pub fn pvc_fixture(name: &str) -> PvcEvidence {
+    let fx = load(name);
+    let events: Vec<Event> = fx.all("Event");
+    let about = |kind: &str| {
+        events
+            .iter()
+            .filter(|e| e.involved_object.kind.as_deref() == Some(kind))
+            .cloned()
+            .collect()
+    };
+    PvcEvidence {
+        pvc: fx.one("PersistentVolumeClaim"),
+        storage_classes: Some(fx.all("StorageClass")),
+        pv: fx.first("PersistentVolume"),
+        events: about("PersistentVolumeClaim"),
+        pods: fx.all("Pod"),
+        pod_events: about("Pod"),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+/// Load a DNS fixture (`dns/`). Pods in kube-system labeled `k8s-app: kube-dns` are the DNS
+/// pods; the first other Pod is the pod under test. `ContainerLog`s carry `pod: <name>`. The
+/// Service (if any) is kube-dns, and EndpointSlices give its ready endpoints.
+pub fn dns_fixture(name: &str) -> DnsEvidence {
+    let fx = load(name);
+    let is_dns = |p: &Pod| {
+        p.metadata.namespace.as_deref() == Some("kube-system")
+            && p.metadata
+                .labels
+                .as_ref()
+                .is_some_and(|l| l.get("k8s-app").is_some_and(|v| v == "kube-dns"))
+    };
+    let (dns_pods, others): (Vec<Pod>, Vec<Pod>) =
+        fx.all::<Pod>("Pod").into_iter().partition(is_dns);
+    let pod = others.into_iter().next();
+    let dns_names: Vec<String> = dns_pods
+        .iter()
+        .filter_map(|p| p.metadata.name.clone())
+        .collect();
+    let (mut dns_logs, mut pod_logs) = (Vec::new(), Vec::new());
+    for o in pseudo(&fx, "ContainerLog") {
+        let log = ContainerLog {
+            container: o["container"].as_str().unwrap().to_owned(),
+            previous: false,
+            lines: o["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l.as_str().unwrap().to_owned())
+                .collect(),
+        };
+        if dns_names.iter().any(|n| o["pod"] == n.as_str()) {
+            dns_logs.push(log);
+        } else {
+            pod_logs.push(log);
+        }
+    }
+    let slices: Vec<k8s_openapi::api::discovery::v1::EndpointSlice> = fx.all("EndpointSlice");
+    DnsEvidence {
+        namespace: pod
+            .as_ref()
+            .and_then(|p| p.metadata.namespace.clone())
+            .unwrap_or_else(|| "shop".into()),
+        pod,
+        pod_logs,
+        network_policies: Some(fx.all("NetworkPolicy")),
+        dns_pods: Some(dns_pods),
+        dns_service: Some(fx.first("Service")),
+        dns_ready_endpoints: Some(
+            slices
+                .iter()
+                .flat_map(|s| &s.endpoints)
+                .filter(|e| e.conditions.as_ref().and_then(|c| c.ready) != Some(false))
+                .count(),
+        ),
+        dns_logs,
         unavailable: unavailable(&fx),
         now: now(),
     }

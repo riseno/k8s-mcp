@@ -1,0 +1,14 @@
+k8s-mcp serves MCP at http://{{ include "k8s-mcp.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/mcp (read-only).
+
+Try it from your machine:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "k8s-mcp.fullname" . }} 8080:{{ .Values.service.port }}
+{{- if eq .Values.auth.mode "tokenreview" }}
+  TOKEN=$(kubectl -n <namespace> create token <serviceaccount>)   # any identity the cluster authenticates
+{{- else }}
+  TOKEN=<the token in Secret {{ .Values.auth.existingSecret }}>
+{{- end }}
+  claude mcp add --transport http k8s http://localhost:8080/mcp --header "Authorization: Bearer $TOKEN"
+
+The server acts with its own ServiceAccount ({{ include "k8s-mcp.serviceAccountName" . }}); callers' tokens
+only authenticate them. Every tool call is audited to the pod log (stderr) with the caller.

@@ -392,10 +392,10 @@ impl ServerHandler for K8sMcp {
                 None,
             ));
         }
+        // Per-request client info (protocol 2026-07-28), else the initialize handshake.
         let client = context
-            .peer
-            .peer_info()
-            .map(|i| format!("{}/{}", i.client_info.name, i.client_info.version));
+            .client_info()
+            .map(|i| format!("{}/{}", i.name, i.version));
         let args = Value::Object(request.arguments.unwrap_or_default());
         Ok(self
             .run(&request.name, args, client, context.ct.cancelled_owned())

@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::common::{check_name, envelope, scope};
+use crate::common::{bounded, check_name, envelope, scope};
 use crate::diagnose::{pod_secret_values, redact_log, workload_pods};
 use crate::read::add_notes;
 use crate::rows::unhealthy;
@@ -70,6 +70,27 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
         false,
     )
     .await?;
+    // Validate every input before calling the API.
+    let grep = input
+        .grep
+        .as_deref()
+        .map(|g| {
+            RegexBuilder::new(g)
+                .case_insensitive(true)
+                .size_limit(1 << 20)
+                .build()
+        })
+        .transpose()
+        .map_err(|e| Error::InvalidInput(format!("grep is not a valid regex: {e}")))?;
+    let since = input
+        .since
+        .as_deref()
+        .map(parse_duration)
+        .transpose()
+        .map_err(Error::InvalidInput)?;
+    let tail = bounded("tail", input.tail, DEFAULT_TAIL, MAX_TAIL)?;
+    let ctx_lines = input.context_lines.unwrap_or(0).min(10);
+    let max_pods = bounded("max_pods", input.max_pods, 3, 10)?;
     let ns = sc.namespace.clone().unwrap_or_default();
     let api: Api<Pod> = Api::namespaced(sc.target.client.clone(), &ns);
     let now = ctx.now();
@@ -91,7 +112,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             check_name("workload", name)?;
             let mut pods = workload_pods(&sc, kind, name).await?.1;
             pods.sort_by_key(|p| unhealthy(p, now).is_none());
-            pods.truncate(input.max_pods.unwrap_or(3).clamp(1, 10));
+            pods.truncate(max_pods);
             pods
         }
         _ => {
@@ -100,25 +121,6 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             ));
         }
     };
-    let grep = input
-        .grep
-        .as_deref()
-        .map(|g| {
-            RegexBuilder::new(g)
-                .case_insensitive(true)
-                .size_limit(1 << 20)
-                .build()
-        })
-        .transpose()
-        .map_err(|e| Error::InvalidInput(format!("grep is not a valid regex: {e}")))?;
-    let since = input
-        .since
-        .as_deref()
-        .map(parse_duration)
-        .transpose()
-        .map_err(Error::InvalidInput)?;
-    let tail = input.tail.unwrap_or(DEFAULT_TAIL).clamp(1, MAX_TAIL);
-    let ctx_lines = input.context_lines.unwrap_or(0).min(10);
 
     let mut e = envelope(&sc, String::new());
     let mut notes = Vec::new();

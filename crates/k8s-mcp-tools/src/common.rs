@@ -44,6 +44,59 @@ pub fn check_name(what: &str, name: &str) -> Result<()> {
     }
 }
 
+/// Namespaces are RFC 1123 labels: lowercase letters, digits and '-', at most 63 characters.
+pub fn check_namespace_name(ns: &str) -> Result<()> {
+    let ok = !ns.is_empty()
+        && ns.len() <= 63
+        && ns
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !ns.starts_with('-')
+        && !ns.ends_with('-');
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::InvalidInput(format!(
+            "namespace {ns:?} is not a valid namespace name (lowercase letters, digits and '-', at most 63 characters); list_resources kind=namespaces shows the namespaces"
+        )))
+    }
+}
+
+/// A numeric input within `1..=max`, or `default`. Out-of-range values are an error, not
+/// silently clamped, so the caller learns its request was not what ran.
+pub fn bounded<T: Copy + PartialOrd + From<u8> + std::fmt::Display>(
+    name: &str,
+    value: Option<T>,
+    default: T,
+    max: T,
+) -> Result<T> {
+    match value {
+        None => Ok(default),
+        Some(v) if v >= T::from(1) && v <= max => Ok(v),
+        Some(v) => Err(Error::InvalidInput(format!(
+            "{name} must be between 1 and {max}, got {v}"
+        ))),
+    }
+}
+
+/// After an empty namespaced result: fail with "namespace does not exist" when that is why.
+/// Other lookup errors (for example Forbidden under namespace-scoped RBAC) are ignored.
+pub async fn ensure_namespace(scope: &Scope) -> Result<()> {
+    let Some(ns) = &scope.namespace else {
+        return Ok(());
+    };
+    match Api::<k8s_openapi::api::core::v1::Namespace>::all(scope.target.client.clone())
+        .get_opt(ns)
+        .await
+    {
+        Ok(None) => Err(Error::NotFound(format!(
+            "namespace {ns:?} does not exist in context {}; list_resources kind=namespaces shows the namespaces",
+            scope.target.context
+        ))),
+        _ => Ok(()),
+    }
+}
+
 /// Resolve context and namespace, enforcing the context allow-list and namespace policy.
 pub async fn scope(
     ctx: &Ctx,
@@ -59,7 +112,7 @@ pub async fn scope(
         });
     }
     let ns = namespace.map_or_else(|| target.namespace.clone(), str::to_owned);
-    check_name("namespace", &ns)?;
+    check_namespace_name(&ns)?;
     ctx.policy.check_namespace(&ns)?;
     Ok(Scope {
         target,

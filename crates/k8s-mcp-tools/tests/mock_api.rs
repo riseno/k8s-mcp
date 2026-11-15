@@ -831,3 +831,99 @@ async fn previous_logs_fall_back_to_the_crashed_current_instance() {
     );
     assert_eq!(env.items[0]["previous"], false);
 }
+
+/// riseno/k8s-mcp#29: invalid inputs are rejected with the valid range or values instead of
+/// being clamped or ignored, and a namespace that does not exist is reported as such.
+#[tokio::test]
+async fn invalid_inputs_and_missing_namespaces_are_errors() {
+    let mock = with_discovery(MockApi::new())
+        .list("/api/v1/namespaces/no-such-ns/pods", vec![])
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let err = |r: k8s_mcp_core::Result<k8s_mcp_tools::Envelope>| {
+        r.err().map(|e| e.to_string()).unwrap_or_default()
+    };
+    assert!(
+        err(k8s_mcp_tools::get_logs(
+            &c,
+            GetLogsInput {
+                pod: Some("x".into()),
+                tail: Some(-5),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("tail must be between 1 and 2000")
+    );
+    assert!(
+        err(k8s_mcp_tools::list_resources(
+            &c,
+            ListResourcesInput {
+                kind: "pods".into(),
+                limit: Some(0),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("limit must be between 1 and 500")
+    );
+    assert!(
+        err(k8s_mcp_tools::find_problems(
+            &c,
+            FindProblemsInput {
+                kinds: Some(vec!["pods".into(), "bogus".into()]),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("unknown kind \"bogus\"")
+    );
+    assert!(
+        err(k8s_mcp_tools::list_events(
+            &c,
+            ListEventsInput {
+                types: Some(vec!["Bogus".into()]),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("use Normal and/or Warning")
+    );
+    let many = (0..11).map(|i| format!("r{i}")).collect();
+    assert!(
+        err(k8s_mcp_tools::check_permissions(
+            &c,
+            k8s_mcp_tools::CheckPermissionsInput {
+                verbs_for: Some(many),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("at most 10")
+    );
+    assert!(
+        err(k8s_mcp_tools::list_resources(
+            &c,
+            ListResourcesInput {
+                kind: "pods".into(),
+                namespace: Some("Bh-Redact".into()),
+                ..Default::default()
+            }
+        )
+        .await)
+        .contains("not a valid namespace name")
+    );
+    let missing = err(k8s_mcp_tools::list_resources(
+        &c,
+        ListResourcesInput {
+            kind: "pods".into(),
+            namespace: Some("no-such-ns".into()),
+            ..Default::default()
+        },
+    )
+    .await);
+    assert!(
+        missing.contains("namespace \"no-such-ns\" does not exist"),
+        "{missing}"
+    );
+}

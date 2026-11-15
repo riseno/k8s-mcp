@@ -30,8 +30,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::common::{
-    Scope, check_name, envelope, events_for, list_scoped, retain_recent, scope, selector_matches,
-    selector_string, soft,
+    Scope, check_name, ensure_namespace, envelope, events_for, list_scoped, retain_recent, scope,
+    selector_matches, selector_string, soft,
 };
 use crate::read::{add_notes, events_section};
 use crate::rows::{node_row, pod_row, pod_status, unhealthy};
@@ -997,6 +997,15 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
     let kinds = input
         .kinds
         .unwrap_or_else(|| vec!["pods".into(), "workloads".into(), "nodes".into()]);
+    if let Some(bad) = kinds.iter().find(|k| {
+        !["pods", "workloads", "nodes"]
+            .iter()
+            .any(|v| k.eq_ignore_ascii_case(v))
+    }) {
+        return Err(Error::InvalidInput(format!(
+            "unknown kind {bad:?} in kinds; valid values are pods, workloads and nodes"
+        )));
+    }
     let want = |k: &str| kinds.iter().any(|x| x.eq_ignore_ascii_case(k));
     let min = input.min_severity.unwrap_or(Severity::Medium);
     let mut un = Vec::new();
@@ -1171,6 +1180,9 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                 "root-cause with full evidence",
             )];
         }
+    }
+    if findings.is_empty() && listed_pods.as_ref().is_some_and(Vec::is_empty) {
+        ensure_namespace(&sc).await?;
     }
     // One finding per root cause: after evidence is trimmed, so the merged list is kept.
     let mut findings = group_same_cause(findings);

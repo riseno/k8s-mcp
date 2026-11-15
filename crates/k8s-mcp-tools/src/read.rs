@@ -22,8 +22,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::common::{
-    Scope, check_name, clean, envelope, events_for, fallback_namespaces, list_scoped,
-    retain_recent, scope, soft,
+    Scope, bounded, check_name, clean, ensure_namespace, envelope, events_for, fallback_namespaces,
+    list_scoped, retain_recent, scope, soft,
 };
 use crate::discovery::{api_resource, resolve, resources};
 use crate::rows::{self, node_pool, pod_row, provider_from_nodes, unhealthy};
@@ -398,7 +398,7 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
         all_ns,
     )
     .await?;
-    let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let limit = bounded("limit", input.limit, DEFAULT_LIMIT, MAX_LIMIT)?;
     let mut lp = ListParams::default().limit(limit);
     if let Some(l) = &input.label_selector {
         lp = lp.labels(&truncate(l, 1000));
@@ -411,6 +411,9 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
     }
     let mut notes = Vec::new();
     let (objects, cont) = list_dynamic(ctx, &sc, &ar, info.namespaced, &lp, &mut notes).await?;
+    if objects.is_empty() && info.namespaced {
+        ensure_namespace(&sc).await?;
+    }
     let now = ctx.now();
     let mut items: Vec<Value> = objects
         .iter()
@@ -862,6 +865,14 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     let since =
         parse_duration(input.since.as_deref().unwrap_or("1h")).map_err(Error::InvalidInput)?;
     let types = input.types.unwrap_or_else(|| vec!["Warning".into()]);
+    if let Some(bad) = types
+        .iter()
+        .find(|t| !matches!(t.as_str(), "Normal" | "Warning"))
+    {
+        return Err(Error::InvalidInput(format!(
+            "event type {bad:?} is not valid; use Normal and/or Warning"
+        )));
+    }
     let mut fields = Vec::new();
     if let [t] = types.as_slice() {
         fields.push(format!("type={t}"));
@@ -883,6 +894,9 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     events.retain(|e| types.iter().any(|t| e.type_.as_deref() == Some(t)));
     let now = ctx.now();
     retain_recent(&mut events, now, since);
+    if events.is_empty() {
+        ensure_namespace(&sc).await?;
+    }
     // One row per cause across objects, unless the caller asked about one object.
     let rows = group_events(
         ctx,
@@ -893,7 +907,7 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     );
     let total = rows.len();
     let occurrences: i64 = rows.iter().filter_map(|r| r["count"].as_i64()).sum();
-    let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
+    let limit = bounded("limit", input.limit, DEFAULT_LIMIT, MAX_LIMIT)? as usize;
     let mut e = envelope(
         &sc,
         format!(
@@ -1136,7 +1150,10 @@ pub async fn top(ctx: &Ctx, input: TopInput) -> Result<Envelope> {
         &mut notes,
     )
     .await?;
-    let limit = input.limit.unwrap_or(20).clamp(1, MAX_LIMIT) as usize;
+    if metrics.is_empty() && !nodes_mode {
+        ensure_namespace(&sc).await?;
+    }
+    let limit = bounded("limit", input.limit, 20, MAX_LIMIT)? as usize;
     let mut items: Vec<Value> = if nodes_mode {
         let nodes: HashMap<String, Node> = Api::<Node>::all(sc.target.client.clone())
             .list(&ListParams::default())
@@ -1371,7 +1388,14 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
             false,
         ),
     ];
-    for r in input.verbs_for.unwrap_or_default().into_iter().take(10) {
+    let extra = input.verbs_for.unwrap_or_default();
+    if extra.len() > 10 {
+        return Err(Error::InvalidInput(format!(
+            "verbs_for takes at most 10 resources, got {}",
+            extra.len()
+        )));
+    }
+    for r in extra {
         let (res, group) = r
             .split_once('.')
             .map_or((r.clone(), String::new()), |(a, b)| {

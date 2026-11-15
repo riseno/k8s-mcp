@@ -6,6 +6,27 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 
 | Id | Detects | Docs |
 |---|---|---|
+| `cronjob.not_scheduling` | CronJob is suspended or not starting Jobs on schedule | [link](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) |
+| `dns.app_resolution_errors` | The application logs DNS resolution failures | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
+| `job.backoff_limit` | Job failed: its pods failed more often than backoffLimit allows | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
+| `job.deadline_exceeded` | Job failed: it ran longer than activeDeadlineSeconds | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
+| `node.cordoned` | Node is cordoned: no new pods are scheduled there | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |
+| `node.network_unavailable` | Node's pod network is not configured | [link](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/) |
+| `node.not_ready` | Node is NotReady or has stopped reporting | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |
+| `node.npd.condition` | Node reports a node-problem-detector or vendor problem condition (ids are node.npd.<condition_type>) | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |
+| `node.oom.system` | Node ran out of memory at the system level (SystemOOM) | [link](https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/) |
+| `node.overcommitted` | Pod requests on the node exceed its allocatable resources | [link](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) |
+| `node.pressure.disk` | Node is under disk pressure (the kubelet evicts pods) | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/) |
+| `node.pressure.memory` | Node is under memory pressure (the kubelet evicts pods) | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/) |
+| `node.pressure.pid` | Node is running out of process IDs | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/) |
+| `node.version_skew` | Kubelet version is outside (or at the edge of) the supported skew | [link](https://kubernetes.io/releases/version-skew-policy/) |
+| `pod.config.create_container_error` | The container runtime could not create or start the container | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
+| `pod.config.invalid_env_ref` | An environment variable reference cannot be resolved | [link](https://kubernetes.io/docs/concepts/configuration/configmap/) |
+| `pod.config.missing_configmap` | A ConfigMap referenced by the pod does not exist | [link](https://kubernetes.io/docs/concepts/configuration/configmap/) |
+| `pod.config.missing_key` | A key referenced from a ConfigMap or Secret does not exist | [link](https://kubernetes.io/docs/concepts/configuration/configmap/) |
+| `pod.config.missing_secret` | A Secret referenced by the pod does not exist | [link](https://kubernetes.io/docs/concepts/configuration/secret/) |
+| `pod.config.missing_serviceaccount` | The pod's ServiceAccount does not exist | [link](https://kubernetes.io/docs/concepts/security/service-accounts/) |
+| `pod.config.mount_failed` | Container cannot start because a volume mount failed | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.app_error` | Container crash-loops because the application exits with an error (exit 1/2) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.command_not_found` | Container crash-loops because its command was not found (exit 127) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.exit_zero` | Container exits successfully (exit 0) but the restart policy is Always | [link](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/) |
@@ -13,4 +34,37 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 | `pod.crashloop.other` | Container crash-loops with an unusual exit code | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
 | `pod.crashloop.sigkill` | Container is being SIGKILLed (exit 137) without an OOM kill | [link](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/) |
 | `pod.crashloop.sigterm` | Container exits on SIGTERM (exit 143) | [link](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/) |
+| `pod.creating.cni` | The network plugin cannot set up the pod's network (CNI / IP exhaustion) | [link](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/) |
+| `pod.creating.sandbox` | The pod sandbox cannot be created (container runtime problem) | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/) |
+| `pod.creating.volume` | A volume cannot be attached or mounted, so the pod cannot start | [link](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) |
+| `pod.evicted` | Pod was evicted by the kubelet because of node resource pressure | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/) |
+| `pod.image.auth` | Registry refused the pull: missing or invalid credentials | [link](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/) |
+| `pod.image.invalid_name` | Image reference is not valid | [link](https://kubernetes.io/docs/concepts/containers/images/) |
+| `pod.image.network` | Node cannot reach the image registry | [link](https://kubernetes.io/docs/concepts/containers/images/) |
+| `pod.image.not_found` | Image tag or repository does not exist | [link](https://kubernetes.io/docs/concepts/containers/images/) |
+| `pod.image.platform` | Image has no build for the node's OS/architecture | [link](https://kubernetes.io/docs/concepts/containers/images/) |
+| `pod.image.pull_failed` | Image cannot be pulled (unclassified pull error) | [link](https://kubernetes.io/docs/concepts/containers/images/) |
+| `pod.image.rate_limited` | Registry rate-limited the image pull | [link](https://kubernetes.io/docs/concepts/containers/images/) |
+| `pod.init.failing` | An init container keeps failing, so the app containers never start | [link](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) |
+| `pod.init.waiting` | An init container has been running for a long time, blocking pod start | [link](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) |
 | `pod.oom.container` | Container was OOMKilled: it exceeded its memory limit | [link](https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/) |
+| `pod.pending.insufficient_resources` | No node has enough free CPU/memory/other resources for the pod | [link](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) |
+| `pod.pending.no_scheduler` | No scheduler has picked up the pod | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) |
+| `pod.pending.node_selector_affinity` | No node matches the pod's nodeSelector or affinity rules | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) |
+| `pod.pending.pvc_unbound` | A PersistentVolumeClaim used by the pod is not bound | [link](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) |
+| `pod.pending.quota` | Pod creation is blocked by a ResourceQuota | [link](https://kubernetes.io/docs/concepts/policy/resource-quotas/) |
+| `pod.pending.taints` | Nodes carry taints the pod does not tolerate (or are cordoned) | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) |
+| `pod.pending.too_many_pods` | Nodes have reached their maximum pod count | [link](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) |
+| `pod.pending.topology_spread` | Topology spread constraints cannot be satisfied | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/) |
+| `pod.pending.unschedulable` | The scheduler cannot place the pod (unclassified reason) | [link](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) |
+| `pod.pending.volume_node_affinity` | The pod's volumes are pinned to nodes (zones) it cannot use | [link](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) |
+| `pod.probe.liveness_failing` | Liveness probe is failing and the kubelet restarts the container | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
+| `pod.probe.port_mismatch` | Probe checks a port the container does not expose | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
+| `pod.probe.readiness_failing` | Readiness probe is failing: the pod receives no Service traffic | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
+| `pod.probe.startup_too_short` | The app needs longer to start than its probes allow | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
+| `pod.probe.timeout_too_low` | Probe times out because timeoutSeconds is too low | [link](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) |
+| `pod.terminating.stuck` | Pod is stuck terminating long past its grace period | [link](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/) |
+| `workload.create_failed` | The controller cannot create pods (admission webhook, Pod Security, LimitRange) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
+| `workload.replicas.unavailable` | Fewer replicas are available than desired | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
+| `workload.rollout.stuck` | Deployment rollout exceeded its progress deadline | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
+| `workload.single_replica` | Workload runs a single replica (no redundancy) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |

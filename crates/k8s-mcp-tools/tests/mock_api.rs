@@ -573,3 +573,56 @@ async fn find_problems_in_a_namespace_scopes_nodes_and_counts_every_severity() {
     );
     assert!(env.summary.contains("1 low"), "{}", env.summary);
 }
+
+/// riseno/k8s-mcp#21: the same event on many pods is one row (objects count + examples), and
+/// #14: the summary counts occurrences, not Event objects.
+#[tokio::test]
+async fn list_events_groups_one_cause_across_pods() {
+    let ev = |pod: &str, count: i32| {
+        json!({"apiVersion": "v1", "kind": "Event", "metadata": {"name": format!("{pod}.x"), "namespace": "shop"},
+        "involvedObject": {"kind": "Pod", "name": pod, "namespace": "shop"}, "reason": "Failed", "type": "Warning",
+        "message": "Error: ImagePullBackOff", "count": count, "lastTimestamp": "2026-11-14T11:59:00Z"})
+    };
+    let events = vec![
+        ev("web-a1", 100),
+        ev("web-b2", 200),
+        ev("web-c3", 300),
+        ev("web-d4", 400),
+    ];
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", events.clone())
+        .start();
+    let env = k8s_mcp_tools::list_events(
+        &ctx(&mock, Policy::permissive()),
+        ListEventsInput::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.items.len(), 1, "{:?}", env.items);
+    assert_eq!(env.items[0]["objects"], 4);
+    assert_eq!(
+        env.items[0]["object"],
+        "Pod/web-a1, Pod/web-b2, Pod/web-c3 (+1 more)"
+    );
+    assert!(
+        env.summary.starts_with("1 event groups (1000 occurrences)"),
+        "{}",
+        env.summary
+    );
+
+    let mock = MockApi::new()
+        .list("/api/v1/namespaces/shop/events", events)
+        .start();
+    let one = ListEventsInput {
+        involved_name: Some("web-a1".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::list_events(&ctx(&mock, Policy::permissive()), one)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.items.len(),
+        4,
+        "per-object rows when an object is named (the mock ignores the field selector)"
+    );
+}

@@ -1,6 +1,6 @@
 //! Core read tools (PROPOSAL §8.1).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
@@ -803,14 +803,22 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     events.retain(|e| types.iter().any(|t| e.type_.as_deref() == Some(t)));
     let now = ctx.now();
     retain_recent(&mut events, now, since);
-    let rows = group_events(ctx, &events, now, sc.namespace.is_none());
+    // One row per cause across objects, unless the caller asked about one object.
+    let rows = group_events(
+        ctx,
+        &events,
+        now,
+        sc.namespace.is_none(),
+        input.involved_name.is_none(),
+    );
     let total = rows.len();
+    let occurrences: i64 = rows.iter().filter_map(|r| r["count"].as_i64()).sum();
     let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
     let mut e = envelope(
         &sc,
         format!(
-            "{total} event groups ({} events) of type {} in the last {}.",
-            events.len(),
+            "{total} event groups ({} occurrences) of type {} in the last {}.",
+            human_count(occurrences),
             types.join("/"),
             input.since.as_deref().unwrap_or("1h")
         ),
@@ -820,6 +828,7 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
             "ns",
             "type",
             "reason",
+            "objects",
             "object",
             "count",
             "first_seen",
@@ -830,6 +839,7 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
         vec![
             "type",
             "reason",
+            "objects",
             "object",
             "count",
             "first_seen",
@@ -848,50 +858,78 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
     Ok(e)
 }
 
-/// Group events by (type, reason, object, message), warnings first, then most recent.
+/// Group events by (namespace, type, reason, message), warnings first, then most recent.
+/// With `across_objects`, events that differ only in the object they are about (one root cause
+/// on many pods) share a row that counts the objects and names up to three of them.
 pub fn group_events(
     ctx: &Ctx,
     events: &[Event],
     now: jiff::Timestamp,
     with_ns: bool,
+    across_objects: bool,
 ) -> Vec<Value> {
-    // (ns, type, reason, object, message) -> (count, first seen, last seen)
-    type Key = (String, String, String, String, String);
-    let mut groups: HashMap<Key, (i32, Option<jiff::Timestamp>, Option<jiff::Timestamp>)> =
+    #[derive(Default)]
+    struct Group {
+        count: i32,
+        first: Option<jiff::Timestamp>,
+        last: Option<jiff::Timestamp>,
+        objects: BTreeSet<String>,
+    }
+    // (ns, type, reason, kind, object or "", message)
+    let mut groups: HashMap<(String, String, String, String, String, String), Group> =
         HashMap::new();
     for ev in events {
-        let obj = format!(
-            "{}/{}",
-            ev.involved_object.kind.as_deref().unwrap_or("?"),
-            ev.involved_object.name.as_deref().unwrap_or("?")
-        );
+        let kind = ev
+            .involved_object
+            .kind
+            .clone()
+            .unwrap_or_else(|| "?".into());
+        let name = ev
+            .involved_object
+            .name
+            .clone()
+            .unwrap_or_else(|| "?".into());
+        let mut msg = strip_uids(&ctx.redactor.text(ev.message.as_deref().unwrap_or("")));
+        if across_objects && name.len() >= 3 {
+            msg = msg.replace(&name, &format!("<{}>", kind.to_ascii_lowercase()));
+        }
         let key = (
             ev.metadata.namespace.clone().unwrap_or_default(),
             ev.type_.clone().unwrap_or_default(),
             ev.reason.clone().unwrap_or_default(),
-            obj,
-            strip_uids(&ctx.redactor.text(ev.message.as_deref().unwrap_or(""))),
+            kind.clone(),
+            if across_objects {
+                String::new()
+            } else {
+                name.clone()
+            },
+            msg,
         );
         let t = k8s_mcp_diagnose::rules::last_seen(ev);
         let first = ev.first_timestamp.as_ref().map(|t| t.0).or(t);
-        let g = groups.entry(key).or_insert((0, first, t));
-        g.0 += k8s_mcp_diagnose::rules::count(ev);
-        g.1 = g.1.min(first).or(first);
-        g.2 = g.2.max(t);
+        let g = groups.entry(key).or_default();
+        g.count += k8s_mcp_diagnose::rules::count(ev);
+        g.first = g.first.min(first).or(first);
+        g.last = g.last.max(t);
+        g.objects.insert(format!("{kind}/{name}"));
     }
     let mut rows: Vec<_> = groups.into_iter().collect();
-    rows.sort_by(|a, b| {
-        (a.0.1 != "Warning", std::cmp::Reverse(a.1.2), &a.0.3).cmp(&(
-            b.0.1 != "Warning",
-            std::cmp::Reverse(b.1.2),
-            &b.0.3,
+    rows.sort_by(|(a, ga), (b, gb)| {
+        (a.1 != "Warning", std::cmp::Reverse(ga.last), &ga.objects).cmp(&(
+            b.1 != "Warning",
+            std::cmp::Reverse(gb.last),
+            &gb.objects,
         ))
     });
     rows.into_iter()
-        .map(|((ns, ty, reason, obj, msg), (count, first, last))| {
+        .map(|((ns, ty, reason, _, _, msg), g)| {
+            let mut object = g.objects.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+            if g.objects.len() > 3 {
+                object.push_str(&format!(" (+{} more)", g.objects.len() - 3));
+            }
             let mut r = json!({
-                "type": ty, "reason": reason, "object": obj, "count": count,
-                "first_seen": first.map(|t| age(now, t)), "last_seen": last.map(|t| age(now, t)),
+                "type": ty, "reason": reason, "objects": g.objects.len(), "object": object, "count": g.count,
+                "first_seen": g.first.map(|t| age(now, t)), "last_seen": g.last.map(|t| age(now, t)),
                 "message": truncate(&msg, 300),
             });
             if with_ns {
@@ -900,6 +938,17 @@ pub fn group_events(
             r
         })
         .collect()
+}
+
+/// `950`, `12.3k`, `1.1M`.
+fn human_count(n: i64) -> String {
+    #[allow(clippy::cast_precision_loss)]
+    let f = n as f64;
+    match n {
+        n if n >= 1_000_000 => format!("{:.1}M", f / 1e6),
+        n if n >= 10_000 => format!("{:.1}k", f / 1e3),
+        n => n.to_string(),
+    }
 }
 
 /// Drop object UIDs such as `(ac5c6640-378b-4786-b7a7-35da71d94376)` from event messages.
@@ -916,7 +965,7 @@ fn strip_uids(msg: &str) -> String {
 pub fn events_section(ctx: &Ctx, events: &[Event], now: jiff::Timestamp) -> Section {
     Section {
         title: "EVENTS (last 1h)".into(),
-        lines: group_events(ctx, events, now, false)
+        lines: group_events(ctx, events, now, false, false)
             .iter()
             .take(15)
             .map(|r| {

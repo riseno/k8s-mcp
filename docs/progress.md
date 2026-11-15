@@ -71,10 +71,10 @@ row ends with the v0.2 acceptance criterion it serves.
 | 9 | Features and size: `default = ["provider-eks", "http"]`, `lite` = no providers and no HTTP; report both sizes | ⏳ | |
 | 10 | Docs: `in-cluster.md`, `providers/eks.md`, chart values reference, regenerated tool/rule references, CHANGELOG | ⏳ | |
 
-**Decisions before coding**
-- *Crypto (ADR 0001 follow-up):* the AWS SDK defaults to `aws-lc-rs`. Keeping `ring` means disabling SDK default features and building the HTTP client with `aws-smithy-http-client`'s `rustls-ring` feature. That adds `aws-smithy-http-client` as a direct dependency, which is not in the §7.2 table (needs approval).
-- *AWS mocks:* `aws-smithy-mocks` (0.3, named in §13 but not in the §7.2 table) for EKS tests (needs approval). `wiremock` (listed) stays for GKE/AKS in v0.3.
-- *Local testing:* the HTTP smoke test, Helm installs and evals need Docker running (kind and k3s).
+**Decisions (resolved 2026-11-15)**
+- AWS SDK keeps rustls + ring: SDK default features off, HTTP client from `aws-smithy-http-client` with `rustls-ring` (direct dependency, approved). ADR 0007.
+- `aws-smithy-mocks` 0.3 as a dev-dependency for EKS tests (approved).
+- Local HTTP, Helm and eval tests need Docker running (kind and k3s).
 
 ## Releasing
 
@@ -91,3 +91,4 @@ formula. Pre-release tags (`-rc.N`) build and attest but do not publish the imag
 - ADR 0004: list cache and empty provider crates deferred.
 - ADR 0005: kind matrix is 1.34/1.37 (kind v0.33.0 ships no 1.33 image); `[profile.dist]` lives in `.cargo/config.toml`.
 - ADR 0006: providers dispatch through an enum instead of `dyn Provider` + async-trait.
+- ADR 0007: the AWS SDK runs on rustls + ring via `aws-smithy-http-client`.

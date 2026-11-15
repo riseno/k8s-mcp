@@ -8,7 +8,7 @@
 
        brew install riseno/tap/k8s-mcp
        # or
-       curl -fsSL https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-installer.sh | sh
+       curl -fsSL https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-server-installer.sh | sh
 
 2. Check it can see your cluster (uses your current kubeconfig context):
 

@@ -243,9 +243,13 @@ impl Envelope {
         out
     }
 
-    /// Total bytes of the text and JSON renderings, which both go in the response.
+    /// Bytes this envelope takes on the wire as an MCP tool result: the JSON-escaped text
+    /// block, the structured JSON, and the result/JSON-RPC wrapper around them.
     pub fn size(&self) -> usize {
-        self.render().len() + self.to_json().to_string().len()
+        /// `{"jsonrpc":"2.0","id":…,"result":{"content":[{"type":"text","text":…}],"structuredContent":…,"isError":false}}`
+        const WRAPPER: usize = 160;
+        let text = serde_json::to_string(&self.render()).map_or(0, |s| s.len());
+        text + self.to_json().to_string().len() + WRAPPER
     }
 
     /// Shrink the envelope until text + JSON fit in `max_bytes`: drop the oldest lines of the

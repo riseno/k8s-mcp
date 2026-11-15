@@ -110,6 +110,20 @@ tools! {
         |c, i| t::find_problems(c, i).await;
 }
 
+/// Cap an envelope to `max_bytes` on the wire and turn it into the tool result.
+fn result_of(mut env: Envelope, max_bytes: usize, redact_off: bool) -> (CallToolResult, Envelope) {
+    if redact_off {
+        env.summary = format!(
+            "WARNING: redaction is off (--redact off); credentials in logs and env may be shown. {}",
+            env.summary
+        );
+    }
+    env.fit(max_bytes);
+    let mut r = CallToolResult::success(vec![ContentBlock::text(env.render())]);
+    r.structured_content = Some(env.to_json());
+    (r, env)
+}
+
 fn parse<T: DeserializeOwned>(args: Value) -> k8s_mcp_core::Result<T> {
     serde_json::from_value(args).map_err(|e| {
         k8s_mcp_core::Error::InvalidInput(format!("{e}. Check the tool's input schema."))
@@ -182,16 +196,12 @@ impl K8sMcp {
             }
         };
         let (call, findings, truncated, error) = match result {
-            Ok(mut env) => {
-                if self.ctx.policy.redact == RedactLevel::Off {
-                    env.summary = format!(
-                        "WARNING: redaction is off (--redact off); credentials in logs and env may be shown. {}",
-                        env.summary
-                    );
-                }
-                env.fit(self.ctx.policy.max_output_bytes);
-                let mut r = CallToolResult::success(vec![ContentBlock::text(env.render())]);
-                r.structured_content = Some(env.to_json());
+            Ok(env) => {
+                let (r, env) = result_of(
+                    env,
+                    self.ctx.policy.max_output_bytes,
+                    self.ctx.policy.redact == RedactLevel::Off,
+                );
                 (r, env.findings.len(), env.truncated, None)
             }
             Err(e) => {
@@ -461,6 +471,42 @@ mod tests {
                 "{}",
                 t.name
             );
+        }
+    }
+
+    /// riseno/k8s-mcp#15: --max-output-bytes is a hard cap on what is actually sent.
+    #[test]
+    fn serialized_result_stays_under_the_cap() {
+        use k8s_mcp_core::envelope::Section;
+        use k8s_mcp_core::finding::{Confidence, Finding, Severity, Source};
+        let mut env = Envelope::new("big \"quoted\" summary\nwith newlines");
+        env.columns = vec!["name", "msg"];
+        env.items = (0..300)
+            .map(|i| json!({"name": format!("pod-{i}"), "msg": "line \"with\" quotes\tand\ttabs"}))
+            .collect();
+        env.sections.push(Section {
+            title: "LOGS".into(),
+            lines: (0..400)
+                .map(|i| format!("{i} \"quoted\" \\ backslash"))
+                .collect(),
+            untrusted: Some(vec![("source".into(), "log".into())]),
+        });
+        for i in 0..30 {
+            env.findings.push(
+                Finding::new(
+                    "pod.crashloop.app_error",
+                    Severity::Critical,
+                    Confidence::High,
+                    format!("f{i}"),
+                )
+                .evidence(Source::Log, "\"x\"\n".repeat(50)),
+            );
+        }
+        for cap in [4_000, 24_000] {
+            let (r, _) = result_of(env.clone(), cap, false);
+            let wire = serde_json::to_string(&json!({"jsonrpc": "2.0", "id": 12345, "result": r}))
+                .unwrap();
+            assert!(wire.len() <= cap, "{} > {cap}", wire.len());
         }
     }
 

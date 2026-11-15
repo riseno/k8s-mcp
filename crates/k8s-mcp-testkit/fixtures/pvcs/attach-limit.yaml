@@ -1,0 +1,34 @@
+# Every node is at its volume attach limit.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: logs, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 10Gi}}
+  storageClassName: gp3
+  volumeName: pvc-77aa
+status: {phase: Bound}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: {name: gp3, annotations: {storageclass.kubernetes.io/is-default-class: "true"}}
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: ingest-4, namespace: shop, creationTimestamp: "2026-11-14T11:40:00Z"}
+spec:
+  containers: [{name: db, image: postgres:17}]
+  volumes: [{name: data, persistentVolumeClaim: {claimName: logs}}]
+status: {phase: Pending}
+---
+apiVersion: v1
+kind: Event
+metadata: {name: ingest-4.1, namespace: shop}
+involvedObject: {kind: Pod, name: ingest-4, namespace: shop}
+type: Warning
+reason: FailedScheduling
+message: '0/3 nodes are available: 3 node(s) exceed max volume count. preemption: 0/3 nodes are available: 3 No preemption victims found for incoming pod.'
+count: 3
+lastTimestamp: "2026-11-14T11:58:00Z"

@@ -68,7 +68,7 @@ async fn default_tool_list_is_read_only_and_well_formed() {
 
     let tools = client.list_all_tools().await.unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-    assert_eq!(tools.len(), 13, "{names:?}");
+    assert_eq!(tools.len(), 16, "{names:?}");
     for t in &tools {
         let a = t
             .annotations

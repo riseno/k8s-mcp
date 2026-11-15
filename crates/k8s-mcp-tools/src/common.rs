@@ -277,27 +277,7 @@ pub fn selector_string(sel: &LabelSelector) -> String {
     parts.join(",")
 }
 
-/// Whether `labels` satisfy a LabelSelector (`matchLabels` and `matchExpressions`).
-pub fn selector_matches(
-    sel: &LabelSelector,
-    labels: Option<&std::collections::BTreeMap<String, String>>,
-) -> bool {
-    let get = |k: &str| labels.and_then(|l| l.get(k));
-    sel.match_labels
-        .iter()
-        .flatten()
-        .all(|(k, v)| get(k) == Some(v))
-        && sel.match_expressions.iter().flatten().all(|e| {
-            let values = e.values.as_deref().unwrap_or_default();
-            match e.operator.as_str() {
-                "In" => get(&e.key).is_some_and(|v| values.contains(v)),
-                "NotIn" => get(&e.key).is_none_or(|v| !values.contains(v)),
-                "Exists" => get(&e.key).is_some(),
-                "DoesNotExist" => get(&e.key).is_none(),
-                _ => false,
-            }
-        })
-}
+pub use k8s_mcp_diagnose::rules::selector_matches;
 
 /// Strip noise and redact an object for display (PROPOSAL §7.7 rule 2, §12.3).
 pub fn clean(ctx: &Ctx, kind: &str, mut v: Value) -> Value {
@@ -388,37 +368,6 @@ mod tests {
         assert!(check_name("pod", "../etc").is_err());
         assert!(check_name("pod", "a b").is_err());
         assert!(check_name("pod", "").is_err());
-    }
-
-    #[test]
-    fn selectors_match_labels_and_expressions() {
-        let sel: LabelSelector = serde_json::from_value(serde_json::json!({
-            "matchLabels": {"app": "web"},
-            "matchExpressions": [
-                {"key": "tier", "operator": "In", "values": ["a", "b"]},
-                {"key": "canary", "operator": "DoesNotExist"}
-            ]
-        }))
-        .unwrap();
-        let labels = |pairs: &[(&str, &str)]| {
-            pairs
-                .iter()
-                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-                .collect::<std::collections::BTreeMap<_, _>>()
-        };
-        assert!(selector_matches(
-            &sel,
-            Some(&labels(&[("app", "web"), ("tier", "a")]))
-        ));
-        assert!(!selector_matches(
-            &sel,
-            Some(&labels(&[("app", "web"), ("tier", "c")]))
-        ));
-        assert!(!selector_matches(
-            &sel,
-            Some(&labels(&[("app", "web"), ("tier", "a"), ("canary", "1")]))
-        ));
-        assert!(!selector_matches(&sel, None));
     }
 
     #[test]

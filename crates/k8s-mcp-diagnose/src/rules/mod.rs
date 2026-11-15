@@ -18,7 +18,9 @@ pub mod node;
 pub mod oom;
 pub mod pending;
 pub mod probe;
+pub mod pvc;
 pub mod rollout;
+pub mod service;
 pub mod terminating;
 
 use std::collections::BTreeMap;
@@ -29,6 +31,7 @@ use k8s_mcp_core::quantity::{bytes, cpu_millis, fmt_bytes};
 use k8s_mcp_core::text::{age, truncate};
 use k8s_openapi::api::core::v1::{Container, ContainerStatus, Event, Node, Pod, PodCondition};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use serde_json::{Value, json};
 
 /// Kubernetes docs links shared by rules.
@@ -62,6 +65,13 @@ pub mod docs {
         "https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/";
     /// Persistent volumes.
     pub const PV: &str = "https://kubernetes.io/docs/concepts/storage/persistent-volumes/";
+    /// StorageClasses.
+    pub const STORAGE_CLASS: &str = "https://kubernetes.io/docs/concepts/storage/storage-classes/";
+    /// Dynamic provisioning.
+    pub const DYNAMIC_PROVISIONING: &str =
+        "https://kubernetes.io/docs/concepts/storage/dynamic-provisioning/";
+    /// Per-node volume limits.
+    pub const VOLUME_LIMITS: &str = "https://kubernetes.io/docs/concepts/storage/storage-limits/";
     /// Resource quotas.
     pub const QUOTA: &str = "https://kubernetes.io/docs/concepts/policy/resource-quotas/";
     /// ConfigMaps.
@@ -96,6 +106,18 @@ pub mod docs {
         "https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/";
     /// Pod Security Admission.
     pub const PSA: &str = "https://kubernetes.io/docs/concepts/security/pod-security-admission/";
+    /// Debugging Services.
+    pub const DEBUG_SERVICE: &str =
+        "https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/";
+    /// Service type LoadBalancer.
+    pub const LOAD_BALANCER: &str =
+        "https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer";
+    /// Pod DNS settings (dnsPolicy, dnsConfig, ndots).
+    pub const POD_DNS: &str =
+        "https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/";
+    /// NetworkPolicies.
+    pub const NETWORK_POLICY: &str =
+        "https://kubernetes.io/docs/concepts/services-networking/network-policies/";
     /// Network plugins.
     pub const NETWORK: &str = "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/";
 }
@@ -202,6 +224,30 @@ pub fn resource_args(kind: &str, name: &str, namespace: &str) -> Value {
 pub fn pod_events_args(pod: &Pod) -> Value {
     let (name, ns) = pod_ref(pod);
     json!({ "namespace": ns, "involved_kind": "Pod", "involved_name": name })
+}
+
+/// Whether `labels` satisfy a LabelSelector (`matchLabels` and `matchExpressions`).
+pub fn selector_matches(sel: &LabelSelector, labels: Option<&BTreeMap<String, String>>) -> bool {
+    let get = |k: &str| labels.and_then(|l| l.get(k));
+    sel.match_labels
+        .iter()
+        .flatten()
+        .all(|(k, v)| get(k) == Some(v))
+        && sel.match_expressions.iter().flatten().all(|e| {
+            let values = e.values.as_deref().unwrap_or_default();
+            match e.operator.as_str() {
+                "In" => get(&e.key).is_some_and(|v| values.contains(v)),
+                "NotIn" => get(&e.key).is_none_or(|v| !values.contains(v)),
+                "Exists" => get(&e.key).is_some(),
+                "DoesNotExist" => get(&e.key).is_none(),
+                _ => false,
+            }
+        })
+}
+
+/// True when the pod's `Ready` condition is `True`.
+pub fn pod_ready(pod: &Pod) -> bool {
+    pod_condition(pod, "Ready").is_some_and(|c| c.status == "True")
 }
 
 /// Event message (empty if absent).
@@ -442,4 +488,40 @@ pub fn service_account_name(pod: &Pod) -> &str {
         .as_ref()
         .and_then(|s| s.service_account_name.as_deref())
         .unwrap_or("default")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selectors_match_labels_and_expressions() {
+        let sel: LabelSelector = serde_json::from_value(serde_json::json!({
+            "matchLabels": {"app": "web"},
+            "matchExpressions": [
+                {"key": "tier", "operator": "In", "values": ["a", "b"]},
+                {"key": "canary", "operator": "DoesNotExist"}
+            ]
+        }))
+        .unwrap();
+        let labels = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        assert!(selector_matches(
+            &sel,
+            Some(&labels(&[("app", "web"), ("tier", "a")]))
+        ));
+        assert!(!selector_matches(
+            &sel,
+            Some(&labels(&[("app", "web"), ("tier", "c")]))
+        ));
+        assert!(!selector_matches(
+            &sel,
+            Some(&labels(&[("app", "web"), ("tier", "a"), ("canary", "1")]))
+        ));
+        assert!(!selector_matches(&sel, None));
+    }
 }

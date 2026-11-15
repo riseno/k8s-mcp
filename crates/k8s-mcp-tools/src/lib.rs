@@ -5,9 +5,12 @@
 mod common;
 mod diagnose;
 mod discovery;
+mod dns;
 mod logs;
 mod read;
 mod rows;
+mod service;
+mod storage;
 
 use std::sync::Arc;
 
@@ -21,6 +24,7 @@ pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
     diagnose_pod, diagnose_workload, find_problems,
 };
+pub use dns::{DiagnoseDnsInput, diagnose_dns};
 pub use logs::{GetLogsInput, get_logs};
 pub use read::{
     ApiResourcesInput, CheckPermissionsInput, ClusterOverviewInput, GetResourceInput,
@@ -28,6 +32,8 @@ pub use read::{
     check_permissions, cluster_overview, get_resource, list_contexts, list_events, list_resources,
     top,
 };
+pub use service::{DiagnoseServiceInput, diagnose_service};
+pub use storage::{DiagnosePvcInput, diagnose_pvc};
 
 /// Source of "now", injected so tests and golden snapshots are deterministic.
 pub type Clock = Arc<dyn Fn() -> Timestamp + Send + Sync>;

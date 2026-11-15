@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 readme = "../../README.md"
-homepage = "https://github.com/OWNER/k8s-mcp"
+homepage = "https://github.com/riseno/k8s-mcp"
 keywords = ["kubernetes", "mcp", "ai", "troubleshooting", "k8s"]
 categories = ["command-line-utilities"]
 

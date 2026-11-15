@@ -13,3 +13,4 @@
   - [0002 Server in the bin crate](adr/0002-merge-server-into-bin-crate.md)
   - [0003 YAML and time crates](adr/0003-yaml-and-time-crates.md)
   - [0004 Deferred cache and provider crates](adr/0004-defer-list-cache-and-provider-crates.md)
+  - [0005 kind matrix and dist profile](adr/0005-kind-matrix-and-dist-profile.md)

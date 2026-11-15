@@ -309,14 +309,20 @@ pub fn restart_policy(pod: &Pod) -> &str {
         .unwrap_or("Always")
 }
 
-/// True if the kubelet restarted `container` because a liveness or startup probe failed.
+/// True if the kubelet restarted `container` because a liveness or startup probe failed: a
+/// `Killing` event says so, or (when only Warning events were listed, as in the quick scans,
+/// since `Killing` is a Normal event) the container's liveness or startup probe is failing.
 pub fn probe_killed(events: &[Event], container: &str) -> bool {
     events.iter().any(|e| {
         let m = msg(e);
         let mentions = m.contains(&format!("Container {container} ")) || !m.contains("Container ");
-        reason(e) == "Killing"
+        let killed = reason(e) == "Killing"
             && (m.contains("failed liveness probe") || m.contains("failed startup probe"))
-            && mentions
+            && mentions;
+        let failing = reason(e) == "Unhealthy"
+            && (m.starts_with("Liveness probe failed") || m.starts_with("Startup probe failed"))
+            && about_container(e, container);
+        killed || failing
     })
 }
 

@@ -328,6 +328,27 @@ mod tests {
         );
     }
 
+    /// riseno/k8s-mcp#26: the quick scans list only Warning events, so the Normal `Killing`
+    /// event is missing; a failing liveness probe must still stop the exit-code rules.
+    #[test]
+    fn liveness_failures_without_killing_events_are_not_exit_code_crashes() {
+        let mut ev = pod_fixture("pods/probe-port-mismatch.yaml");
+        ev.events.retain(|e| e.type_.as_deref() == Some("Warning"));
+        assert!(
+            ev.events
+                .iter()
+                .any(|e| e.reason.as_deref() == Some("Unhealthy")),
+            "fixture has Warning Unhealthy events"
+        );
+        let mut out = Vec::new();
+        check(&ev, &mut out);
+        assert!(
+            out.iter().all(|f| !f.id.starts_with("pod.crashloop.")),
+            "{:?}",
+            out.iter().map(|f| &f.id).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn exit_127_is_command_not_found() {
         assert_eq!(

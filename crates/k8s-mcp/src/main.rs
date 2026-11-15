@@ -3,8 +3,11 @@
 //! cluster. stdout is the MCP channel; every log line goes to stderr.
 
 mod doctor;
+#[cfg(feature = "http")]
+mod http;
 mod server;
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -42,6 +45,12 @@ enum Command {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Transport {
+    Stdio,
+    Http,
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum Redact {
     Strict,
@@ -52,6 +61,51 @@ enum Redact {
 /// Flags (each also readable from `K8S_MCP_<FLAG>`). No config file is needed.
 #[derive(Args, Clone)]
 pub struct Opts {
+    /// MCP transport: stdio, or streamable HTTP (`/mcp`) for in-cluster use.
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_TRANSPORT",
+        value_enum,
+        default_value = "stdio"
+    )]
+    transport: Transport,
+    /// HTTP listen address.
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_LISTEN",
+        default_value = "127.0.0.1:8080"
+    )]
+    listen: SocketAddr,
+    /// HTTP auth: tokenreview (Kubernetes tokens), static (--auth-token-file) or none (loopback only).
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_AUTH",
+        default_value = "tokenreview",
+        value_parser = ["tokenreview", "static", "none"]
+    )]
+    auth: String,
+    /// File holding the bearer token for `--auth static`.
+    #[arg(long, global = true, env = "K8S_MCP_AUTH_TOKEN_FILE")]
+    auth_token_file: Option<PathBuf>,
+    /// HTTP `Host` values accepted, comma separated (DNS-rebinding protection) [default: localhost, 127.0.0.1, ::1].
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_ALLOWED_HOSTS",
+        value_delimiter = ','
+    )]
+    allowed_hosts: Vec<String>,
+    /// Browser `Origin` values accepted, comma separated, with scheme [default: none, so any request with an Origin gets 403].
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_ALLOWED_ORIGINS",
+        value_delimiter = ','
+    )]
+    allowed_origins: Vec<String>,
     /// Kubeconfig file [default: $KUBECONFIG or ~/.kube/config].
     #[arg(long, global = true, env = "K8S_MCP_KUBECONFIG")]
     kubeconfig: Option<PathBuf>,
@@ -221,7 +275,10 @@ async fn serve(opts: &Opts) -> anyhow::Result<()> {
             .map_or_else(|| "stderr".into(), |p| p.display().to_string()),
     };
     let audit = Arc::new(Audit::open(&audit_target)?);
-    tracing::info!(context = ctx.clusters.default_context(), audit = %audit_target, "k8s-mcp {} serving on stdio", server::VERSION);
+    tracing::info!(context = ctx.clusters.default_context(), audit = %audit_target, "k8s-mcp {} starting", server::VERSION);
+    if opts.transport == Transport::Http {
+        return serve_http(opts, ctx, audit).await;
+    }
     let server = server::K8sMcp::new(ctx, audit.clone(), &opts.toolsets);
     let running = Box::pin(server.serve(rmcp::transport::stdio()))
         .await
@@ -235,6 +292,36 @@ async fn serve(opts: &Opts) -> anyhow::Result<()> {
     tracing::info!(?reason, "k8s-mcp stopped");
     audit.close();
     Ok(())
+}
+
+#[cfg(feature = "http")]
+async fn serve_http(opts: &Opts, ctx: Ctx, audit: Arc<Audit>) -> anyhow::Result<()> {
+    // TokenReview and /readyz use the server's own identity (the default context).
+    let client = ctx.clusters.target(None, &ctx.policy).await?.client;
+    let auth = http::Auth::new(
+        &opts.auth,
+        opts.auth_token_file.as_deref(),
+        opts.listen,
+        client.clone(),
+    )?;
+    let server = server::K8sMcp::new(ctx, audit.clone(), &opts.toolsets);
+    let (app, stop) = http::router(
+        server,
+        auth,
+        client,
+        &opts.allowed_hosts,
+        &opts.allowed_origins,
+    );
+    let served = http::serve(opts.listen, app, stop).await;
+    audit.close();
+    served
+}
+
+#[cfg(not(feature = "http"))]
+async fn serve_http(_: &Opts, _: Ctx, _: Arc<Audit>) -> anyhow::Result<()> {
+    bail!(
+        "this build has no HTTP transport (built without the `http` feature); use --transport stdio"
+    )
 }
 
 async fn shutdown_signal() {

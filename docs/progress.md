@@ -44,7 +44,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | 7 | Eval gates (top-1 ≥ 85%, top-3 100%, forbidden 0) | ✅ | 14/14, 14/14, 0/14 on kind 1.37 |
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
-| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | `v0.1.0-rc.1`: builds, installers, formula and checksums verified. `v0.1.0-rc.2`: eval gate failed on GitHub kind 1.37 (OOM reported as reason Error; fixed) and exposed that dist cannot block a release, so releases now go through `release-gate.yml` (evals first, then dispatch). `v0.1.0-rc.3` exercises the gate and the container and Homebrew publish jobs. Signing/attestations: public repos only |
+| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | Pipeline verified end to end with `v0.1.0-rc.3` (private): `release-gate` evals on kind 1.34 and 1.37, then 5 builds, installers, checksums, multi-arch `ghcr.io/riseno/k8s-mcp:v0.1.0-rc.3` (no `:latest` for pre-releases), image and crate SBOMs on the release, `Formula/k8s-mcp.rb` pushed to `riseno/homebrew-tap`. Remaining: signing and attestations (public repos only) and the final `v0.1.0` tag. rc.2 exposed two fixed bugs (OOM reported as reason Error; dist cannot block a release) |
 | 11 | README, docs site, references published; SECURITY.md | 🚧 | written; GitHub Pages publishing needs the repo |
 
 ## Not done yet (v0.1 follow-ups)

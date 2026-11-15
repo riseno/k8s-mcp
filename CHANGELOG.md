@@ -5,6 +5,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-15
+
+### Fixed
+- A tool call could hang forever without a response: when findings alone exceeded
+  `--max-output-bytes`, output capping looped endlessly. Seen as `cluster_overview` never
+  returning on a GKE cluster.
+- API discovery no longer stalls on aggregated APIs that never answer (each group now has a
+  5 s budget and groups are fetched concurrently), and `cluster_overview` detects
+  metrics-server with a single request.
+
 ## [0.1.0] - 2026-11-15
 
 ### Fixed

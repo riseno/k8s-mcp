@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use kube::client::Body;
 use serde_json::{Value, json};
 
-/// A canned response.
+/// A canned response (`status` 0 = never answer).
 #[derive(Clone)]
 struct Route {
     method: &'static str,
@@ -62,6 +62,12 @@ impl MockApi {
         self.route("GET", path, 403, body)
     }
 
+    /// Accept `GET path` and never answer, like a broken aggregated API.
+    #[must_use]
+    pub fn hang(self, path: &str) -> Self {
+        self.route("GET", path, 0, Value::Null)
+    }
+
     /// Answer `GET /api/v1/.../items` style list paths with an object list of `items`.
     #[must_use]
     pub fn list(self, path: &str, items: impl Into<Vec<Value>>) -> Self {
@@ -79,6 +85,7 @@ impl MockApi {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let log = requests.clone();
         tokio::spawn(async move {
+            let mut unanswered = Vec::new();
             while let Some((req, send)) = handle.next_request().await {
                 let method = req.method().as_str().to_owned();
                 let path = req.uri().path().to_owned();
@@ -92,6 +99,10 @@ impl MockApi {
                     .routes
                     .iter()
                     .find(|r| r.method == method && r.path == path);
+                if route.is_some_and(|r| r.status == 0) {
+                    unanswered.push(send); // keep the request open forever
+                    continue;
+                }
                 let (code, body) = match route {
                     Some(r) => (r.status, r.body.clone()),
                     None => (

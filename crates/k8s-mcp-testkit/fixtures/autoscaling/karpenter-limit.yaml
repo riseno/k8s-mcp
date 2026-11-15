@@ -1,0 +1,18 @@
+# The general NodePool provisioned 1000 cores, its limit (written as 1k).
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata: {name: general}
+spec:
+  limits: {cpu: 1k, memory: 4000Gi}
+  template: {spec: {nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: default}}}
+status:
+  resources: {cpu: "1000", memory: 3800Gi, nodes: "125", pods: "13750"}
+  conditions: [{type: Ready, status: "True"}]
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata: {name: gpu}
+spec:
+  limits: {nvidia.com/gpu: "8"}
+status:
+  resources: {nvidia.com/gpu: "4"}

@@ -9,9 +9,9 @@ use k8s_mcp_core::policy::{Policy, RedactLevel};
 use k8s_mcp_testkit::mock::{MockApi, status, with_discovery};
 use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
-    Ctx, DiagnoseDnsInput, DiagnosePodInput, DiagnosePvcInput, DiagnoseServiceInput,
-    DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput, GetResourceInput, ListEventsInput,
-    ListResourcesInput,
+    AutoscalingStatusInput, Ctx, DiagnoseDnsInput, DiagnosePodInput, DiagnosePvcInput,
+    DiagnoseServiceInput, DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput, GetResourceInput,
+    ListEventsInput, ListResourcesInput,
 };
 use serde_json::{Value, json};
 
@@ -1238,4 +1238,71 @@ async fn diagnose_dns_does_not_read_kube_system_outside_the_namespace_policy() {
         "{:?}",
         notes.lines
     );
+}
+
+/// v0.2 acceptance criterion 5 through the tool: Karpenter at its limit and the Cluster
+/// Autoscaler's NotTriggerScaleUp, with the CA status read from the real ConfigMap text.
+#[tokio::test]
+async fn autoscaling_status_reports_karpenter_limits_and_ca_reasons() {
+    let nodepool = json!({"apiVersion": "karpenter.sh/v1", "kind": "NodePool", "metadata": {"name": "general"},
+        "spec": {"limits": {"cpu": "100"}}, "status": {"resources": {"cpu": "100", "nodes": "12"}, "conditions": [{"type": "Ready", "status": "True"}]}});
+    let ca = json!({"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "cluster-autoscaler-status", "namespace": "kube-system"},
+        "data": {"status": "time: 2026-11-14 11:59:00 +0000 UTC\nautoscalerStatus: Running\nclusterWide:\n  health:\n    status: Healthy\nnodeGroups:\n- name: ng-1\n  health:\n    status: Healthy\n    cloudProviderTarget: 3\n    minSize: 1\n    maxSize: 3\n  scaleUp:\n    status: NoActivity\n"}});
+    let event = json!({"apiVersion": "v1", "kind": "Event", "metadata": {"name": "e1", "namespace": "shop"},
+        "involvedObject": {"kind": "Pod", "name": "web-1", "namespace": "shop"}, "reason": "NotTriggerScaleUp", "type": "Normal",
+        "message": "pod didn't trigger scale-up: 1 max node group size reached", "count": 5, "lastTimestamp": "2026-11-14T11:58:00Z"});
+    let mock = MockApi::new()
+        .list("/apis/karpenter.sh/v1/nodepools", vec![nodepool])
+        .list("/apis/karpenter.sh/v1/nodeclaims", vec![])
+        .get(
+            "/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status",
+            ca,
+        )
+        .list("/apis/autoscaling/v2/horizontalpodautoscalers", vec![])
+        .list("/api/v1/events", vec![event])
+        .start();
+    let env = k8s_mcp_tools::autoscaling_status(
+        &ctx(&mock, Policy::permissive()),
+        AutoscalingStatusInput::default(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        env.summary.starts_with("Karpenter 1 NodePools, 0 NodeClaims; Cluster Autoscaler Running with 1 node groups; 0 HPAs. Top finding: "),
+        "{}",
+        env.summary
+    );
+    let ids: Vec<&str> = env.findings.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "autoscaling.karpenter.limit_reached",
+            "autoscaling.ca.not_triggered"
+        ]
+    );
+    assert_eq!(
+        env.items[0],
+        json!({"kind": "NodePool", "name": "general", "status": "Ready", "size": "12 nodes", "limits": "cpu 100/100"})
+    );
+    assert_eq!(env.items[1]["size"], "target 3 (1-3)");
+}
+
+/// Karpenter's CRDs answering 404 means it is not installed: no error note.
+#[tokio::test]
+async fn autoscaling_status_without_karpenter_or_ca() {
+    let mock = MockApi::new()
+        .list("/apis/autoscaling/v2/horizontalpodautoscalers", vec![])
+        .list("/api/v1/events", vec![])
+        .start();
+    let env = k8s_mcp_tools::autoscaling_status(
+        &ctx(&mock, Policy::permissive()),
+        AutoscalingStatusInput::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        env.summary,
+        "no Karpenter; no Cluster Autoscaler status; 0 HPAs; no problems found by the diagnosis rules."
+    );
+    assert!(env.sections.is_empty(), "{:?}", env.sections);
 }

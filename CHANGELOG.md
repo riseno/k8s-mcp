@@ -35,9 +35,16 @@ All notable changes are documented here. The format follows
   loops, upstream timeouts in its logs), `dns.no_endpoints` (kube-dns missing or routing to
   nothing), plus `dns.app_resolution_errors` and the `dns.ndots_hint` for external names.
   kube-system is read only when the namespace policy allows it.
+- `autoscaling_status`: why the cluster is not scaling, for any cluster. Rules
+  `autoscaling.karpenter.limit_reached` (NodePool `status.resources` at `spec.limits`),
+  `autoscaling.karpenter.nodeclaim_not_launched` (launch failures, or nodes that never
+  register), `autoscaling.ca.not_triggered` (`NotTriggerScaleUp` reasons, with the fix chosen
+  from them), `autoscaling.ca.unhealthy` (the CA 1.30+ status ConfigMap: unhealthy groups,
+  scale-up backoff), `autoscaling.hpa.not_scaling` and `autoscaling.hpa.at_max`. Rows for
+  NodePools, CA node groups and HPAs.
 - `find_problems` scans Services and PVCs (`kinds: services, pvcs`, on by default; ADR 0008).
 - Eval scenarios 15 (Service selector mismatch), 16 (targetPort mismatch) and 17 (DNS blocked
-  by a NetworkPolicy).
+  by a NetworkPolicy) and 18 (the autoscaler cannot scale up).
 
 ## [0.1.4] - 2026-11-15
 

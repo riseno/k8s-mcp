@@ -19,8 +19,10 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-d
 publish-jobs = ["homebrew", "./publish-container"]
 # Run the publish jobs (container, Homebrew) for pre-releases too, so rc tags test them
 publish-prereleases = true
-# Custom jobs to run before the build: the release is blocked if the eval gates fail
-plan-jobs = ["./evals"]
+# Releases are started by release-gate.yml after the eval gates pass (on a version tag push),
+# not by the tag itself: a failing dist plan job only skips the builds, and dist would still
+# create an empty release.
+dispatch-releases = true
 # Attest the release archives with GitHub artifact attestations. Off while the repo is private:
 # on GitHub Free/Pro/Team they only work in public repos. When the repo goes public, set this to
 # true and run `dist generate` (see docs/progress.md).

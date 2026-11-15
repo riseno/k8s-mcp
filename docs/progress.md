@@ -44,7 +44,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | 7 | Eval gates (top-1 ≥ 85%, top-3 100%, forbidden 0) | ✅ | 14/14, 14/14, 0/14 on kind 1.37 |
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
-| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | `v0.1.0-rc.1` dry run passed (private pre-release): eval gate on kind 1.34 and 1.37, 5 builds, installers, `k8s-mcp.rb`, checksums; macOS arm64 artifact verified with `doctor`. Not yet exercised: the container and Homebrew publish jobs (dist skips publish jobs for pre-releases) and signing/attestations (public repos only) |
+| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | `v0.1.0-rc.1`: builds, installers, formula and checksums verified. `v0.1.0-rc.2`: eval gate failed on GitHub kind 1.37 (OOM reported as reason Error; fixed) and exposed that dist cannot block a release, so releases now go through `release-gate.yml` (evals first, then dispatch). `v0.1.0-rc.3` exercises the gate and the container and Homebrew publish jobs. Signing/attestations: public repos only |
 | 11 | README, docs site, references published; SECURITY.md | 🚧 | written; GitHub Pages publishing needs the repo |
 
 ## Not done yet (v0.1 follow-ups)
@@ -62,7 +62,7 @@ When making `riseno/k8s-mcp` and `riseno/homebrew-tap` public:
 2. Set `github-attestations = true` in `dist-workspace.toml` and run `dist generate` (dist 0.34.0): GitHub artifact attestations only work in public repos on Free/Pro/Team plans.
 3. Nothing to change for the container job: cosign keyless signing and provenance attestation switch on automatically for public repos (`github.event.repository.private == false`).
 4. Make the `ghcr.io/riseno/k8s-mcp` package public in its package settings.
-5. Tag a final release (`v0.1.0`); pre-releases skip the Homebrew tap and `:latest`.
+5. Set `publish-prereleases = false` in `dist-workspace.toml` if rc tags should stop publishing the image and formula, then tag the final release (`v0.1.0`). Pre-releases never move `:latest`.
 
 ## Deviations
 - ADR 0002: no separate `k8s-mcp-server` library crate (name clash with the published bin).

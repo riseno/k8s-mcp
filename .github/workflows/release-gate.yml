@@ -1,0 +1,29 @@
+name: release-gate
+
+# Pushing a version tag runs the eval gates (kind 1.34 and 1.37) and, only if they pass,
+# dispatches the dist-generated release.yml for that tag (dist `dispatch-releases`). dist's
+# own plan jobs cannot block a release: a failed plan job only skips the builds, and the
+# release is still created, empty.
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    uses: ./.github/workflows/integration.yml
+
+  release:
+    needs: evals
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # dispatch release.yml (GITHUB_TOKEN may trigger workflow_dispatch)
+    steps:
+      - name: Dispatch release.yml for ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG"

@@ -44,7 +44,7 @@ Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (need
 | 7 | Eval gates (top-1 ≥ 85%, top-3 100%, forbidden 0) | ✅ | 14/14, 14/14, 0/14 on kind 1.37 |
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
-| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | ⛔ | repos github.com/riseno/k8s-mcp and riseno/homebrew-tap exist (private); needs the `HOMEBREW_TAP_TOKEN` secret, public repos for `brew install`, and a tag |
+| 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | 🚧 | `v0.1.0-rc.1` dry run passed (private pre-release): eval gate on kind 1.34 and 1.37, 5 builds, installers, `k8s-mcp.rb`, checksums; macOS arm64 artifact verified with `doctor`. Not yet exercised: the container and Homebrew publish jobs (dist skips publish jobs for pre-releases) and signing/attestations (public repos only) |
 | 11 | README, docs site, references published; SECURITY.md | 🚧 | written; GitHub Pages publishing needs the repo |
 
 ## Not done yet (v0.1 follow-ups)

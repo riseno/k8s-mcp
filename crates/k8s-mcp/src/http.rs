@@ -362,11 +362,18 @@ mod tests {
             .oneshot(post(&list, Some(TOKEN), Some(&session)))
             .await
             .unwrap();
-        let tools = message(resp).await["result"]["tools"]
+        // The exact tool list is covered by the stdio test; here, that HTTP serves it.
+        let tools = message(resp).await["result"]["tools"].clone();
+        let names: Vec<&str> = tools
             .as_array()
             .unwrap()
-            .len();
-        assert_eq!(tools, 13);
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+        assert!(
+            names.contains(&"list_contexts") && names.contains(&"diagnose_pod"),
+            "{names:?}"
+        );
 
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_contexts", "arguments": {}}});
         let resp = app

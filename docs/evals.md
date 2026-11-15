@@ -39,6 +39,14 @@ Results are written to `evals/results/<version>.md`; the command exits non-zero 
 fails. Scenario objects' real statuses and events are kept as a test corpus in
 `crates/k8s-mcp-testkit/fixtures/messages/`.
 
+## Release gate
+
+Releases are gated by the same suite. Pushing a version tag runs `release-gate.yml`, which
+runs the evals on kind 1.34 and 1.37 and only then dispatches the dist-generated
+`release.yml` for that tag. (dist's own plan jobs cannot block a release: a failed plan job
+only skips the builds, and dist still creates an empty release, which is what happened to
+`v0.1.0-rc.2`.)
+
 ## Manual LLM-in-the-loop check
 
 Not run in CI: point Claude Code (headless) or Grok Build at the kind cluster, invoke the

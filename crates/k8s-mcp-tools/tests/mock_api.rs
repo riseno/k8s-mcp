@@ -497,3 +497,37 @@ async fn find_problems_groups_one_root_cause_across_pods() {
         image[0].evidence
     );
 }
+
+/// riseno/k8s-mcp#11: the next-page call repeats the whole query, not just kind and namespace.
+#[tokio::test]
+async fn list_resources_next_page_keeps_the_query() {
+    let mock = with_discovery(MockApi::new())
+        .get(
+            "/api/v1/namespaces/kube-system/pods",
+            json!({"apiVersion": "v1", "kind": "List", "metadata": {"continue": "tok-2"}, "items": [pod("kube-system", "coredns-1", "Running", None, 0)]}),
+        )
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let input: ListResourcesInput = serde_json::from_value(json!({
+        "kind": "pods", "api_version": "v1", "namespace": "kube-system",
+        "label_selector": "k8s-app=kube-dns", "field_selector": "status.phase=Running", "limit": 1
+    }))
+    .unwrap();
+    let env = k8s_mcp_tools::list_resources(&c, input).await.unwrap();
+    let mut args = env.next[0].args.clone();
+    assert_eq!(args["continue"], "tok-2");
+    args.as_object_mut().unwrap().remove("continue");
+    assert_eq!(
+        args,
+        json!({
+            "kind": "pods", "api_version": "v1", "namespace": "kube-system",
+            "label_selector": "k8s-app=kube-dns", "field_selector": "status.phase=Running", "limit": 1
+        })
+    );
+    let reqs = mock.requests.lock().unwrap();
+    assert!(
+        reqs.iter()
+            .any(|r| r.contains("labelSelector=k8s-app%3Dkube-dns")),
+        "{reqs:?}"
+    );
+}

@@ -403,9 +403,22 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
     e.columns = rows::columns(&info.kind, info.namespaced && sc.namespace.is_none());
     e.items = items;
     if let Some(c) = cont {
-        let mut args = json!({"kind": info.kind, "continue": c, "limit": limit});
-        if let Some(ns) = &sc.namespace {
-            args["namespace"] = json!(ns);
+        // Repeat the whole query: a page cursor is only valid for the same selectors.
+        let mut args = json!({"kind": input.kind, "continue": c, "limit": limit});
+        let fields = [
+            ("api_version", input.api_version.as_ref()),
+            ("namespace", input.namespace.as_ref()),
+            ("label_selector", input.label_selector.as_ref()),
+            ("field_selector", input.field_selector.as_ref()),
+            ("context", input.context.as_ref()),
+        ];
+        for (k, v) in fields {
+            if let Some(v) = v {
+                args[k] = json!(v);
+            }
+        }
+        if input.all_namespaces {
+            args["all_namespaces"] = json!(true);
         }
         e.next
             .push(NextCall::new("list_resources", args, "fetch the next page"));

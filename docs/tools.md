@@ -110,6 +110,15 @@ Live CPU/memory usage (needs metrics-server) compared with requests and limits: 
 | `sort_by` | enum | `cpu` (default) or `memory`. |
 | `target` | enum | `pods` (default) or `nodes`. |
 
+### `autoscaling_status`
+
+Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and NodeClaims (launch/registration failures), the Cluster Autoscaler status and NotTriggerScaleUp reasons, and HPAs that cannot read metrics or sit at maxReplicas. Use when pods stay Pending for capacity.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `namespace` | string | Limit HPAs and scale-up events to one namespace (Karpenter and the Cluster Autoscaler are cluster-wide). Default: all allowed namespaces. |
+
 ### `check_permissions`
 
 What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.

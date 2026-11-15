@@ -293,7 +293,7 @@ fn insufficient(ev: &PodEvidence, short: &BTreeSet<&str>) -> Finding {
     let mut f = if never.is_empty() {
         Finding::new("pod.pending.insufficient_resources", Severity::Critical, Confidence::High, format!("no node has enough free {what} for the pod"))
             .explain("Nodes that could hold the pod are full: requests of the pods already there leave too little room. The pod is placed once capacity frees up or a node is added.")
-            .fix("Free capacity (right-size or scale down other workloads; compare requests with real usage via `top`), add nodes, or check why the cluster autoscaler/Karpenter is not adding them (its events and NodePool limits; an autoscaling_status tool arrives in v0.2). Lowering this pod's requests also works if they are oversized.")
+            .fix("Free capacity (right-size or scale down other workloads; compare requests with real usage via `top`), add nodes, or check why the cluster autoscaler/Karpenter is not adding them (autoscaling_status shows NodePool limits and Cluster Autoscaler reasons). Lowering this pod's requests also works if they are oversized.")
     } else {
         let never = never.join("/");
         Finding::new("pod.pending.insufficient_resources", Severity::Critical, Confidence::High, format!("pod requests more {never} than any node can offer: it can never fit"))

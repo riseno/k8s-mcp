@@ -2,6 +2,7 @@
 //! Tool implementations: gather data through kube, apply policy and redaction, call the
 //! pure rule engine, and shape everything into an [`Envelope`]. Transport-agnostic.
 
+mod autoscaling;
 mod common;
 mod diagnose;
 mod discovery;
@@ -20,6 +21,7 @@ pub use k8s_mcp_core::envelope::Envelope;
 use k8s_mcp_core::policy::Policy;
 use k8s_mcp_core::redact::Redactor;
 
+pub use autoscaling::{AutoscalingStatusInput, autoscaling_status};
 pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
     diagnose_pod, diagnose_workload, find_problems,

@@ -1,0 +1,9 @@
+id: autoscaler-cannot-scale
+symptom: The batch pod in eval-autoscaler-cannot-scale has been Pending for an hour and no node was added. Why is the cluster not scaling?
+tool: autoscaling_status
+args: {namespace: eval-autoscaler-cannot-scale}
+settle_seconds: 10
+expected:
+  primary: autoscaling.ca.not_triggered
+  acceptable: []
+forbidden: [autoscaling.karpenter.limit_reached, autoscaling.ca.unhealthy]

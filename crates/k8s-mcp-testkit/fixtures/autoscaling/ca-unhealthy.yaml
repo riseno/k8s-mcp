@@ -1,0 +1,14 @@
+# The spot node group's scale-ups keep failing for lack of capacity.
+kind: ClusterAutoscalerStatus
+autoscalerStatus: Running
+clusterWide:
+  health: {status: Healthy, nodeCounts: {registered: {total: 5, ready: 5}, unregistered: 0}}
+nodeGroups:
+  - name: ng-on-demand
+    health: {status: Healthy}
+    scaleUp: {status: NoActivity}
+  - name: ng-spot
+    health: {status: Healthy}
+    scaleUp:
+      status: Backoff
+      backoffInfo: {errorCode: OutOfResource, errorMessage: "Instance type unavailable in the requested Availability Zones"}

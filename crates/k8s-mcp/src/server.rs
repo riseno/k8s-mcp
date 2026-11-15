@@ -93,6 +93,9 @@ tools! {
     "top", "core", t::TopInput,
         "Live CPU/memory usage (needs metrics-server) compared with requests and limits: target=pods (default) or nodes (vs allocatable), sorted by cpu or memory. Use to confirm OOM or throttling suspicions.",
         |c, i| t::top(c, i).await;
+    "autoscaling_status", "core", t::AutoscalingStatusInput,
+        "Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and NodeClaims (launch/registration failures), the Cluster Autoscaler status and NotTriggerScaleUp reasons, and HPAs that cannot read metrics or sit at maxReplicas. Use when pods stay Pending for capacity.",
+        |c, i| t::autoscaling_status(c, i).await;
     "check_permissions", "core", t::CheckPermissionsInput,
         "What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.",
         |c, i| t::check_permissions(c, i).await;

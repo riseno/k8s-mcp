@@ -212,3 +212,24 @@ pub struct DnsEvidence {
     /// Current time.
     pub now: Timestamp,
 }
+
+/// Everything `autoscaling_status` knows about the cluster's autoscalers.
+#[derive(Debug, Clone, Default)]
+pub struct AutoscalingEvidence {
+    /// Karpenter NodePools (`karpenter.sh/v1`) as JSON; `None` when Karpenter is absent or
+    /// unreadable.
+    pub nodepools: Option<Vec<serde_json::Value>>,
+    /// Karpenter NodeClaims (`karpenter.sh/v1`) as JSON.
+    pub nodeclaims: Vec<serde_json::Value>,
+    /// The Cluster Autoscaler status (ConfigMap `cluster-autoscaler-status`, key `status`,
+    /// parsed from YAML); `None` when there is none.
+    pub ca_status: Option<serde_json::Value>,
+    /// HorizontalPodAutoscalers in the allowed namespaces; `None` if unreadable.
+    pub hpas: Option<Vec<HorizontalPodAutoscaler>>,
+    /// Recent `NotTriggerScaleUp` events (pods the Cluster Autoscaler would not scale up for).
+    pub events: Vec<Event>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}

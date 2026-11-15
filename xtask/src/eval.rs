@@ -552,7 +552,8 @@ mod tests {
                     "diagnose_pod",
                     "diagnose_workload",
                     "diagnose_service",
-                    "diagnose_dns"
+                    "diagnose_dns",
+                    "autoscaling_status"
                 ]
                 .contains(&s.tool.as_str()),
                 "{dir}: tool"

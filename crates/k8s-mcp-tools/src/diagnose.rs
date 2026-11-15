@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_cause, rank};
-use k8s_mcp_core::text::dedup_lines;
+use k8s_mcp_core::text::{dedup_lines, is_marker_line};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
     ContainerLog, NodeEvidence, PodEvidence, RefCheck, RefKind, Unavailable, Workload,
@@ -254,7 +254,7 @@ async fn gather_pod(
                     reason: "the runtime no longer has them (the container was removed after its crash)".into(),
                 }),
                 Ok(raw) => logs.push(ContainerLog {
-                    lines: dedup_lines(raw.lines().map(|l| ctx.redactor.text(&k8s_mcp_core::text::strip_ansi(l)).into_owned())),
+                    lines: dedup_lines(raw.lines().filter(|l| !is_marker_line(l)).map(|l| ctx.redactor.text(&k8s_mcp_core::text::strip_ansi(l)).into_owned())),
                     container,
                     previous,
                 }),

@@ -656,3 +656,39 @@ async fn workload_summary_shows_template_containers() {
     let all = env.to_json().to_string();
     assert!(!all.contains("tok-123") && all.contains("prod"), "{all}");
 }
+
+/// riseno/k8s-mcp#20: traceback caret lines are dropped (and counted), and a second pod with
+/// identical output says "same as" instead of repeating it.
+#[tokio::test]
+async fn workload_logs_drop_markers_and_merge_identical_pods() {
+    let deploy = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "api", "namespace": "shop"},
+        "spec": {"replicas": 2, "selector": {"matchLabels": {"app": "api"}}, "template": {"spec": {"containers": [{"name": "app", "image": "i"}]}}}});
+    let mut pods = Vec::new();
+    for name in ["api-1", "api-2"] {
+        let mut p = pod("shop", name, "Running", Some("CrashLoopBackOff"), 5);
+        p["metadata"]["labels"] = json!({"app": "api"});
+        pods.push(p);
+    }
+    let log = json!(
+        "Traceback (most recent call last):\n  File \"main.py\", line 3, in <module>\n    connect()\n    ^^^^^^^^^\nConnectionError: refused\n"
+    );
+    let mock = MockApi::new()
+        .get("/apis/apps/v1/namespaces/shop/deployments/api", deploy)
+        .list("/api/v1/namespaces/shop/pods", pods)
+        .get("/api/v1/namespaces/shop/pods/api-1/log", log.clone())
+        .get("/api/v1/namespaces/shop/pods/api-2/log", log)
+        .start();
+    let input = GetLogsInput {
+        workload: Some("deployment/api".into()),
+        previous: true,
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::get_logs(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let first = &env.items[0];
+    assert!(!first["lines"].to_string().contains("^^^"), "{first}");
+    assert_eq!(first["omitted_lines"], 1);
+    assert_eq!(env.items[1]["same_as"], first["pod"]);
+    assert_eq!(env.items[1]["lines"], json!([]));
+}

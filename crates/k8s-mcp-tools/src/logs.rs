@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use k8s_mcp_core::envelope::Section;
-use k8s_mcp_core::text::{dedup_lines, parse_duration, strip_ansi};
+use k8s_mcp_core::text::{dedup_lines, is_marker_line, parse_duration, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, LogParams};
@@ -123,6 +123,8 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
     let mut e = envelope(&sc, String::new());
     let mut notes = Vec::new();
     let mut total = 0;
+    // (container, lines, pod) of every output already returned.
+    let mut seen: Vec<(String, Vec<String>, String)> = Vec::new();
     for pod in &pods {
         let pod_name = pod.metadata.name.clone().unwrap_or_default();
         let containers: Vec<String> = if let Some(c) = &input.container {
@@ -184,6 +186,21 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 input.errors_only,
                 usize::try_from(tail).unwrap_or(200),
             );
+            // Pods of one workload often fail identically: send each distinct output once.
+            if let Some(first) = seen
+                .iter()
+                .find(|(c, l, _)| *c == container && *l == lines)
+                .map(|(_, _, p)| p.clone())
+            {
+                e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "same_as": first, "lines": [], "omitted_lines": omitted}));
+                e.sections.push(Section {
+                    title: format!("LOGS {pod_name}/{container}: same as {first}"),
+                    lines: Vec::new(),
+                    untrusted: None,
+                });
+                continue;
+            }
+            seen.push((container.clone(), lines.clone(), pod_name.clone()));
             total += lines.len();
             e.items.push(json!({"pod": pod_name, "container": container, "previous": input.previous, "lines": lines, "omitted_lines": omitted}));
             e.sections.push(Section {
@@ -258,14 +275,20 @@ fn shape(
             })
             .collect()
     };
+    let mut markers = 0;
     let filtered = lines
         .into_iter()
         .zip(keep)
-        .filter_map(|(l, k)| k.then_some(l));
+        .filter_map(|(l, k)| k.then_some(l))
+        .filter(|l| {
+            let marker = is_marker_line(l);
+            markers += usize::from(marker);
+            !marker
+        });
     let mut out = dedup_lines(filtered);
     let omitted = out.len().saturating_sub(tail);
     out.drain(..omitted);
-    (out, omitted)
+    (out, omitted + markers)
 }
 
 #[cfg(test)]

@@ -1166,7 +1166,7 @@ fn pod_resources(p: &Pod) -> (Option<i64>, Option<i64>, Option<i64>, Option<i64>
 pub struct CheckPermissionsInput {
     /// Namespace to check (default: the context's namespace).
     pub namespace: Option<String>,
-    /// Extra resources to check `get`/`list` on, e.g. `["deployments.apps", "pods/log"]`.
+    /// Extra resources to check, e.g. `["deployments.apps", "pods/log", "pods/exec"]`: `get` for `*/log`, `create` for `*/exec`, `*/attach`, `*/portforward` and `*/eviction`, else `get` and `list`.
     pub verbs_for: Option<Vec<String>>,
     /// Kubeconfig context.
     pub context: Option<String>,
@@ -1248,7 +1248,15 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
             .map_or((r.clone(), String::new()), |(a, b)| {
                 (a.to_owned(), b.to_owned())
             });
-        checks.push((format!("list {r}"), "list", group, res, true));
+        for verb in verbs_for(&res) {
+            checks.push((
+                format!("{verb} {r}"),
+                verb,
+                group.clone(),
+                res.clone(),
+                true,
+            ));
+        }
     }
     let api: Api<SelfSubjectAccessReview> = Api::all(client.clone());
     let mut items = Vec::new();
@@ -1343,9 +1351,27 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
     Ok(e)
 }
 
+/// The verbs that answer "can I use this resource?": subresources are not listed.
+fn verbs_for(resource: &str) -> &'static [&'static str] {
+    match resource.split_once('/').map(|(_, sub)| sub) {
+        Some("log") => &["get"],
+        Some("exec" | "attach" | "portforward" | "eviction") => &["create"],
+        _ => &["get", "list"],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// riseno/k8s-mcp#17: subresources are checked with the verb that governs them.
+    #[test]
+    fn verbs_match_the_resource() {
+        assert_eq!(verbs_for("pods/log"), ["get"]);
+        assert_eq!(verbs_for("pods/exec"), ["create"]);
+        assert_eq!(verbs_for("pods/eviction"), ["create"]);
+        assert_eq!(verbs_for("deployments"), ["get", "list"]);
+    }
 
     /// riseno/k8s-mcp#10: a limit set on only some containers does not bound the pod.
     #[test]

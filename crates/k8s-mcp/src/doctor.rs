@@ -184,19 +184,12 @@ fn find_on_path(cmd: &str, opts: &Opts) -> Option<PathBuf> {
     if p.is_absolute() || cmd.contains(std::path::MAIN_SEPARATOR) {
         return p.exists().then(|| p.to_path_buf());
     }
-    let mut dirs: Vec<PathBuf> = opts
+    let prepend: Vec<PathBuf> = opts
         .path_prepend
         .as_deref()
         .map(|s| std::env::split_paths(s).collect())
         .unwrap_or_default();
-    dirs.extend(
-        std::env::var_os("PATH")
-            .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
-            .unwrap_or_default(),
-    );
-    if cfg!(target_os = "macos") {
-        dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
-    }
+    let dirs = k8s_mcp_core::cluster::exec_search_path(&prepend);
     let exts: &[&str] = if cfg!(windows) {
         &[".exe", ".cmd", ".bat", ""]
     } else {

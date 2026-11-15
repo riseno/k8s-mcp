@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::common::{
-    Scope, check_name, clean, envelope, event_time, events_for, fallback_namespaces, list_scoped,
+    Scope, check_name, clean, envelope, events_for, fallback_namespaces, list_scoped,
     retain_recent, scope, soft,
 };
 use crate::discovery::{api_resource, resolve, resources};
@@ -856,7 +856,7 @@ pub fn group_events(
             obj,
             strip_uids(&ctx.redactor.text(ev.message.as_deref().unwrap_or(""))),
         );
-        let t = event_time(ev);
+        let t = k8s_mcp_diagnose::rules::last_seen(ev);
         let first = ev.first_timestamp.as_ref().map(|t| t.0).or(t);
         let g = groups.entry(key).or_insert((0, first, t));
         g.0 += k8s_mcp_diagnose::rules::count(ev);

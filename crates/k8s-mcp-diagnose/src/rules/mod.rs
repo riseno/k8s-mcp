@@ -108,12 +108,6 @@ pub fn pod_ref(pod: &Pod) -> (&str, &str) {
     )
 }
 
-/// `{"name": .., "namespace": ..}` for `next` suggestions.
-pub fn pod_args(pod: &Pod) -> Value {
-    let (name, ns) = pod_ref(pod);
-    json!({ "name": name, "namespace": ns })
-}
-
 /// `{"pod": .., "namespace": .., ...extra}` for `get_logs` suggestions.
 pub fn logs_args(pod: &Pod, container: &str, previous: bool) -> Value {
     let (name, ns) = pod_ref(pod);
@@ -254,6 +248,7 @@ pub fn last_seen(e: &Event) -> Option<Timestamp> {
         })
         .or_else(|| e.event_time.as_ref().map(|t| t.0))
         .or_else(|| e.first_timestamp.as_ref().map(|t| t.0))
+        .or_else(|| e.metadata.creation_timestamp.as_ref().map(|t| t.0))
 }
 
 /// Total occurrences of an event.

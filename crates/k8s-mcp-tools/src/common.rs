@@ -8,6 +8,7 @@ use k8s_mcp_core::cluster::Target;
 use k8s_mcp_core::envelope::Envelope;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::Unavailable;
+use k8s_mcp_diagnose::rules::last_seen;
 use k8s_openapi::api::core::v1::Event;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Resource;
@@ -38,7 +39,7 @@ pub fn check_name(what: &str, name: &str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::InvalidInput(format!(
-            "{what} {name:?} is not a valid Kubernetes name (lowercase letters, digits, '-' and '.', at most 253 characters)"
+            "{what} {name:?} is not a valid Kubernetes name (letters, digits, '-', '.', '_', ':' or '@', at most 253 characters)"
         )))
     }
 }
@@ -170,22 +171,6 @@ pub fn soft<T>(res: Result<T>, what: &str, notes: &mut Vec<Unavailable>) -> Opti
     }
 }
 
-/// Most recent time an event was seen.
-pub fn event_time(e: &Event) -> Option<Timestamp> {
-    e.last_timestamp
-        .as_ref()
-        .map(|t| t.0)
-        .or_else(|| {
-            e.series
-                .as_ref()
-                .and_then(|s| s.last_observed_time.as_ref())
-                .map(|t| t.0)
-        })
-        .or_else(|| e.event_time.as_ref().map(|t| t.0))
-        .or_else(|| e.first_timestamp.as_ref().map(|t| t.0))
-        .or_else(|| e.metadata.creation_timestamp.as_ref().map(|t| t.0))
-}
-
 /// Events about one object in the last `window` (default 1h), newest first.
 pub async fn events_for(
     target: &Target,
@@ -214,8 +199,8 @@ pub async fn events_for(
 /// Keep events seen within `window` of `now`, newest first.
 pub fn retain_recent(events: &mut Vec<Event>, now: Timestamp, window: SignedDuration) {
     let cutoff = now.checked_sub(window).unwrap_or(now);
-    events.retain(|e| event_time(e).is_none_or(|t| t >= cutoff));
-    events.sort_by_key(|e| std::cmp::Reverse(event_time(e)));
+    events.retain(|e| last_seen(e).is_none_or(|t| t >= cutoff));
+    events.sort_by_key(|e| std::cmp::Reverse(last_seen(e)));
 }
 
 /// Convert a LabelSelector into the string form used by list calls.

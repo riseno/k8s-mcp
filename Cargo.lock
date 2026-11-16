@@ -2401,7 +2401,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "globset",
  "jiff",
@@ -2420,7 +2420,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-diagnose"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "jiff",
  "k8s-mcp-core",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-provider"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "k8s-mcp-core",
  "k8s-openapi",
@@ -2443,7 +2443,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-provider-aks"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "azure_core",
@@ -2463,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-provider-eks"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "aws-config",
  "aws-sdk-cloudwatchlogs",
@@ -2487,7 +2487,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-provider-gke"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "google-cloud-auth",
  "google-cloud-container-v1",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-server"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2535,7 +2535,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-testkit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "http 1.5.0",
  "jiff",
@@ -2550,7 +2550,7 @@ dependencies = [
 
 [[package]]
 name = "k8s-mcp-tools"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "http 1.5.0",
  "insta",
@@ -4934,7 +4934,7 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "xtask"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde",

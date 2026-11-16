@@ -191,6 +191,29 @@ pub struct K8sMcp {
 }
 
 impl K8sMcp {
+    /// Audit an HTTP caller that authenticated but is outside `--allowed-callers` (no tool ran).
+    pub fn audit_refused(&self, caller: &str) {
+        self.audit.record(&Record {
+            ts: jiff::Timestamp::now().to_string(),
+            session: self.session.clone(),
+            client: None,
+            caller: Some(caller.to_owned()),
+            tool: "-".into(),
+            tier: "-",
+            context: None,
+            namespace: None,
+            args: Value::Null,
+            result: "refused",
+            error: Some("not in --allowed-callers".into()),
+            findings: 0,
+            bytes: 0,
+            truncated: false,
+            duration_ms: 0,
+            dry_run: None,
+            server_version: VERSION,
+        });
+    }
+
     /// Build a server exposing the given toolsets (`core`, `diagnose`).
     pub fn new(ctx: Ctx, audit: Arc<Audit>, toolsets: &[String]) -> Self {
         let tools = all_tools()

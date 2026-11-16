@@ -28,17 +28,28 @@ dropped and the `RuntimeDefault` seccomp profile. `/healthz` is the liveness pro
 
 ## Connect a client
 
-Callers authenticate with a bearer token. By default (`auth.mode: tokenreview`) that is any
-token the cluster accepts: a ServiceAccount token or an OIDC token. The server checks it
-with the TokenReview API, but **acts with its own ServiceAccount**: the caller's RBAC does
-not apply, so anyone the cluster authenticates gets the server's read-only view. Restrict who
-can reach the Service (NetworkPolicy, ingress auth) if that is too broad.
+Callers authenticate with a bearer token. By default (`auth.mode: tokenreview`) that is a
+ServiceAccount token minted for the audience `k8s-mcp` (`auth.audience`). The server checks
+it with the TokenReview API, but **acts with its own ServiceAccount**: the caller's RBAC does
+not apply, so every caller gets the server's read-only view (pod logs, events and object specs
+cluster-wide).
 
 ```bash
 kubectl -n k8s-mcp port-forward svc/k8s-mcp 8080:8080
-TOKEN=$(kubectl -n <namespace> create token <serviceaccount>)
+TOKEN=$(kubectl -n <namespace> create token <serviceaccount> --audience k8s-mcp)
 claude mcp add --transport http k8s http://localhost:8080/mcp --header "Authorization: Bearer $TOKEN"
 ```
+
+Limit who that is:
+- **Audience.** The audience requirement keeps the token every pod has by default (minted for
+  the API server's audience) from working, so a compromised pod cannot reuse it. Setting
+  `auth.audience: ""` accepts any token the cluster authenticates, including OIDC tokens and
+  those default pod tokens.
+- **Allowed callers.** `auth.allowedCallers` lists who may call, as globs over the TokenReview
+  username or `group:<glob>` over its groups, for example
+  `[system:serviceaccount:platform:*, group:sre]`. Others get 403, and the refusal is audited
+  (`"result": "refused"`).
+- **Network.** Restrict who can reach the Service (NetworkPolicy, ingress auth).
 
 Behind an ingress, add its hostname to `allowedHosts` (the server rejects unknown `Host`
 values to block DNS rebinding) and terminate TLS at the ingress or a service mesh.
@@ -83,6 +94,8 @@ kubernetes.io/service-name=kubernetes`). Provider tools also need egress to the 
 | `image.repository`, `image.tag`, `image.pullPolicy` | `ghcr.io/riseno/k8s-mcp`, `v` + the chart `appVersion` (the release tag), `IfNotPresent` | Image |
 | `replicaCount` | `1` | Replicas (clients on protocol `2025-11-25` keep a session: use session affinity with more than one) |
 | `auth.mode` | `tokenreview` | `tokenreview` or `static` |
+| `auth.audience` | `k8s-mcp` | Audience `tokenreview` tokens must be minted for (`--auth-audience`); `""` accepts any token the cluster authenticates |
+| `auth.allowedCallers` | `[]` | `tokenreview` callers let in: username globs or `group:<glob>` (`--allowed-callers`); empty: all |
 | `auth.existingSecret` | `""` | Secret with key `token`, for `static` |
 | `allowedHosts` | `[]` | Extra `Host` values (ingress hostnames); the Service names, `localhost` and `127.0.0.1` are always accepted |
 | `allowedOrigins` | `[]` | Browser `Origin` values accepted; any other `Origin` gets 403 |

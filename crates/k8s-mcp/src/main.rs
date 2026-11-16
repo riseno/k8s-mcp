@@ -90,6 +90,22 @@ pub struct Opts {
     /// File holding the bearer token for `--auth static`.
     #[arg(long, global = true, env = "K8S_MCP_AUTH_TOKEN_FILE")]
     auth_token_file: Option<PathBuf>,
+    /// Audiences `--auth tokenreview` tokens must be minted for, comma separated (`kubectl create token <sa> --audience <aud>`). Without one, any token for the API server's audience passes, including every pod's default ServiceAccount token.
+    #[arg(
+        long = "auth-audience",
+        global = true,
+        env = "K8S_MCP_AUTH_AUDIENCE",
+        value_delimiter = ','
+    )]
+    auth_audiences: Vec<String>,
+    /// Callers `--auth tokenreview` lets in, comma separated: globs over the username (`system:serviceaccount:platform:*`) or `group:<glob>` over its groups. Others get 403 and an audit record [default: every authenticated caller].
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_ALLOWED_CALLERS",
+        value_delimiter = ','
+    )]
+    allowed_callers: Vec<String>,
     /// HTTP `Host` values accepted, comma separated (DNS-rebinding protection) [default: localhost, 127.0.0.1, ::1].
     #[arg(
         long,
@@ -390,6 +406,8 @@ async fn serve_http(
         opts.auth_token_file.as_deref(),
         opts.listen,
         client.clone(),
+        &opts.auth_audiences,
+        &opts.allowed_callers,
     )?;
     let server = server::K8sMcp::new(ctx, audit.clone(), toolsets);
     let (app, stop) = http::router(

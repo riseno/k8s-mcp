@@ -11,6 +11,12 @@ All notable changes are documented here. The format follows
   `hostNetwork`, which falls back to `Default`). `medium` when the pod's logs show failed
   `.svc` lookups, `info` otherwise; NodeLocal DNSCache (169.254.20.10) counts as the cluster
   DNS (#53).
+- `--auth-audience` and `--allowed-callers` for `--auth tokenreview`. With an audience, only
+  tokens the API server confirms for it pass (`kubectl create token <sa> --audience k8s-mcp`),
+  so the ServiceAccount token every pod has by default no longer works. Allowed callers are
+  globs over the TokenReview username or `group:<glob>`; others get 403 and an audit record
+  with `"result": "refused"`. The Helm chart sets `auth.audience: k8s-mcp` by default and adds
+  `auth.allowedCallers`; without an audience the server warns at startup (#52).
 
 ### Fixed
 - When RBAC hides a Secret a pod uses, `get_logs`, `diagnose_pod` and `diagnose_dns` say in

@@ -397,12 +397,12 @@ async fn eks_tools_follow_detection_and_need_credentials() {
             t.name
         );
     }
+    // Issue #47: one short line with the guidance, not the SDK's debug dump.
     let r = call(&client, "eks_cluster_info", json!({})).await;
     assert_eq!(r.is_error, Some(true));
-    assert!(
-        text(&r).contains("no AWS credentials resolved"),
-        "{}",
-        text(&r)
+    assert_eq!(
+        text(&r),
+        "no AWS credentials found (tried environment variables, the shared config and credentials files, web identity, the container and instance metadata endpoints), so k8s-mcp cannot describe the cluster for EKS cluster shop in eu-west-1. Provide them through AWS_PROFILE or environment variables, an SSO login, IRSA or EKS Pod Identity."
     );
     client.cancel().await.unwrap();
 

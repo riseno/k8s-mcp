@@ -21,6 +21,10 @@ All notable changes are documented here. The format follows
   (RBAC forbids reading it)`, `Cluster Autoscaler status not checked (kube-system is outside
   the namespace policy)` and `no Cluster Autoscaler status ConfigMap`, instead of
   `no Karpenter; no Cluster Autoscaler status` for all of them (#50).
+- EKS tools without AWS credentials return one line with the guidance (`no AWS credentials
+  found (tried ...), so k8s-mcp cannot describe the cluster ... Provide them through ...`)
+  instead of 1.7 KB of AWS SDK debug output; other AWS errors drop the SDK debug dump too.
+  The full SDK error is logged at `--log-level debug` (#47).
 
 ## [0.2.0] - 2026-11-16
 

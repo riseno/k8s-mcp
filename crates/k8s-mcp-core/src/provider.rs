@@ -59,6 +59,10 @@ pub struct ClusterIdentity {
     /// Azure resource group of the cluster.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_group: Option<String>,
+    /// AWS profile the kubeconfig's exec plugin uses (`--profile` or `AWS_PROFILE`), so cloud
+    /// calls use the same account as the cluster credentials.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 }
 
 /// The detected provider.
@@ -108,6 +112,8 @@ pub struct Signals<'a> {
     pub exec_command: &'a str,
     /// Exec plugin arguments.
     pub exec_args: &'a [String],
+    /// Exec plugin environment (`name`, `value`).
+    pub exec_env: &'a [(String, String)],
     /// Nodes, when they were listed.
     pub nodes: &'a [Node],
 }
@@ -197,13 +203,19 @@ fn eks(s: &Signals) -> Candidate {
         // <id>.<cell>.<region>.eks.amazonaws.com
         set(&mut c.identity.region, prefix.rsplit('.').next());
     }
-    if exec == "aws" && s.exec_args.iter().any(|a| a == "eks") {
+    let env = |k: &str| {
+        s.exec_env
+            .iter()
+            .find(|(n, _)| n == k)
+            .map(|(_, v)| v.as_str())
+    };
+    let aws_exec = exec == "aws" && s.exec_args.iter().any(|a| a == "eks");
+    if aws_exec {
         c.strong.push("kubeconfig exec `aws eks get-token`".into());
         set(
             &mut c.identity.name,
             arg(s.exec_args, &["--cluster-name", "--cluster-id"]),
         );
-        set(&mut c.identity.region, arg(s.exec_args, &["--region"]));
     } else if exec == "aws-iam-authenticator" {
         c.strong
             .push("kubeconfig exec aws-iam-authenticator".into());
@@ -211,7 +223,16 @@ fn eks(s: &Signals) -> Candidate {
             &mut c.identity.name,
             arg(s.exec_args, &["-i", "--cluster-id"]),
         );
-        set(&mut c.identity.region, arg(s.exec_args, &["--region"]));
+    }
+    if aws_exec || exec == "aws-iam-authenticator" {
+        set(
+            &mut c.identity.region,
+            arg(s.exec_args, &["--region"]).or_else(|| env("AWS_REGION")),
+        );
+        set(
+            &mut c.identity.profile,
+            arg(s.exec_args, &["--profile"]).or_else(|| env("AWS_PROFILE")),
+        );
     }
     // `aws eks update-kubeconfig` names the context after the cluster ARN.
     if let Some(rest) = s
@@ -432,13 +453,26 @@ mod tests {
         assert_eq!(d.describe(), "eks (cluster staging, ap-south-1)");
 
         let a = args(&["token", "-i", "legacy"]);
+        let env = [
+            ("AWS_PROFILE".to_owned(), "ops".to_owned()),
+            ("AWS_REGION".to_owned(), "eu-north-1".to_owned()),
+        ];
         let d = detect(&Signals {
             exec_command: "aws-iam-authenticator",
             exec_args: &a,
+            exec_env: &env,
             ..Signals::default()
         })
         .unwrap();
-        assert_eq!(d.identity.name.as_deref(), Some("legacy"));
+        assert_eq!(
+            d.identity,
+            ClusterIdentity {
+                name: Some("legacy".into()),
+                region: Some("eu-north-1".into()),
+                profile: Some("ops".into()),
+                ..ClusterIdentity::default()
+            }
+        );
     }
 
     #[test]
@@ -489,7 +523,8 @@ mod tests {
                 name: Some("shop".into()),
                 region: Some("westeurope".into()),
                 account: Some("0000-1111".into()),
-                resource_group: Some("rg_web".into())
+                resource_group: Some("rg_web".into()),
+                profile: None,
             }
         );
     }

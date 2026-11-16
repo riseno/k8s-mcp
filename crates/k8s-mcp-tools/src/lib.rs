@@ -8,6 +8,8 @@ mod common;
 mod diagnose;
 mod discovery;
 mod dns;
+#[cfg(feature = "provider-eks")]
+mod eks;
 mod logs;
 mod read;
 mod rows;
@@ -29,6 +31,10 @@ pub use diagnose::{
     diagnose_pod, diagnose_workload, find_problems,
 };
 pub use dns::{DiagnoseDnsInput, diagnose_dns};
+#[cfg(feature = "provider-eks")]
+pub use eks::{EksInput, eks_access, eks_addons, eks_cluster_info, eks_nodegroups};
+#[cfg(feature = "provider-eks")]
+pub use k8s_mcp_provider_eks::RULES as EKS_RULES;
 pub use logs::{GetLogsInput, get_logs};
 pub use read::{
     ApiResourcesInput, CheckPermissionsInput, ClusterOverviewInput, GetResourceInput,
@@ -53,6 +59,18 @@ pub struct Ctx {
     pub redactor: Redactor,
     /// Clock.
     pub clock: Clock,
+    /// Cluster identity given on the command line (`--eks-cluster`, `--eks-region`), which
+    /// wins over detection.
+    pub cloud: CloudOverride,
+}
+
+/// Cloud cluster identity from flags, for when detection cannot tell (in-cluster, aliases).
+#[derive(Clone, Debug, Default)]
+pub struct CloudOverride {
+    /// Cluster name.
+    pub cluster: Option<String>,
+    /// Region.
+    pub region: Option<String>,
 }
 
 impl Ctx {
@@ -63,6 +81,7 @@ impl Ctx {
             redactor: Redactor::new(policy.redact),
             policy,
             clock: Arc::new(Timestamp::now),
+            cloud: CloudOverride::default(),
         }
     }
 

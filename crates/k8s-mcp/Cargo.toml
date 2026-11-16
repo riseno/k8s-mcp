@@ -20,7 +20,9 @@ path = "src/main.rs"
 workspace = true
 
 [features]
-default = ["http"]
+default = ["http", "provider-eks"]
+# Amazon EKS provider tools (eks_*), registered when the cluster is detected as EKS.
+provider-eks = ["k8s-mcp-tools/provider-eks"]
 # Streamable HTTP transport (`--transport http`) for in-cluster use.
 http = ["dep:axum", "rmcp/transport-streamable-http-server"]
 

@@ -1,0 +1,32 @@
+---
+source: crates/k8s-mcp-provider-eks/tests/mocked.rs
+expression: e.render()
+---
+EKS cluster shop: Kubernetes 1.33, status ACTIVE. Top finding: EKS cluster shop is ACTIVE with 1 health issue(s).
+
+FINDINGS
+1. [high/high] eks.cluster.unhealthy: EKS cluster shop is ACTIVE with 1 health issue(s)
+   why: EKS reports control-plane problems that it cannot fix by itself, typically because a resource it depends on (subnets, security groups, the cluster IAM role, a KMS key) was changed or deleted.
+   evidence (status): Ec2SubnetNotFound: One or more subnets are no longer available: subnet-0dead
+   fix: Fix each issue in the evidence on the AWS side (restore the subnet, security group, IAM role or KMS key permission); EKS clears the issue once the resource works again.
+   docs: https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html
+2. [low/high] eks.cluster.public_endpoint: The API server of shop accepts connections from any IP address
+   why: The endpoint is public with 0.0.0.0/0 allowed. Authentication still applies, but the API server is exposed to scanning and credential stuffing.
+   evidence (spec): endpointPublicAccess=true publicAccessCidrs=0.0.0.0/0
+   fix: Restrict publicAccessCidrs to your networks, or turn the public endpoint off and use the private one.
+   docs: https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html
+3. [low/high] eks.cluster.audit_logging_off: Audit logs of shop are not sent to CloudWatch
+   why: Without the audit log type, who changed what in the cluster cannot be traced afterwards, and eks_logs cannot search control-plane audit events.
+   evidence (spec): enabled log types: api
+   fix: Enable at least the audit and authenticator log types in the cluster's logging configuration.
+   docs: https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html
+
+ITEMS (7)
+FIELD                VALUE
+authentication mode  API_AND_CONFIG_MAP
+control-plane logs   api
+endpoint             https://ABCDEF.gr7.eu-west-1.eks.amazonaws.com
+endpoint access      public=true private=true (from 0.0.0.0/0)
+oidc issuer          https://oidc.eks.eu-west-1.amazonaws.com/id/ABCDEF
+platform version     eks.9
+vpc                  vpc-0a1b

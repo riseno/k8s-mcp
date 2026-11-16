@@ -149,7 +149,24 @@ pub struct Opts {
     /// Audit log: a file path, `stderr` or `off` [default: ~/Library/Application Support/k8s-mcp/audit.jsonl on macOS, $XDG_STATE_HOME/k8s-mcp/audit.jsonl (else ~/.local/state/k8s-mcp/audit.jsonl) on Linux, %LOCALAPPDATA%\k8s-mcp\audit.jsonl on Windows; stderr in-cluster].
     #[arg(long, global = true, env = "K8S_MCP_AUDIT_LOG")]
     audit_log: Option<String>,
-    /// Toolsets to expose (comma separated): core, diagnose.
+    /// Cloud provider modules (comma separated): auto (when the default context is detected,
+    /// with high confidence, as that provider), none, or eks.
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_PROVIDERS",
+        value_delimiter = ',',
+        default_value = "auto"
+    )]
+    providers: Vec<String>,
+    /// EKS cluster name, when detection cannot tell (in-cluster, renamed contexts).
+    #[arg(long, global = true, env = "K8S_MCP_EKS_CLUSTER")]
+    eks_cluster: Option<String>,
+    /// EKS cluster region, when detection cannot tell.
+    #[arg(long, global = true, env = "K8S_MCP_EKS_REGION")]
+    eks_region: Option<String>,
+    /// Toolsets to expose (comma separated): core, diagnose, eks (provider toolsets are added
+    /// per --providers).
     #[arg(
         long,
         global = true,
@@ -201,7 +218,12 @@ impl Opts {
     /// Build the tool context: kubeconfig, policy, redaction.
     pub fn ctx(&self) -> anyhow::Result<Ctx> {
         let clusters = ClusterManager::load(&self.load_options())?;
-        Ok(Ctx::new(Arc::new(clusters), Arc::new(self.policy()?)))
+        let mut ctx = Ctx::new(Arc::new(clusters), Arc::new(self.policy()?));
+        ctx.cloud = k8s_mcp_tools::CloudOverride {
+            cluster: self.eks_cluster.clone(),
+            region: self.eks_region.clone(),
+        };
+        Ok(ctx)
     }
 }
 
@@ -254,13 +276,72 @@ fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
         .context("start the async runtime")
 }
 
-async fn serve(opts: &Opts) -> anyhow::Result<()> {
-    for t in &opts.toolsets {
-        if !matches!(t.as_str(), "core" | "diagnose") {
-            bail!("unknown toolset {t:?}; valid toolsets are core and diagnose");
-        }
+/// The toolsets to expose: `--toolsets`, plus provider toolsets per `--providers`.
+async fn toolsets(opts: &Opts, ctx: &Ctx) -> anyhow::Result<Vec<String>> {
+    if let Some(t) = opts
+        .toolsets
+        .iter()
+        .find(|t| !matches!(t.as_str(), "core" | "diagnose" | "eks"))
+    {
+        bail!("unknown toolset {t:?}; valid toolsets are core, diagnose and eks");
     }
+    let p = &opts.providers;
+    if let Some(bad) = p
+        .iter()
+        .find(|p| !matches!(p.as_str(), "auto" | "none" | "eks"))
+    {
+        bail!("unknown provider {bad:?}: use auto, none or eks (GKE and AKS arrive in v0.3)");
+    }
+    let mut out = opts.toolsets.clone();
+    if p.iter().any(|x| x == "none") {
+        if p.len() > 1 {
+            bail!("--providers none cannot be combined with other providers");
+        }
+        return Ok(out);
+    }
+    let explicit = p.iter().any(|x| x == "eks");
+    let eks = explicit
+        || opts.eks_cluster.is_some()
+        || (p.iter().any(|x| x == "auto") && detected_eks(ctx).await);
+    if eks && !cfg!(feature = "provider-eks") {
+        if explicit {
+            bail!("this build has no EKS provider (built without the `provider-eks` feature)");
+        }
+    } else if eks && !out.iter().any(|t| t == "eks") {
+        out.push("eks".into());
+    }
+    Ok(out)
+}
+
+/// Whether the default context is EKS with high confidence: from the kubeconfig, or in-cluster
+/// (where the kubeconfig says nothing) from a few nodes.
+async fn detected_eks(ctx: &Ctx) -> bool {
+    use k8s_mcp_core::provider::{Confidence, Detection, ProviderId};
+    let is_eks = |d: Option<Detection>| {
+        d.is_some_and(|d| d.provider == ProviderId::Eks && d.confidence == Confidence::High)
+    };
+    let default = ctx.clusters.default_context().to_owned();
+    if is_eks(ctx.clusters.detect_provider(&default, &[])) {
+        return true;
+    }
+    if default != k8s_mcp_core::cluster::IN_CLUSTER {
+        return false;
+    }
+    let Ok(target) = ctx.clusters.target(None, &ctx.policy).await else {
+        return false;
+    };
+    let lp = kube::api::ListParams::default().limit(20);
+    let nodes = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        kube::Api::<k8s_openapi::api::core::v1::Node>::all(target.client).list(&lp),
+    )
+    .await;
+    matches!(nodes, Ok(Ok(l)) if is_eks(ctx.clusters.detect_provider(&default, &l.items)))
+}
+
+async fn serve(opts: &Opts) -> anyhow::Result<()> {
     let ctx = opts.ctx()?;
+    let toolsets = toolsets(opts, &ctx).await?;
     if ctx.policy.redact == RedactLevel::Off {
         tracing::warn!(
             "redaction is off (--redact off): credentials in logs and env vars may reach the model"
@@ -276,10 +357,11 @@ async fn serve(opts: &Opts) -> anyhow::Result<()> {
     };
     let audit = Arc::new(Audit::open(&audit_target)?);
     tracing::info!(context = ctx.clusters.default_context(), audit = %audit_target, "k8s-mcp {} starting", server::VERSION);
+    tracing::info!(toolsets = ?toolsets, "toolsets");
     if opts.transport == Transport::Http {
-        return serve_http(opts, ctx, audit).await;
+        return serve_http(opts, ctx, audit, &toolsets).await;
     }
-    let server = server::K8sMcp::new(ctx, audit.clone(), &opts.toolsets);
+    let server = server::K8sMcp::new(ctx, audit.clone(), &toolsets);
     let running = Box::pin(server.serve(rmcp::transport::stdio()))
         .await
         .context("start the MCP stdio transport")?;
@@ -295,7 +377,12 @@ async fn serve(opts: &Opts) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "http")]
-async fn serve_http(opts: &Opts, ctx: Ctx, audit: Arc<Audit>) -> anyhow::Result<()> {
+async fn serve_http(
+    opts: &Opts,
+    ctx: Ctx,
+    audit: Arc<Audit>,
+    toolsets: &[String],
+) -> anyhow::Result<()> {
     // TokenReview and /readyz use the server's own identity (the default context).
     let client = ctx.clusters.target(None, &ctx.policy).await?.client;
     let auth = http::Auth::new(
@@ -304,7 +391,7 @@ async fn serve_http(opts: &Opts, ctx: Ctx, audit: Arc<Audit>) -> anyhow::Result<
         opts.listen,
         client.clone(),
     )?;
-    let server = server::K8sMcp::new(ctx, audit.clone(), &opts.toolsets);
+    let server = server::K8sMcp::new(ctx, audit.clone(), toolsets);
     let (app, stop) = http::router(
         server,
         auth,
@@ -318,7 +405,7 @@ async fn serve_http(opts: &Opts, ctx: Ctx, audit: Arc<Audit>) -> anyhow::Result<
 }
 
 #[cfg(not(feature = "http"))]
-async fn serve_http(_: &Opts, _: Ctx, _: Arc<Audit>) -> anyhow::Result<()> {
+async fn serve_http(_: &Opts, _: Ctx, _: Arc<Audit>, _: &[String]) -> anyhow::Result<()> {
     bail!(
         "this build has no HTTP transport (built without the `http` feature); use --transport stdio"
     )

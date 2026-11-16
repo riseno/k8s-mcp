@@ -397,13 +397,16 @@ fn in_use(ev: &UpgradeEvidence) -> InUse<'_> {
     apis
 }
 
+/// Whether the upgrade to the target removes this API.
+fn removed_by_target(ev: &UpgradeEvidence, api: &DeprecatedApi) -> bool {
+    api.removed_in
+        .is_some_and(|m| m > ev.current && m <= ev.target)
+}
+
 fn apis(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
     let mut deprecated = Vec::new();
     for (api, requested, writes) in in_use(ev).into_values() {
-        let removed = api
-            .removed_in
-            .is_some_and(|m| m > ev.current && m <= ev.target);
-        if !removed {
+        if !removed_by_target(ev, &api) {
             deprecated.push((api, requested, writes));
             continue;
         }
@@ -470,11 +473,13 @@ fn apis(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
     out.push(f);
 }
 
-fn kubelets(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
-    let Some(nodes) = &ev.nodes else { return };
+/// Nodes (name, kubelet version) more than the supported skew behind the target, sorted.
+fn old_kubelets(ev: &UpgradeEvidence) -> Vec<(String, String)> {
     let oldest_allowed = ev.target.saturating_sub(MAX_KUBELET_SKEW);
-    let mut behind: Vec<(String, String)> = nodes
+    let mut behind: Vec<(String, String)> = ev
+        .nodes
         .iter()
+        .flatten()
         .filter_map(|n| {
             let v = &n.status.as_ref()?.node_info.as_ref()?.kubelet_version;
             let (_, minor) = parse_version(v)?;
@@ -482,10 +487,16 @@ fn kubelets(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
                 .then(|| (n.metadata.name.clone().unwrap_or_default(), v.clone()))
         })
         .collect();
+    behind.sort();
+    behind
+}
+
+fn kubelets(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
+    let oldest_allowed = ev.target.saturating_sub(MAX_KUBELET_SKEW);
+    let behind = old_kubelets(ev);
     if behind.is_empty() {
         return;
     }
-    behind.sort();
     let mut f = Finding::new(
         "upgrade.kubelet_skew",
         Severity::High,
@@ -509,14 +520,21 @@ fn is_zero(v: Option<&IntOrString>) -> bool {
     }
 }
 
+/// PodDisruptionBudgets that allow no disruption while they cover pods.
+fn blocking_pdbs(
+    ev: &UpgradeEvidence,
+) -> impl Iterator<Item = &k8s_openapi::api::policy::v1::PodDisruptionBudget> {
+    ev.pdbs.iter().flatten().filter(|p| {
+        p.status
+            .as_ref()
+            .is_some_and(|s| s.disruptions_allowed == 0 && s.expected_pods > 0)
+    })
+}
+
 fn pdbs(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
-    let Some(pdbs) = &ev.pdbs else { return };
     let mut blocking: Vec<Finding> = Vec::new();
-    for pdb in pdbs {
+    for pdb in blocking_pdbs(ev) {
         let Some(status) = &pdb.status else { continue };
-        if status.disruptions_allowed > 0 || status.expected_pods == 0 {
-            continue;
-        }
         let name = pdb.metadata.name.as_deref().unwrap_or("");
         let ns = pdb.metadata.namespace.as_deref().unwrap_or("");
         let spec = pdb.spec.as_ref();
@@ -570,7 +588,8 @@ fn int_or_string(v: &IntOrString) -> String {
     }
 }
 
-fn single_replicas(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
+/// `Kind namespace/name` of the Deployments and StatefulSets that run one replica, sorted.
+fn single_replica_names(ev: &UpgradeEvidence) -> Vec<String> {
     let one = |r: Option<i32>| r == Some(1);
     let mut names: Vec<String> = ev
         .deployments
@@ -598,10 +617,15 @@ fn single_replicas(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
                 }),
         )
         .collect();
+    names.sort();
+    names
+}
+
+fn single_replicas(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
+    let names = single_replica_names(ev);
     if names.is_empty() {
         return;
     }
-    names.sort();
     let mut f = Finding::new(
         "upgrade.single_replica_workloads",
         Severity::Low,
@@ -651,6 +675,61 @@ fn support(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
             .docs(DOCS_RELEASES)
             .fix(format!("Plan the upgrade to {} before {date}.", version(ev.current + 1))),
     );
+}
+
+/// What blocks the upgrade and what to review, counted in objects (not checklist rows), for
+/// the summary (#66): `(blocked, review)` phrases such as `4 PodDisruptionBudgets`.
+pub fn tally(ev: &UpgradeEvidence) -> (Vec<String>, Vec<String>) {
+    let (mut blocked, mut review) = (Vec::new(), Vec::new());
+    if ev.target > ev.current + 1 {
+        blocked.push(format!("a target {} minors ahead", ev.target - ev.current));
+    }
+    let (removed, deprecated): (Vec<_>, Vec<_>) = in_use(ev)
+        .into_values()
+        .partition(|(a, ..)| removed_by_target(ev, a));
+    let add = |into: &mut Vec<String>, n: usize, one: &str, many: &str| {
+        if n > 0 {
+            into.push(format!("{n} {}", if n == 1 { one } else { many }));
+        }
+    };
+    add(
+        &mut blocked,
+        removed.len(),
+        "removed API in use",
+        "removed APIs in use",
+    );
+    add(
+        &mut blocked,
+        old_kubelets(ev).len(),
+        "node too old for the target",
+        "nodes too old for the target",
+    );
+    add(
+        &mut blocked,
+        blocking_pdbs(ev).count(),
+        "PodDisruptionBudget",
+        "PodDisruptionBudgets",
+    );
+    add(
+        &mut review,
+        deprecated.len(),
+        "deprecated API",
+        "deprecated APIs",
+    );
+    add(
+        &mut review,
+        single_replica_names(ev).len(),
+        "single-replica workload",
+        "single-replica workloads",
+    );
+    if ev
+        .support_ends
+        .as_ref()
+        .is_some_and(|(_, ends)| (ends - ev.now.as_second()) / 86_400 <= SUPPORT_WARNING_DAYS)
+    {
+        review.push("the end of standard support".into());
+    }
+    (blocked, review)
 }
 
 /// One checklist row of `upgrade_readiness`: what was checked, `ok`/`warn`/`blocked`/
@@ -838,6 +917,20 @@ mod tests {
         assert!(
             rows.contains(&("removed APIs", "blocked", "1 still in use".into())),
             "{rows:?}"
+        );
+        // Issue #66: the summary counts objects, not checklist rows.
+        assert_eq!(
+            tally(&ev),
+            (
+                vec![
+                    "1 removed API in use".to_owned(),
+                    "2 PodDisruptionBudgets".to_owned()
+                ],
+                vec![
+                    "1 deprecated API".to_owned(),
+                    "1 single-replica workload".to_owned()
+                ]
+            )
         );
         assert!(rows.contains(&(
             "PodDisruptionBudgets",

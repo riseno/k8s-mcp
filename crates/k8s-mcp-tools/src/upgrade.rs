@@ -8,7 +8,7 @@ use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::rules::parse_version;
 use k8s_mcp_diagnose::rules::upgrade::{
     checklist, deprecated_crd_versions, requested_deprecated_apis, scan_targets, split_served,
-    stale_writes,
+    stale_writes, tally,
 };
 use k8s_mcp_diagnose::{DeprecatedApi, StaleWrite, Unavailable, UpgradeEvidence};
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
@@ -333,10 +333,14 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         .into_iter()
         .map(|(c, s, d)| (c.to_owned(), s, d))
         .collect();
+    let (blocked, mut review) = tally(&ev);
     let mut sections = Vec::new();
     if let Some((name, _, lines, provider_findings, row)) = cloud {
         findings.extend(provider_findings);
         rank(&mut findings);
+        if row.1 == "warn" {
+            review.push(format!("{} ({})", row.0, row.2));
+        }
         rows.push(row);
         sections.push(Section {
             title: format!("PROVIDER ({name})"),
@@ -344,9 +348,25 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
             untrusted: None,
         });
     }
-    let blocked = rows.iter().filter(|(_, s, _)| *s == "blocked").count();
-    let review = rows.iter().filter(|(_, s, _)| *s == "warn").count();
-    let head = format!("Upgrade 1.{current} → 1.{target}: {blocked} blocked, {review} to review");
+    // Objects, not checklist rows (#66): "blocked by 4 PodDisruptionBudgets".
+    let list = |items: &[String]| match items.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    };
+    let head = format!(
+        "Upgrade 1.{current} → 1.{target}: {}{}",
+        if blocked.is_empty() {
+            "nothing blocks it".to_owned()
+        } else {
+            format!("blocked by {}", list(&blocked))
+        },
+        if review.is_empty() {
+            String::new()
+        } else {
+            format!("; review {}", list(&review))
+        }
+    );
     let mut e = envelope(
         &sc,
         match findings.first() {

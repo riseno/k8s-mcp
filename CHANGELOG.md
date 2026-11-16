@@ -15,6 +15,9 @@ All notable changes are documented here. The format follows
 - `upgrade_readiness` checks the deprecated-API metric against the group/versions the cluster
   serves: entries for deleted CRDs, which the gauge keeps until the API server restarts, are no
   longer counted as in use and are noted as "requested earlier but no longer served" (#65).
+- The `upgrade_readiness` summary counts the objects behind each check instead of checklist
+  rows: `blocked by 4 PodDisruptionBudgets; review 4 deprecated APIs and 17 single-replica
+  workloads` rather than `1 blocked, 2 to review` (#66).
 
 ## [0.3.0] - 2026-11-16
 

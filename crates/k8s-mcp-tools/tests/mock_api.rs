@@ -1644,7 +1644,7 @@ async fn upgrade_readiness_flags_removed_apis_and_blocking_pdbs() {
     .await
     .unwrap();
     assert!(
-        env.summary.starts_with("Upgrade 1.31 → 1.32: 2 blocked, 0 to review. Top finding: flowcontrol.apiserver.k8s.io/v1beta3 flowschemas is removed in 1.32"),
+        env.summary.starts_with("Upgrade 1.31 → 1.32: blocked by 1 removed API in use and 1 PodDisruptionBudget. Top finding: flowcontrol.apiserver.k8s.io/v1beta3 flowschemas is removed in 1.32"),
         "{}",
         env.summary
     );

@@ -1,0 +1,22 @@
+---
+source: crates/k8s-mcp-provider-aks/tests/mocked.rs
+expression: e.render()
+---
+AKS cluster shop: Kubernetes 1.33.2, status Running (Succeeded); no problems found by the provider rules.
+
+ITEMS (14)
+FIELD                 VALUE
+api server access     private=false authorized ranges=203.0.113.0/24
+auto upgrade channel  patch
+azure rbac            true
+entra id integration  enabled
+fqdn                  shop-abc.hcp.westeurope.azmk8s.io
+local accounts        disabled
+location              westeurope
+network plugin        azure
+network plugin mode   overlay
+oidc issuer           https://westeurope.oic.prod-aks.azure.com/tenant-1/guid-1/
+power state           Running
+sku tier              Standard
+support plan          KubernetesOfficial
+workload identity     enabled

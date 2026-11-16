@@ -1,3 +1,10 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-print-in-tests = true
+# k8s-mcp runs no commands besides kubeconfig exec plugins: these Azure credentials run `az`
+# or `azd`.
+disallowed-types = [
+    { path = "azure_identity::AzureCliCredential", reason = "runs the az CLI; k8s-mcp runs no commands" },
+    { path = "azure_identity::AzureDeveloperCliCredential", reason = "runs the azd CLI; k8s-mcp runs no commands" },
+    { path = "azure_identity::DeveloperToolsCredential", reason = "runs the az and azd CLIs; k8s-mcp runs no commands" },
+]

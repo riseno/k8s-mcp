@@ -3,22 +3,23 @@
 //! render the cloud-neutral reports.
 
 use k8s_mcp_core::envelope::Envelope;
-use k8s_mcp_core::provider::{ClusterIdentity, Detection, ProviderId};
+use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
     Provider, Report, UpgradeInfo, access_envelope, addons_envelope, cluster_info_envelope,
     identity_envelope, logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_eks::{Eks, identity::evaluate};
-use k8s_openapi::api::core::v1::{ConfigMap, Node};
-use kube::api::{Api, ListParams};
+use k8s_openapi::api::core::v1::ConfigMap;
+use kube::api::Api;
 
 use crate::Ctx;
-use crate::cloud::{IdentityInput, LogsInput, ProviderInput, finish, log_query, workload_identity};
+use crate::cloud::{
+    IdentityInput, LogsInput, ProviderInput, detected_identity, finish, log_query,
+    workload_identity,
+};
 use crate::common::{Scope, scope};
 
-/// Nodes read when the kubeconfig alone does not identify the cluster.
-const DETECT_NODES: u32 = 20;
 /// EKS control-plane log types.
 const COMPONENTS: &[&str] = &[
     "api",
@@ -28,34 +29,21 @@ const COMPONENTS: &[&str] = &[
     "scheduler",
 ];
 
-fn is_eks(d: Option<&Detection>) -> bool {
-    d.is_some_and(|d| d.provider == ProviderId::Eks)
-}
-
-/// The EKS cluster behind a context: kubeconfig signals, then nodes, then the flags.
+/// The EKS cluster behind a context: detection, then the flags.
 async fn identity(ctx: &Ctx, sc: &Scope) -> Result<ClusterIdentity> {
-    let context = &sc.target.context;
-    let mut found = ctx.clusters.detect_provider(context, &[]);
-    let complete = |d: &Option<Detection>| {
-        is_eks(d.as_ref())
-            && d.as_ref()
-                .is_some_and(|d| d.identity.name.is_some() && d.identity.region.is_some())
-    };
-    if !complete(&found) {
-        let nodes: Vec<Node> = Api::<Node>::all(sc.target.client.clone())
-            .list(&ListParams::default().limit(DETECT_NODES))
-            .await
-            .map(|l| l.items)
-            .unwrap_or_default();
-        found = ctx.clusters.detect_provider(context, &nodes).or(found);
-    }
+    let found = detected_identity(ctx, sc, ProviderId::Eks, |i| {
+        i.name.is_some() && i.region.is_some()
+    })
+    .await;
     let mut id = match found {
-        Some(d) if d.provider == ProviderId::Eks => d.identity,
-        _ if ctx.cloud.cluster.is_some() => ClusterIdentity::default(),
-        other => {
+        Some(id) => id,
+        None if ctx.cloud.cluster.is_some() => ClusterIdentity::default(),
+        None => {
+            let detected = ctx.clusters.detect_provider(&sc.target.context, &[]);
             return Err(Error::NotFound(format!(
-                "context {context:?} does not look like an EKS cluster (detected: {}); EKS tools need one, or pass --eks-cluster <name> and --eks-region <region>",
-                other.map_or_else(|| "none".to_owned(), |d| d.describe())
+                "context {:?} does not look like an EKS cluster (detected: {}); EKS tools need one, or pass --eks-cluster <name> and --eks-region <region>",
+                sc.target.context,
+                detected.map_or_else(|| "none".to_owned(), |d| d.describe())
             )));
         }
     };

@@ -20,11 +20,13 @@ path = "src/main.rs"
 workspace = true
 
 [features]
-default = ["http", "provider-eks", "provider-gke"]
+default = ["http", "provider-eks", "provider-gke", "provider-aks"]
 # Amazon EKS provider tools (eks_*), registered when the cluster is detected as EKS.
 provider-eks = ["k8s-mcp-tools/provider-eks"]
 # Google Kubernetes Engine provider tools (gke_*), registered when the cluster is detected as GKE.
 provider-gke = ["k8s-mcp-tools/provider-gke"]
+# Azure Kubernetes Service provider tools (aks_*), registered when the cluster is detected as AKS.
+provider-aks = ["k8s-mcp-tools/provider-aks"]
 # Streamable HTTP transport (`--transport http`) for in-cluster use.
 http = ["dep:axum", "rmcp/transport-streamable-http-server"]
 

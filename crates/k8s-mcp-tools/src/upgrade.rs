@@ -123,7 +123,11 @@ type ProviderSection = (
 );
 
 /// The registered provider's upgrade data (a cluster has one cloud).
-#[cfg(any(feature = "provider-eks", feature = "provider-gke"))]
+#[cfg(any(
+    feature = "provider-eks",
+    feature = "provider-gke",
+    feature = "provider-aks"
+))]
 async fn provider(
     ctx: &Ctx,
     sc: &Scope,
@@ -137,6 +141,8 @@ async fn provider(
         ProviderId::Eks => crate::eks::upgrade(ctx, sc, target).await,
         #[cfg(feature = "provider-gke")]
         ProviderId::Gke => crate::gke::upgrade(ctx, sc, target).await,
+        #[cfg(feature = "provider-aks")]
+        ProviderId::Aks => crate::aks::upgrade(ctx, sc, target).await,
         #[allow(unreachable_patterns)] // every provider compiled in
         _ => return None,
     };
@@ -166,7 +172,11 @@ async fn provider(
     }
 }
 
-#[cfg(not(any(feature = "provider-eks", feature = "provider-gke")))]
+#[cfg(not(any(
+    feature = "provider-eks",
+    feature = "provider-gke",
+    feature = "provider-aks"
+)))]
 #[allow(clippy::unused_async)] // same signature as the provider build
 async fn provider(
     _: &Ctx,

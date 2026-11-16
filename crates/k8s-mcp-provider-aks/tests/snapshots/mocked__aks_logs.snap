@@ -1,0 +1,11 @@
+---
+source: crates/k8s-mcp-provider-aks/tests/mocked.rs
+expression: e.render()
+---
+AKS 2 log lines from Log Analytics ContainerLogV2 | where TimeGenerated >= datetime(2026-11-06T21:20:00Z) | where _ResourceId =~ "/subscriptions/sub-1/resourceGroups/shop-rg/providers/Microsoft.ContainerService/managedClusters/shop" | where PodNamespace == "shop" | extend Message = tostring(LogMessage) | where Message has "ECONN" | project TimeGenerated, Who = PodName, Message | order by TimeGenerated desc | take 50
+
+LOGS (Log Analytics ContainerLogV2 | where TimeGenerated >= datetime(2026-11-06T21:20:00Z) | where _ResourceId =~ "/subscriptions/sub-1/resourceGroups/shop-rg/providers/Microsoft.ContainerService/managedClusters/shop" | where PodNamespace == "shop" | extend Message = tostring(LogMessage) | where Message has "ECONN" | project TimeGenerated, Who = PodName, Message | order by TimeGenerated desc | take 50)
+<<untrusted source="log">>
+  api-1: starting
+  api-1: connect ECONNREFUSED 10.0.3.4:5432
+<</untrusted>>

@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Azure Kubernetes Service provider (cargo feature `provider-aks`, default): `aks_cluster_info`,
+  `aks_node_pools`, `aks_addons`, `aks_identity_check` (workload identity: client-id annotation,
+  pod label and injected environment, OIDC issuer, the managed identity and its federated
+  credentials) and `aks_logs` (Log Analytics), with rules `aks.cluster.*`, `aks.nodepool.*` and
+  `aks.wi.*`, and the upgrade profile in `upgrade_readiness`. Registered with `--providers auto`
+  when the default context is AKS with high confidence, `--providers aks`, or
+  `--aks-cluster <subscription>/<resourceGroup>/<name>`. Credentials: workload identity, a
+  service principal or managed identity from the environment; the Azure CLI login is not used
+  (ADR 0013). See `docs/providers/aks.md`.
 - Google Kubernetes Engine provider (cargo feature `provider-gke`, default): `gke_cluster_info`,
   `gke_node_pools`, `gke_addons`, `gke_identity_check` (Workload Identity: annotation, workload
   pool, node pools in `GKE_METADATA` mode, the Google service account and its

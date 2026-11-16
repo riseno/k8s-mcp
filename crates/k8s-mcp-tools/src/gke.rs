@@ -3,22 +3,21 @@
 //! `--gke-cluster project/location/name`) and render the cloud-neutral reports.
 
 use k8s_mcp_core::envelope::Envelope;
-use k8s_mcp_core::provider::{ClusterIdentity, Detection, ProviderId};
+use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
     Provider, Report, UpgradeInfo, addons_envelope, cluster_info_envelope, identity_envelope,
     logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_gke::{Gke, identity::evaluate};
-use k8s_openapi::api::core::v1::Node;
-use kube::api::{Api, ListParams};
 
 use crate::Ctx;
-use crate::cloud::{IdentityInput, LogsInput, ProviderInput, finish, log_query, workload_identity};
+use crate::cloud::{
+    IdentityInput, LogsInput, ProviderInput, detected_identity, finish, log_query,
+    workload_identity,
+};
 use crate::common::{Scope, scope};
 
-/// Nodes read when the kubeconfig alone does not identify the cluster.
-const DETECT_NODES: u32 = 20;
 /// GKE control-plane log sources.
 const COMPONENTS: &[&str] = &["api", "audit", "controllerManager", "scheduler"];
 
@@ -38,33 +37,17 @@ fn flag_identity(flag: &str) -> Result<ClusterIdentity> {
     })
 }
 
-/// The GKE cluster behind a context: the flag, else kubeconfig signals, then nodes.
+/// The GKE cluster behind a context: the flag, else detection.
 async fn identity(ctx: &Ctx, sc: &Scope) -> Result<ClusterIdentity> {
     if let Some(flag) = &ctx.cloud.gke {
         return flag_identity(flag);
     }
-    let context = &sc.target.context;
-    let gke = |d: Option<Detection>| d.filter(|d| d.provider == ProviderId::Gke);
-    let complete = |d: &Option<Detection>| {
-        d.as_ref().is_some_and(|d| {
-            d.identity.name.is_some() && d.identity.region.is_some() && d.identity.account.is_some()
-        })
-    };
-    let mut found = gke(ctx.clusters.detect_provider(context, &[]));
-    if !complete(&found) {
-        let nodes: Vec<Node> = Api::<Node>::all(sc.target.client.clone())
-            .list(&ListParams::default().limit(DETECT_NODES))
-            .await
-            .map(|l| l.items)
-            .unwrap_or_default();
-        found = gke(ctx.clusters.detect_provider(context, &nodes)).or(found);
-    }
-    match found {
-        Some(d) => Ok(d.identity),
-        None => Err(Error::NotFound(format!(
-            "context {context:?} does not look like a GKE cluster; GKE tools need one, or pass --gke-cluster <project>/<location>/<name>"
-        ))),
-    }
+    detected_identity(ctx, sc, ProviderId::Gke, |i| i.name.is_some() && i.region.is_some() && i.account.is_some())
+        .await
+        .ok_or_else(|| Error::NotFound(format!(
+            "context {:?} does not look like a GKE cluster; GKE tools need one, or pass --gke-cluster <project>/<location>/<name>",
+            sc.target.context
+        )))
 }
 
 async fn gke_for(ctx: &Ctx, sc: &Scope) -> Result<Gke> {

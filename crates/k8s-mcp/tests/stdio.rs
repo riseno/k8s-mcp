@@ -532,3 +532,77 @@ async fn gke_tools_need_credentials() {
     );
     client.cancel().await.unwrap();
 }
+
+/// v0.3: AKS tools follow the provider flags, are read-only and open-world, and without Azure
+/// credentials fail with one line of guidance before any network call (no AZURE_* variables;
+/// the Azure CLI login is never used).
+#[cfg(all(unix, feature = "provider-aks"))]
+#[tokio::test]
+async fn aks_tools_need_credentials() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let plugins = dir.path().join("plugins");
+    std::fs::create_dir(&plugins).unwrap();
+    let fake = plugins.join("kubelogin");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\necho '{\"apiVersion\":\"client.authentication.k8s.io/v1beta1\",\"kind\":\"ExecCredential\",\"status\":{\"token\":\"fake\"}}'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let plugins = plugins.to_str().unwrap().to_owned();
+    let user = "    exec:\n      apiVersion: client.authentication.k8s.io/v1beta1\n      command: kubelogin\n      args: [get-token, --login, azurecli]";
+    let kc = offline_kubeconfig(dir.path(), "https://127.0.0.1:1", user);
+    let client = spawn_without_aws(
+        &[
+            "--kubeconfig",
+            kc.to_str().unwrap(),
+            "--audit-log",
+            "off",
+            "--path-prepend",
+            &plugins,
+            "--aks-cluster",
+            "sub-1/shop-rg/shop",
+        ],
+        dir.path(),
+    )
+    .await;
+    let tools = client.list_all_tools().await.unwrap();
+    let aks: Vec<String> = tools
+        .iter()
+        .map(|t| t.name.to_string())
+        .filter(|n| n.starts_with("aks_"))
+        .collect();
+    assert_eq!(
+        aks,
+        [
+            "aks_cluster_info",
+            "aks_node_pools",
+            "aks_addons",
+            "aks_identity_check",
+            "aks_logs"
+        ]
+    );
+    for t in tools.iter().filter(|t| t.name.starts_with("aks_")) {
+        let a = t.annotations.as_ref().unwrap();
+        assert_eq!(
+            (a.read_only_hint, a.open_world_hint),
+            (Some(true), Some(true)),
+            "{}",
+            t.name
+        );
+    }
+    let r = call(&client, "aks_cluster_info", json!({})).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(
+        text(&r).starts_with("no Azure credentials found (tried workload identity"),
+        "{}",
+        text(&r)
+    );
+    assert!(
+        text(&r).ends_with("the Azure CLI login is not used because k8s-mcp runs no commands."),
+        "{}",
+        text(&r)
+    );
+    client.cancel().await.unwrap();
+}

@@ -1,0 +1,11 @@
+---
+source: crates/k8s-mcp-provider-aks/tests/mocked.rs
+expression: e.render()
+---
+AKS 3 add-ons; no problems found by the provider rules.
+
+ITEMS (3)
+NAME                      VERSION  STATUS     LATEST
+azurepolicy               managed  enabled    -
+omsagent                  managed  enabled    -
+extension microsoft.flux  1.15.1   Succeeded  -

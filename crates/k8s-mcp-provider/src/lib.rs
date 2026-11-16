@@ -103,6 +103,30 @@ pub struct CloudLogs {
     pub truncated: bool,
 }
 
+/// What the cloud says about upgrading the cluster (for `upgrade_readiness`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UpgradeInfo {
+    /// Control-plane Kubernetes version now.
+    pub current: String,
+    /// Control-plane versions the cloud offers to upgrade to, oldest first.
+    pub available: Vec<String>,
+    /// When standard support of the current version ends, as Unix seconds, if the cloud says.
+    pub support_ends: Option<i64>,
+    /// The cloud's own upgrade checks, one row each.
+    pub checks: Vec<UpgradeCheck>,
+}
+
+/// One of the cloud's upgrade checks (for example an EKS upgrade insight).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UpgradeCheck {
+    /// What is checked.
+    pub name: String,
+    /// `passing`, `warning`, `error` or `unknown`.
+    pub status: String,
+    /// The cloud's reason or description.
+    pub detail: String,
+}
+
 /// A provider's answer: rows plus findings.
 pub type Report<T> = (T, Vec<Finding>);
 
@@ -116,8 +140,16 @@ pub trait Provider {
     fn node_pools(&self) -> impl Future<Output = Result<Report<Vec<NodePool>>>> + Send;
     /// Installed add-ons, with the newest compatible versions.
     fn addons(&self) -> impl Future<Output = Result<Report<Vec<Addon>>>> + Send;
-    /// Cloud principals mapped into the cluster.
-    fn access(&self) -> impl Future<Output = Result<Report<Vec<AccessMapping>>>> + Send;
+    /// Cloud principals mapped into the cluster. Only EKS has this before v1.0 (PROPOSAL §8.4).
+    fn access(&self) -> impl Future<Output = Result<Report<Vec<AccessMapping>>>> + Send {
+        let id = self.id();
+        async move {
+            Err(k8s_mcp_core::Error::Unavailable(format!(
+                "cluster access mapping is not available for {} yet",
+                id.as_str().to_uppercase()
+            )))
+        }
+    }
     /// The cloud identity of a ServiceAccount: the Kubernetes side always, the cloud side when
     /// credentials allow (otherwise `cloud_checks` says why it was skipped).
     fn identity_check(
@@ -126,6 +158,11 @@ pub trait Provider {
     ) -> impl Future<Output = Report<IdentityReport>> + Send;
     /// Lines from the cloud's logging service.
     fn logs(&self, q: &LogQuery) -> impl Future<Output = Result<CloudLogs>> + Send;
+    /// The cloud's view of upgrading to `target` (default: the next minor), with findings.
+    fn upgrade_checks(
+        &self,
+        target: Option<&str>,
+    ) -> impl Future<Output = Result<Report<UpgradeInfo>>> + Send;
 }
 
 /// The Kubernetes side of a workload identity check, gathered by the caller.
@@ -284,6 +321,26 @@ pub fn identity_envelope(
         .map(|c| json!({"side": c.side, "check": c.check, "result": c.result, "detail": c.detail}))
         .collect();
     with_findings(e, findings)
+}
+
+/// The provider section of `upgrade_readiness`: versions on offer and the cloud's checks.
+pub fn upgrade_lines(p: ProviderId, info: &UpgradeInfo) -> Vec<String> {
+    let cloud = p.as_str().to_uppercase();
+    let mut lines = vec![format!(
+        "{cloud} control plane {}; offered: {}",
+        info.current,
+        if info.available.is_empty() {
+            "none listed".to_owned()
+        } else {
+            info.available.join(", ")
+        }
+    )];
+    lines.extend(
+        info.checks
+            .iter()
+            .map(|c| format!("{cloud} check {}: {} ({})", c.name, c.status, c.detail)),
+    );
+    lines
 }
 
 /// `<provider>_logs`: the lines are cloud-held log text, so the section is untrusted.

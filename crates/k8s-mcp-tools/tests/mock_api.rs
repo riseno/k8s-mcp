@@ -1732,3 +1732,40 @@ async fn upgrade_readiness_without_the_metric_says_not_checked() {
         notes.lines
     );
 }
+
+/// v0.3 #9: provider hints come from the registered provider when the kubeconfig says nothing
+/// (in-cluster), and only for findings whose evidence matches.
+#[test]
+fn provider_hints_use_the_registered_provider() {
+    use k8s_mcp_core::finding::{Confidence, Finding, Severity, Source};
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mock = rt.block_on(async { MockApi::new().start() });
+    let mut ctx = ctx(&mock, Policy::permissive());
+    let finding = || {
+        Finding::new(
+            "pod.image.auth",
+            Severity::Critical,
+            Confidence::High,
+            "registry refused",
+        )
+        .evidence(
+            Source::Event,
+            "Failed to pull image \"acme.azurecr.io/web:1\": unauthorized",
+        )
+        .fix("Generic fix.")
+    };
+    let mut env = k8s_mcp_tools::Envelope::new("x");
+    env.findings.push(finding());
+    k8s_mcp_tools::provider_hints(&ctx, &mut env);
+    assert_eq!(env.findings[0].fix, "Generic fix.", "no provider, no hint");
+    ctx.providers.push(k8s_mcp_core::provider::ProviderId::Aks);
+    k8s_mcp_tools::provider_hints(&ctx, &mut env);
+    assert!(
+        env.findings[0].fix.contains("--attach-acr"),
+        "{}",
+        env.findings[0].fix
+    );
+}

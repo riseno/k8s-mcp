@@ -113,6 +113,26 @@ pub struct CloudOverride {
     pub aks: Option<String>,
 }
 
+/// Add the cluster's provider hints to the findings (PROPOSAL §8.4): the provider detected for
+/// the envelope's context from the kubeconfig, else the registered provider toolset (in-cluster).
+pub fn provider_hints(ctx: &Ctx, env: &mut Envelope) {
+    if env.findings.is_empty() {
+        return;
+    }
+    let context = env
+        .context
+        .clone()
+        .unwrap_or_else(|| ctx.clusters.default_context().to_owned());
+    let provider = ctx
+        .clusters
+        .detect_provider(&context, &[])
+        .map(|d| d.provider)
+        .or_else(|| ctx.providers.first().copied());
+    if let Some(p) = provider {
+        k8s_mcp_diagnose::hints::apply(p, &mut env.findings);
+    }
+}
+
 impl Ctx {
     /// A context using the system clock and the policy's redaction level.
     pub fn new(clusters: Arc<ClusterManager>, policy: Arc<Policy>) -> Self {

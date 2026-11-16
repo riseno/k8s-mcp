@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Provider hints: when the cluster's cloud is known (from the kubeconfig, or the registered
+  provider toolset in-cluster), findings whose cause is often cloud-specific get a concrete hint
+  for that cloud in their fix: VPC CNI and Azure CNI IP exhaustion, ECR, Artifact Registry and
+  ACR pull permissions, Docker Hub pull caches, EBS, Azure disk and Persistent Disk attach
+  limits, Karpenter EC2NodeClass, and EC2, Compute Engine and Azure vCPU quota in Cluster
+  Autoscaler events. No cloud calls.
 - Azure Kubernetes Service provider (cargo feature `provider-aks`, default): `aks_cluster_info`,
   `aks_node_pools`, `aks_addons`, `aks_identity_check` (workload identity: client-id annotation,
   pod label and injected environment, OIDC issuer, the managed identity and its federated

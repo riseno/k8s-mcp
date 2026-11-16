@@ -71,11 +71,11 @@ fn parse_ca_status(text: &str) -> Option<Value> {
 }
 
 /// Why a read failed, in a few words for the summary (the unavailable note has the detail).
-fn unread(e: &Error) -> String {
+fn unread(e: &Error) -> &'static str {
     if matches!(e, Error::Forbidden(_)) {
-        "not checked (RBAC forbids reading it)".into()
+        "not checked (RBAC forbids reading it)"
     } else {
-        "not checked (the read failed)".into()
+        "not checked (the read failed)"
     }
 }
 

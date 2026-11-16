@@ -45,24 +45,19 @@ pub struct Callers {
 impl Callers {
     /// `None` (every authenticated caller) when no pattern is given.
     pub fn new(patterns: &[String]) -> anyhow::Result<Option<Self>> {
-        let patterns: Vec<&str> = patterns
-            .iter()
-            .map(|p| p.trim())
-            .filter(|p| !p.is_empty())
-            .collect();
-        if patterns.is_empty() {
+        let (mut users, mut groups) = (Vec::new(), Vec::new());
+        for p in patterns.iter().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+            match p.strip_prefix("group:") {
+                Some(g) => groups.push(g.to_owned()),
+                None => users.push(p.to_owned()),
+            }
+        }
+        if users.is_empty() && groups.is_empty() {
             return Ok(None);
         }
-        let (groups, users): (Vec<&str>, Vec<&str>) =
-            patterns.iter().partition(|p| p.starts_with("group:"));
-        let owned = |v: Vec<&str>, prefix: &str| -> Vec<String> {
-            v.iter()
-                .map(|p| p.trim_start_matches(prefix).to_owned())
-                .collect()
-        };
         Ok(Some(Self {
-            users: Patterns::new(&owned(users, ""))?,
-            groups: Patterns::new(&owned(groups, "group:"))?,
+            users: Patterns::new(&users)?,
+            groups: Patterns::new(&groups)?,
         }))
     }
 
@@ -150,7 +145,7 @@ impl Auth {
         })
     }
 
-    /// Who the caller is, and whether it may in.
+    /// Who the caller is, and whether it is let in.
     async fn verdict(&self, token: Option<&str>) -> anyhow::Result<Verdict> {
         Ok(match (self, token) {
             (Self::None, _) => Verdict::Allowed("anonymous".into()),

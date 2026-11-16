@@ -49,7 +49,7 @@ fn offline_kubeconfig(dir: &Path, server: &str, user: &str) -> PathBuf {
     std::fs::write(
         &path,
         format!(
-            "apiVersion: v1\nkind: Config\ncurrent-context: test\nclusters:\n- name: test\n  cluster: {{server: '{server}'}}\ncontexts:\n- name: test\n  context: {{cluster: test, user: test, namespace: shop}}\nusers:\n- name: test\n  user:\n{user}\n"
+            "apiVersion: v1\nkind: Config\ncurrent-context: test\nclusters:\n- name: test\n  cluster: {{server: '{server}'}}\ncontexts:\n- name: test\n  context: {{cluster: test, user: test, namespace: shop}}\n- name: prod\n  context: {{cluster: test, user: test}}\nusers:\n- name: test\n  user:\n{user}\n"
         ),
     )
     .unwrap();
@@ -103,6 +103,30 @@ async fn default_tool_list_is_read_only_and_well_formed() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("not allowed"), "{err}");
+    // Names the kubeconfig does not have get no --contexts advice (issue #51), after the
+    // template value is percent-decoded.
+    for (uri, context) in [
+        (
+            "k8s-mcp://cluster/docker-desktop/overview",
+            "docker-desktop",
+        ),
+        (
+            "k8s-mcp://cluster/..%2F..%2Fpolicy/overview",
+            "../../policy",
+        ),
+    ] {
+        let err = client
+            .read_resource(ReadResourceRequestParams::new(uri))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("context {context:?} is not in the kubeconfig"))
+                && err.contains("allowed contexts: test.")
+                && !err.contains("--contexts"),
+            "{err}"
+        );
+    }
     let policy = client
         .read_resource(ReadResourceRequestParams::new("k8s-mcp://policy"))
         .await

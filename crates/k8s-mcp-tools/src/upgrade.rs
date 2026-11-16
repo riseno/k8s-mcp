@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::common::{Scope, envelope, list_scoped, scope, soft};
+use crate::common::{Scope, ensure_namespace, envelope, list_scoped, scope, soft};
 use crate::read::add_notes;
 use crate::{Ctx, Envelope};
 
@@ -207,6 +207,10 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         input.namespace.is_none(),
     )
     .await?;
+    // A mistyped namespace must not read as "nothing found" (#67).
+    if input.namespace.is_some() {
+        ensure_namespace(&sc).await?;
+    }
     let client = sc.target.client.clone();
     let info = client
         .apiserver_version()

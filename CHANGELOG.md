@@ -18,6 +18,9 @@ All notable changes are documented here. The format follows
 - The `upgrade_readiness` summary counts the objects behind each check instead of checklist
   rows: `blocked by 4 PodDisruptionBudgets; review 4 deprecated APIs and 17 single-replica
   workloads` rather than `1 blocked, 2 to review` (#66).
+- `upgrade_readiness`, `autoscaling_status`, `recent_changes` and `diagnose_dns` reject a
+  `namespace` that does not exist, like the other namespaced tools, instead of reporting nothing
+  found there (#67).
 
 ## [0.3.0] - 2026-11-16
 

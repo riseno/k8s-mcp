@@ -1486,6 +1486,10 @@ async fn recent_changes_reports_rollouts_and_helm_releases() {
         "metadata": {"name": "sh.helm.release.v1.shop.v7", "namespace": "shop", "creationTimestamp": "2026-11-14T11:30:00Z",
             "labels": {"owner": "helm", "name": "shop", "version": "7", "status": "deployed"}}});
     let mock = MockApi::new()
+        .get(
+            "/api/v1/namespaces/shop",
+            json!({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "shop"}}),
+        )
         .list(
             "/apis/apps/v1/namespaces/shop/replicasets",
             vec![
@@ -1768,4 +1772,55 @@ fn provider_hints_use_the_registered_provider() {
         "{}",
         env.findings[0].fix
     );
+}
+
+/// Issue #67: an explicit namespace that does not exist is an error, not "nothing found", in
+/// the tools that list across it.
+#[tokio::test]
+async fn unknown_namespaces_are_rejected() {
+    let mock = MockApi::new().start();
+    let ctx = ctx(&mock, Policy::permissive());
+    let ns = || Some("no-such-ns".to_owned());
+    let errors = [
+        k8s_mcp_tools::upgrade_readiness(
+            &ctx,
+            k8s_mcp_tools::UpgradeReadinessInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+        k8s_mcp_tools::autoscaling_status(
+            &ctx,
+            AutoscalingStatusInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+        k8s_mcp_tools::recent_changes(
+            &ctx,
+            k8s_mcp_tools::RecentChangesInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+        k8s_mcp_tools::diagnose_dns(
+            &ctx,
+            DiagnoseDnsInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+    ];
+    for e in errors {
+        let e = e.expect("an unknown namespace must fail").to_string();
+        assert!(e.contains("namespace \"no-such-ns\" does not exist"), "{e}");
+    }
 }

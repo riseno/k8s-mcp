@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::common::{envelope, list_scoped, retain_recent, scope, soft};
+use crate::common::{ensure_namespace, envelope, list_scoped, retain_recent, scope, soft};
 use crate::read::add_notes;
 use crate::{Ctx, Envelope};
 
@@ -88,6 +88,10 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
         input.namespace.is_none(),
     )
     .await?;
+    // A mistyped namespace must not read as "nothing found" (#67).
+    if input.namespace.is_some() {
+        ensure_namespace(&sc).await?;
+    }
     let now = ctx.now();
     let client = sc.target.client.clone();
     let mut un = Vec::new();

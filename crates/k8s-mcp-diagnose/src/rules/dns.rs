@@ -576,6 +576,10 @@ mod tests {
         assert!(out[2].title.contains("api.example.com"), "{}", out[2].title);
     }
 
+    fn spec(ev: &mut DnsEvidence) -> &mut k8s_openapi::api::core::v1::PodSpec {
+        ev.pod.as_mut().unwrap().spec.as_mut().unwrap()
+    }
+
     /// Issue #53: nameservers that skip kube-dns, with and without failed `.svc` lookups.
     #[test]
     fn pod_dns_settings_that_bypass_the_cluster_dns() {
@@ -605,9 +609,6 @@ mod tests {
                 .map(|f| (f.severity, f.confidence, f.fix))
         };
         assert_eq!(bypass(&ev).unwrap().0, Severity::Info, "no failed lookups");
-        fn spec(ev: &mut DnsEvidence) -> &mut k8s_openapi::api::core::v1::PodSpec {
-            ev.pod.as_mut().unwrap().spec.as_mut().unwrap()
-        }
         // The kube-dns IP (or NodeLocal DNSCache) among the nameservers is the cluster DNS.
         for ns in ["10.96.0.10", "169.254.20.10"] {
             spec(&mut ev).dns_config.as_mut().unwrap().nameservers = Some(vec![ns.into()]);

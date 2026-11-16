@@ -287,10 +287,11 @@ pub fn add_notes(e: &mut Envelope, notes: &[Unavailable]) {
         })
         .collect();
     if !unmasked.is_empty() {
-        e.summary.push_str(&format!(
-            " Secret values could not be masked (k8s-mcp may not read Secret {}): the logs may contain them.",
+        e.summary = format!(
+            "{} Secret values could not be masked (k8s-mcp may not read Secret {}): the logs may contain them.",
+            e.summary,
             unmasked.join(", ")
-        ));
+        );
     }
     e.sections.push(Section {
         title: "UNAVAILABLE EVIDENCE".into(),

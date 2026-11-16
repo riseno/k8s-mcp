@@ -7,7 +7,8 @@ use k8s_mcp_core::finding::rank;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::rules::parse_version;
 use k8s_mcp_diagnose::rules::upgrade::{
-    checklist, deprecated_crd_versions, requested_deprecated_apis, scan_targets, stale_writes,
+    checklist, deprecated_crd_versions, requested_deprecated_apis, scan_targets, split_served,
+    stale_writes,
 };
 use k8s_mcp_diagnose::{DeprecatedApi, StaleWrite, Unavailable, UpgradeEvidence};
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
@@ -248,6 +249,23 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
             None
         }
     };
+    // Issue #65: the gauge keeps entries for group/versions no longer served (a deleted CRD)
+    // until the API server restarts. Without discovery, nothing is dropped.
+    let (requested, unserved) = match (requested, client.list_api_groups().await) {
+        (Some(r), Ok(groups)) => {
+            let served: Vec<String> = std::iter::once("v1".to_owned())
+                .chain(
+                    groups
+                        .groups
+                        .into_iter()
+                        .flat_map(|g| g.versions.into_iter().map(|v| v.group_version)),
+                )
+                .collect();
+            let (r, u) = split_served(r, &served);
+            (Some(r), u)
+        }
+        (r, _) => (r, Vec::new()),
+    };
     let crds = soft(
         Api::<CustomResourceDefinition>::all(client.clone())
             .list(&ListParams::default())
@@ -297,6 +315,7 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         current,
         target,
         requested,
+        unserved,
         deprecated_crd_versions: crd_versions,
         stale_writes: stale,
         nodes,

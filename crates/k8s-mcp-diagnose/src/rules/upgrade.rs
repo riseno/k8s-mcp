@@ -210,6 +210,17 @@ pub fn requested_deprecated_apis(metrics: &str) -> Vec<DeprecatedApi> {
     out
 }
 
+/// Split metric entries into those the cluster still serves and those it does not (the gauge
+/// keeps an entry until the API server restarts, also after its CRD is deleted). `served` holds
+/// `group/version` strings, with `v1` for the core group.
+pub fn split_served(
+    apis: Vec<DeprecatedApi>,
+    served: &[String],
+) -> (Vec<DeprecatedApi>, Vec<DeprecatedApi>) {
+    apis.into_iter()
+        .partition(|a| served.contains(&a.group_version()))
+}
+
 /// Served CRD versions marked `deprecated`, with the CRD's storage version as replacement.
 pub fn deprecated_crd_versions(crds: &[CustomResourceDefinition]) -> Vec<DeprecatedApi> {
     let mut out = Vec::new();
@@ -680,16 +691,22 @@ pub fn checklist(ev: &UpgradeEvidence, findings: &[Finding]) -> Vec<Check> {
             format!("none removed by {} in use", version(ev.target)),
         ),
     });
+    let unserved = match ev.unserved.len() {
+        0 => String::new(),
+        n => format!(
+            "; {n} more requested earlier but no longer served (the metric keeps them until the API server restarts)"
+        ),
+    };
     rows.push(
         match findings
             .iter()
             .find(|f| f.id == "upgrade.deprecated_api_in_use")
         {
-            Some(f) => ("deprecated APIs", "warn", f.title.clone()),
+            Some(f) => ("deprecated APIs", "warn", format!("{}{unserved}", f.title)),
             None if ev.requested.is_none() => {
                 ("deprecated APIs", "not checked", "metric unreadable".into())
             }
-            None => ("deprecated APIs", "ok", "none in use".into()),
+            None => ("deprecated APIs", "ok", format!("none in use{unserved}")),
         },
     );
     rows.push(match (&ev.nodes, count("upgrade.kubelet_skew")) {
@@ -847,6 +864,22 @@ mod tests {
             f.evidence
         );
         assert!(f.evidence.iter().any(|e| e.text == "Widget default/w1 last written with probe.k8s-mcp.dev/v1beta1 by kubectl-client-side-apply"));
+        // Issue #65: the deleted CRD's metric entry is neither evidence nor counted.
+        assert!(
+            !f.evidence
+                .iter()
+                .any(|e| e.text.contains("gone.example.com")),
+            "{:?}",
+            f.evidence
+        );
+        assert!(
+            f.title.starts_with("Clients use 1 deprecated API"),
+            "{}",
+            f.title
+        );
+        let rows = checklist(&ev, &out);
+        let row = rows.iter().find(|r| r.0 == "deprecated APIs").unwrap();
+        assert!(row.2.ends_with("1 more requested earlier but no longer served (the metric keeps them until the API server restarts)"), "{}", row.2);
     }
 
     #[test]

@@ -185,6 +185,9 @@ pub struct Opts {
     /// GKE cluster as <project>/<location>/<name>, when detection cannot tell.
     #[arg(long, global = true, env = "K8S_MCP_GKE_CLUSTER")]
     gke_cluster: Option<String>,
+    /// AKS cluster as <subscription>/<resourceGroup>/<name>, when detection cannot tell.
+    #[arg(long, global = true, env = "K8S_MCP_AKS_CLUSTER")]
+    aks_cluster: Option<String>,
     /// Toolsets to expose (comma separated): core, diagnose, eks (provider toolsets are added
     /// per --providers).
     #[arg(
@@ -243,6 +246,7 @@ impl Opts {
             cluster: self.eks_cluster.clone(),
             region: self.eks_region.clone(),
             gke: self.gke_cluster.clone(),
+            aks: self.aks_cluster.clone(),
         };
         Ok(ctx)
     }
@@ -303,7 +307,7 @@ fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
 /// The toolsets to expose: `--toolsets`, plus provider toolsets per `--providers`.
 /// Provider toolsets: name, provider, whether this build has it, and whether its identity flag
 /// was given (which implies the provider).
-fn provider_toolsets(opts: &Opts) -> [(&'static str, ProviderId, bool, bool); 2] {
+fn provider_toolsets(opts: &Opts) -> [(&'static str, ProviderId, bool, bool); 3] {
     [
         (
             "eks",
@@ -317,6 +321,12 @@ fn provider_toolsets(opts: &Opts) -> [(&'static str, ProviderId, bool, bool); 2]
             cfg!(feature = "provider-gke"),
             opts.gke_cluster.is_some(),
         ),
+        (
+            "aks",
+            ProviderId::Aks,
+            cfg!(feature = "provider-aks"),
+            opts.aks_cluster.is_some(),
+        ),
     ]
 }
 
@@ -324,16 +334,16 @@ async fn toolsets(opts: &Opts, ctx: &Ctx) -> anyhow::Result<Vec<String>> {
     if let Some(t) = opts
         .toolsets
         .iter()
-        .find(|t| !matches!(t.as_str(), "core" | "diagnose" | "eks" | "gke"))
+        .find(|t| !matches!(t.as_str(), "core" | "diagnose" | "eks" | "gke" | "aks"))
     {
-        bail!("unknown toolset {t:?}; valid toolsets are core, diagnose, eks and gke");
+        bail!("unknown toolset {t:?}; valid toolsets are core, diagnose, eks, gke and aks");
     }
     let p = &opts.providers;
     if let Some(bad) = p
         .iter()
-        .find(|p| !matches!(p.as_str(), "auto" | "none" | "eks" | "gke"))
+        .find(|p| !matches!(p.as_str(), "auto" | "none" | "eks" | "gke" | "aks"))
     {
-        bail!("unknown provider {bad:?}: use auto, none, eks or gke (AKS arrives later in v0.3)");
+        bail!("unknown provider {bad:?}: use auto, none, eks, gke or aks");
     }
     let mut out = opts.toolsets.clone();
     if p.iter().any(|x| x == "none") {

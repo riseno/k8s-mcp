@@ -1,0 +1,21 @@
+---
+source: crates/k8s-mcp-provider-aks/tests/mocked.rs
+expression: e.render()
+---
+AKS identity of ServiceAccount shop/api: 6 checks (5 passed, 1 failed); cloud checks done. Top finding: The federated credentials of shop-api do not name ServiceAccount shop/api.
+
+FINDINGS
+1. [critical/high] aks.wi.federated_credential_mismatch: The federated credentials of shop-api do not name ServiceAccount shop/api
+   why: A credential trusts this cluster's issuer, but Entra ID also requires its subject to be exactly system:serviceaccount:shop:api and its audience to include api://AzureADTokenExchange; otherwise the token exchange fails with AADSTS70021 (no matching federated identity record).
+   evidence (related): shop-worker: subject system:serviceaccount:shop:worker, audiences api://AzureADTokenExchange
+   fix: Create (or correct) the federated credential: `az identity federated-credential create --identity-name shop-api --resource-group <rg> --name <name> --issuer https://westeurope.oic.prod-aks.azure.com/tenant-1/guid-1/ --subject system:serviceaccount:shop:api --audience api://AzureADTokenExchange`.
+   docs: https://learn.microsoft.com/azure/aks/workload-identity-overview
+
+ITEMS (6)
+SIDE        CHECK                                                           RESULT  DETAIL
+kubernetes  client-id annotation                                            ok      11111111-2222-3333-4444-555555555555
+kubernetes  pods labeled azure.workload.identity/use=true                   ok      1/1 pods labeled
+azure       OIDC issuer enabled                                             ok      https://westeurope.oic.prod-aks.azure.com/tenant-1/guid-1/
+azure       workload identity enabled                                       ok      enabled
+azure       managed identity with the client id                             ok      shop-api
+azure       federated credential for the cluster issuer and ServiceAccount  fail    1 credential(s) for this issuer, none for system:serviceaccount:shop:api with audience api://AzureADTokenExchange

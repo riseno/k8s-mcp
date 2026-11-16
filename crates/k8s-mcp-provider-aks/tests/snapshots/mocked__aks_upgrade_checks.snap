@@ -1,0 +1,6 @@
+---
+source: crates/k8s-mcp-provider-aks/tests/mocked.rs
+expression: "k8s_mcp_provider::upgrade_lines(ProviderId::Aks, &info).join(\"\\n\")"
+---
+AKS control plane 1.33.2; offered: 1.34
+AKS check support plan: passing (KubernetesOfficial)

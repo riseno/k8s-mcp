@@ -6,6 +6,18 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 
 | Id | Detects | Docs |
 |---|---|---|
+| `aks.cluster.local_accounts` | Local accounts are enabled, so a static admin kubeconfig exists | [link](https://learn.microsoft.com/azure/aks/manage-local-accounts-managed-azure-ad) |
+| `aks.cluster.public_endpoint` | The API server is public without authorized IP ranges | [link](https://learn.microsoft.com/azure/aks/api-server-authorized-ip-ranges) |
+| `aks.cluster.unhealthy` | The AKS cluster failed to provision or is stopped | [link](https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/welcome-azure-kubernetes) |
+| `aks.nodepool.unhealthy` | A node pool failed to provision or is stopped | [link](https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/welcome-azure-kubernetes) |
+| `aks.nodepool.version_skew` | A node pool runs an older Kubernetes minor than the control plane | [link](https://learn.microsoft.com/azure/aks/supported-kubernetes-versions) |
+| `aks.wi.env_not_injected` | Pods did not get the workload identity environment injected | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
+| `aks.wi.federated_credential_mismatch` | The federated credential does not name this ServiceAccount | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
+| `aks.wi.federated_credential_missing` | The managed identity has no federated credential for this cluster | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
+| `aks.wi.identity_not_found` | No user-assigned managed identity has the annotated client id | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
+| `aks.wi.not_enabled` | Workload identity is not enabled on the cluster | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
+| `aks.wi.oidc_issuer_disabled` | The cluster's OIDC issuer is disabled | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
+| `aks.wi.pod_label_missing` | Pods lack the azure.workload.identity/use label | [link](https://learn.microsoft.com/azure/aks/workload-identity-overview) |
 | `autoscaling.ca.not_triggered` | The Cluster Autoscaler would not scale up for pending pods | [link](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md) |
 | `autoscaling.ca.unhealthy` | The Cluster Autoscaler reports an unhealthy cluster or node group | [link](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md) |
 | `autoscaling.hpa.at_max` | A HorizontalPodAutoscaler is pinned at maxReplicas | [link](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) |

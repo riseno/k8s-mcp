@@ -4,11 +4,12 @@
 
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Envelope;
+use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::text::parse_duration;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{LogQuery, WorkloadIdentity};
 use k8s_openapi::api::apps::v1::DaemonSet;
-use k8s_openapi::api::core::v1::{Pod, ServiceAccount};
+use k8s_openapi::api::core::v1::{Node, Pod, ServiceAccount};
 use kube::api::{Api, ListParams};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -57,6 +58,33 @@ pub struct LogsInput {
     pub limit: Option<i32>,
     /// Kubeconfig context.
     pub context: Option<String>,
+}
+
+/// Nodes read when the kubeconfig alone does not identify the cluster.
+const DETECT_NODES: u32 = 20;
+
+/// The identity detection gives for `provider`'s cluster: kubeconfig signals first, then a few
+/// nodes (labels, providerIDs) when `complete` says something is still missing.
+pub(crate) async fn detected_identity(
+    ctx: &Ctx,
+    sc: &Scope,
+    provider: ProviderId,
+    complete: impl Fn(&ClusterIdentity) -> bool,
+) -> Option<ClusterIdentity> {
+    let context = &sc.target.context;
+    let of = |d: Option<k8s_mcp_core::provider::Detection>| {
+        d.filter(|d| d.provider == provider).map(|d| d.identity)
+    };
+    let found = of(ctx.clusters.detect_provider(context, &[]));
+    if found.as_ref().is_some_and(&complete) {
+        return found;
+    }
+    let nodes: Vec<Node> = Api::<Node>::all(sc.target.client.clone())
+        .list(&ListParams::default().limit(DETECT_NODES))
+        .await
+        .map(|l| l.items)
+        .unwrap_or_default();
+    of(ctx.clusters.detect_provider(context, &nodes)).or(found)
 }
 
 /// Stamp the envelope with the context it describes.

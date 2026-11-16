@@ -4,6 +4,7 @@
 - [In-cluster endpoint (Helm)](in-cluster.md)
 - [Amazon EKS provider](providers/eks.md)
 - [Google Kubernetes Engine provider](providers/gke.md)
+- [Azure Kubernetes Service provider](providers/aks.md)
 - [MCP clients](clients.md)
 - [Tools](tools.md)
 - [Output format](output.md)
@@ -24,3 +25,4 @@
   - [0010 Provider detection in core](adr/0010-provider-detection-in-core.md)
   - [0011 Upgrade readiness signals](adr/0011-upgrade-readiness-signals.md)
   - [0012 Google Cloud SDK on ring](adr/0012-google-cloud-sdk-on-ring.md)
+  - [0013 Azure through ARM REST on ring](adr/0013-azure-arm-rest-on-ring.md)

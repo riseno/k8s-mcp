@@ -101,7 +101,7 @@ tools! {
         "Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and NodeClaims (launch/registration failures), the Cluster Autoscaler status and NotTriggerScaleUp reasons, and HPAs that cannot read metrics or sit at maxReplicas. Use when pods stay Pending for capacity.",
         |c, i| t::autoscaling_status(c, i).await;
     "upgrade_readiness", "core", t::UpgradeReadinessInput,
-        "Is the cluster ready for the next control-plane minor (or `target_version`)? A checklist: removed and deprecated API versions still in use (the API server's deprecated-API metric, CRD versions marked deprecated, objects last written with them and by whom), kubelets the target leaves beyond the supported skew, PodDisruptionBudgets that block node drains, single-replica workloads, end of standard support, plus the provider's upgrade checks (EKS upgrade insights, GKE release-channel versions) when a provider toolset is registered.",
+        "Is the cluster ready for the next control-plane minor (or `target_version`)? A checklist: removed and deprecated API versions still in use (the API server's deprecated-API metric, CRD versions marked deprecated, objects last written with them and by whom), kubelets the target leaves beyond the supported skew, PodDisruptionBudgets that block node drains, single-replica workloads, end of standard support, plus the provider's upgrade checks (EKS upgrade insights, GKE release-channel versions, AKS upgrade profile) when a provider toolset is registered.",
         |c, i| t::upgrade_readiness(c, i).await;
     "recent_changes", "core", t::RecentChangesInput,
         "What changed recently that could explain this? Rollouts (with image/env-name/resource diffs), objects created or updated (and by which field manager) and Helm release revisions, newest first, in a namespace or the whole cluster (since: default 2h). Env values and object bodies are never read or shown.",
@@ -174,6 +174,26 @@ tools! {
     "gke_logs", "gke", t::LogsInput,
         "Cloud Logging for the cluster: control-plane logs (api, audit, controllerManager, scheduler) or container logs for a namespace or pod, filtered by grep and since (1h). Lines are redacted and untrusted. Control-plane logs are refused while --namespaces restricts namespaces.",
         |c, i| t::gke_logs(c, i).await;
+    #[cfg(feature = "provider-aks")]
+    "aks_cluster_info", "aks", t::ProviderInput,
+        "Azure Kubernetes Service cluster as Azure describes it: version, provisioning and power state, SKU tier, network plugin, API server access (private, authorized IP ranges), OIDC issuer and workload identity, Entra ID integration and Azure RBAC, local accounts, support plan, auto-upgrade channel. Needs Azure credentials (workload identity or a service principal); registered when the cluster is detected as AKS.",
+        |c, i| t::aks_cluster_info(c, i).await;
+    #[cfg(feature = "provider-aks")]
+    "aks_node_pools", "aks", t::ProviderInput,
+        "AKS node pools (mode, VM size, spot, version, count and autoscaler range, provisioning and power state, node image), with version-skew findings.",
+        |c, i| t::aks_node_pools(c, i).await;
+    #[cfg(feature = "provider-aks")]
+    "aks_addons", "aks", t::ProviderInput,
+        "AKS add-on profiles (monitoring, Azure Policy, ...) and whether they are enabled, plus cluster extensions (Flux, Dapr, ...) with their versions and state.",
+        |c, i| t::aks_addons(c, i).await;
+    #[cfg(feature = "provider-aks")]
+    "aks_identity_check", "aks", t::IdentityInput,
+        "Does a ServiceAccount's Azure workload identity work? The azure.workload.identity/client-id annotation, the pods' azure.workload.identity/use label and injected AZURE_* environment, the cluster's OIDC issuer and workload identity, the user-assigned managed identity with that client id and a federated credential naming this cluster's issuer and the ServiceAccount. Without Azure credentials it returns the Kubernetes side with cloud_checks: skipped.",
+        |c, i| t::aks_identity_check(c, i).await;
+    #[cfg(feature = "provider-aks")]
+    "aks_logs", "aks", t::LogsInput,
+        "Log Analytics for the cluster (the monitoring add-on's workspace): container logs (ContainerLogV2) for a namespace or pod, or control-plane logs (api, audit, controllerManager, scheduler; diagnostic settings must send them), filtered by grep and since (1h). Lines are redacted and untrusted. Control-plane logs are refused while --namespaces restricts namespaces.",
+        |c, i| t::aks_logs(c, i).await;
     "find_problems", "diagnose", t::FindProblemsInput,
         "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
         |c, i| t::find_problems(c, i).await;
@@ -260,7 +280,7 @@ impl K8sMcp {
             .destructive(def.tier == Tier::Destructive)
             .idempotent(def.tier == Tier::Read)
             // Provider tools call the cloud's API.
-            .open_world(matches!(def.toolset, "eks" | "gke"));
+            .open_world(matches!(def.toolset, "eks" | "gke" | "aks"));
         Tool::new(def.name, def.description, def.input_schema.clone())
             .with_output_schema::<Envelope>()
             .with_annotations(annotations)
@@ -387,6 +407,10 @@ fn rules_catalogue() -> Vec<k8s_mcp_core::finding::RuleMeta> {
     all.extend_from_slice(t::GKE_RULES);
     #[cfg(feature = "provider-gke")]
     all.extend_from_slice(t::GKE_IDENTITY_RULES);
+    #[cfg(feature = "provider-aks")]
+    all.extend_from_slice(t::AKS_RULES);
+    #[cfg(feature = "provider-aks")]
+    all.extend_from_slice(t::AKS_IDENTITY_RULES);
     all.sort_by_key(|r| r.id);
     all
 }
@@ -830,7 +854,11 @@ mod tests {
     /// v0.3 AC 1: every provider has the same capabilities, with the same input schema and the
     /// same tier and toolset rules, so the assistant sees parallel tools. Their outputs share
     /// one set of renderers (`k8s_mcp_provider::*_envelope`), so the columns match too.
-    #[cfg(all(feature = "provider-eks", feature = "provider-gke"))]
+    #[cfg(all(
+        feature = "provider-eks",
+        feature = "provider-gke",
+        feature = "provider-aks"
+    ))]
     #[test]
     fn provider_tools_have_parity() {
         let tools = all_tools();
@@ -840,30 +868,37 @@ mod tests {
                 .find(|t| t.name == name)
                 .unwrap_or_else(|| panic!("{name} missing"))
         };
-        for (eks, gke) in [
-            ("eks_cluster_info", "gke_cluster_info"),
-            ("eks_nodegroups", "gke_node_pools"),
-            ("eks_addons", "gke_addons"),
-            ("eks_identity_check", "gke_identity_check"),
-            ("eks_logs", "gke_logs"),
+        for [eks, gke, aks] in [
+            ["eks_cluster_info", "gke_cluster_info", "aks_cluster_info"],
+            ["eks_nodegroups", "gke_node_pools", "aks_node_pools"],
+            ["eks_addons", "gke_addons", "aks_addons"],
+            [
+                "eks_identity_check",
+                "gke_identity_check",
+                "aks_identity_check",
+            ],
+            ["eks_logs", "gke_logs", "aks_logs"],
         ] {
-            let (a, b) = (get(eks), get(gke));
-            assert_eq!(a.input_schema, b.input_schema, "{eks} vs {gke}");
+            let (a, b, c) = (get(eks), get(gke), get(aks));
             assert!(
-                a.tier == b.tier && a.toolset == "eks" && b.toolset == "gke",
-                "{eks} vs {gke}"
+                a.input_schema == b.input_schema && b.input_schema == c.input_schema,
+                "{eks}, {gke}, {aks}"
+            );
+            assert!(a.tier == b.tier && b.tier == c.tier, "{eks}, {gke}, {aks}");
+            assert_eq!([a.toolset, b.toolset, c.toolset], ["eks", "gke", "aks"]);
+        }
+        for set in ["gke", "aks"] {
+            let names: Vec<&str> = tools
+                .iter()
+                .filter(|t| t.toolset == set)
+                .map(|t| t.name)
+                .collect();
+            assert_eq!(
+                names.len(),
+                5,
+                "{set}_access arrives in v1.0 (PROPOSAL §8.4): {names:?}"
             );
         }
-        let gke: Vec<&str> = tools
-            .iter()
-            .filter(|t| t.toolset == "gke")
-            .map(|t| t.name)
-            .collect();
-        assert_eq!(
-            gke.len(),
-            5,
-            "gke_access arrives in v1.0 (PROPOSAL §8.4): {gke:?}"
-        );
     }
 
     #[test]
@@ -936,9 +971,9 @@ mod docs {
 
     fn tools_md() -> String {
         let mut out = String::from(
-            "# Tool reference\n\n<!-- Generated by `cargo xtask docs` from the tool registry. Do not edit. -->\n\nEvery tool is read-only (`readOnlyHint: true`); the `eks` and `gke` toolsets are registered when the cluster is detected as EKS or GKE (`--providers`) and call the AWS or Google Cloud APIs. Every cluster tool takes an optional `context`; namespaced tools take an optional `namespace` (default: the context's namespace). Outputs use the envelope described in [output.md](output.md).\n",
+            "# Tool reference\n\n<!-- Generated by `cargo xtask docs` from the tool registry. Do not edit. -->\n\nEvery tool is read-only (`readOnlyHint: true`); the `eks`, `gke` and `aks` toolsets are registered when the cluster is detected as EKS, GKE or AKS (`--providers`) and call the AWS, Google Cloud or Azure APIs. Every cluster tool takes an optional `context`; namespaced tools take an optional `namespace` (default: the context's namespace). Outputs use the envelope described in [output.md](output.md).\n",
         );
-        for set in ["core", "diagnose", "eks", "gke"] {
+        for set in ["core", "diagnose", "eks", "gke", "aks"] {
             let _ = write!(out, "\n## Toolset `{set}`\n");
             for t in all_tools().into_iter().filter(|t| t.toolset == set) {
                 let _ = write!(

@@ -2,9 +2,15 @@
 //! Tool implementations: gather data through kube, apply policy and redaction, call the
 //! pure rule engine, and shape everything into an [`Envelope`]. Transport-agnostic.
 
+#[cfg(feature = "provider-aks")]
+mod aks;
 mod autoscaling;
 mod changes;
-#[cfg(any(feature = "provider-eks", feature = "provider-gke"))]
+#[cfg(any(
+    feature = "provider-eks",
+    feature = "provider-gke",
+    feature = "provider-aks"
+))]
 mod cloud;
 mod common;
 mod diagnose;
@@ -29,9 +35,15 @@ pub use k8s_mcp_core::envelope::Envelope;
 use k8s_mcp_core::policy::Policy;
 use k8s_mcp_core::redact::Redactor;
 
+#[cfg(feature = "provider-aks")]
+pub use aks::{aks_addons, aks_cluster_info, aks_identity_check, aks_logs, aks_node_pools};
 pub use autoscaling::{AutoscalingStatusInput, autoscaling_status};
 pub use changes::{RecentChangesInput, RolloutHistoryInput, recent_changes, rollout_history};
-#[cfg(any(feature = "provider-eks", feature = "provider-gke"))]
+#[cfg(any(
+    feature = "provider-eks",
+    feature = "provider-gke",
+    feature = "provider-aks"
+))]
 pub use cloud::{IdentityInput, LogsInput, ProviderInput};
 pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
@@ -44,6 +56,10 @@ pub use eks::{
 };
 #[cfg(feature = "provider-gke")]
 pub use gke::{gke_addons, gke_cluster_info, gke_identity_check, gke_logs, gke_node_pools};
+#[cfg(feature = "provider-aks")]
+pub use k8s_mcp_provider_aks::RULES as AKS_RULES;
+#[cfg(feature = "provider-aks")]
+pub use k8s_mcp_provider_aks::identity::RULES as AKS_IDENTITY_RULES;
 #[cfg(feature = "provider-eks")]
 pub use k8s_mcp_provider_eks::RULES as EKS_RULES;
 #[cfg(feature = "provider-eks")]
@@ -93,6 +109,8 @@ pub struct CloudOverride {
     pub region: Option<String>,
     /// GKE cluster as `project/location/name` (`--gke-cluster`).
     pub gke: Option<String>,
+    /// AKS cluster as `subscription/resourceGroup/name` (`--aks-cluster`).
+    pub aks: Option<String>,
 }
 
 impl Ctx {

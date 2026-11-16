@@ -1302,9 +1302,36 @@ async fn autoscaling_status_without_karpenter_or_ca() {
     .unwrap();
     assert_eq!(
         env.summary,
-        "no Karpenter; no Cluster Autoscaler status; 0 HPAs; no problems found by the diagnosis rules."
+        "no Karpenter; no Cluster Autoscaler status ConfigMap; 0 HPAs; no problems found by the diagnosis rules."
     );
     assert!(env.sections.is_empty(), "{:?}", env.sections);
+}
+
+/// Issue #50: unreadable is not absent. Karpenter forbidden by RBAC and kube-system outside
+/// the namespace policy say "not checked", and the CA status ConfigMap forbidden too.
+#[tokio::test]
+async fn autoscaling_status_tells_not_checked_from_absent() {
+    let mock = MockApi::new()
+        .forbid("/apis/karpenter.sh/v1/nodepools")
+        .forbid("/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status")
+        .list("/apis/autoscaling/v2/horizontalpodautoscalers", vec![])
+        .list("/api/v1/events", vec![])
+        .start();
+    let summary = |p| async {
+        k8s_mcp_tools::autoscaling_status(&ctx(&mock, p), AutoscalingStatusInput::default())
+            .await
+            .unwrap()
+            .summary
+    };
+    assert_eq!(
+        summary(policy(&[], &["kube-system"])).await,
+        "Karpenter not checked (RBAC forbids reading it); Cluster Autoscaler status not checked (kube-system is outside the namespace policy); 0 HPAs; no problems found by the diagnosis rules."
+    );
+    assert!(
+        summary(Policy::permissive())
+            .await
+            .contains("; Cluster Autoscaler status not checked (RBAC forbids reading it);")
+    );
 }
 
 /// v0.2 acceptance criterion 3 through cluster_overview: EKS and its identity from node

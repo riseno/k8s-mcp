@@ -17,6 +17,10 @@ All notable changes are documented here. The format follows
   `not configured` instead of a failure, a missing OIDC provider or role as `fail`, and
   tallies the results in the summary (`2 checks (1 not configured, 1 skipped): no cloud
   identity that k8s-mcp can see`) instead of "1 failed ... no problems found" (#48).
+- `autoscaling_status` summaries tell "not checked" from "absent": `Karpenter not checked
+  (RBAC forbids reading it)`, `Cluster Autoscaler status not checked (kube-system is outside
+  the namespace policy)` and `no Cluster Autoscaler status ConfigMap`, instead of
+  `no Karpenter; no Cluster Autoscaler status` for all of them (#50).
 
 ## [0.2.0] - 2026-11-16
 

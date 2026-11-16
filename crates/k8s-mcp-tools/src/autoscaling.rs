@@ -70,6 +70,15 @@ fn parse_ca_status(text: &str) -> Option<Value> {
         .filter(|v| v.get("autoscalerStatus").is_some())
 }
 
+/// Why a read failed, in a few words for the summary (the unavailable note has the detail).
+fn unread(e: &Error) -> String {
+    if matches!(e, Error::Forbidden(_)) {
+        "not checked (RBAC forbids reading it)".into()
+    } else {
+        "not checked (the read failed)".into()
+    }
+}
+
 /// Report Karpenter, Cluster Autoscaler and HPA state, with findings.
 pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Result<Envelope> {
     let sc = scope(
@@ -82,23 +91,21 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
     let now = ctx.now();
     let client = sc.target.client.clone();
     let mut un = Vec::new();
-    let nodepools = soft(
-        list_karpenter(&client, "NodePool", "nodepools").await,
-        "Karpenter NodePools",
-        &mut un,
-    )
-    .flatten();
+    let nodepools = list_karpenter(&client, "NodePool", "nodepools").await;
+    let karpenter_unread = nodepools.as_ref().err().map(unread);
+    let nodepools = soft(nodepools, "Karpenter NodePools", &mut un).flatten();
+    let mut nodeclaims_unread = None;
     let nodeclaims = if nodepools.is_some() {
-        soft(
-            list_karpenter(&client, "NodeClaim", "nodeclaims").await,
-            "Karpenter NodeClaims",
-            &mut un,
-        )
-        .flatten()
-        .unwrap_or_default()
+        let claims = list_karpenter(&client, "NodeClaim", "nodeclaims").await;
+        nodeclaims_unread = claims.as_ref().err().map(unread);
+        soft(claims, "Karpenter NodeClaims", &mut un)
+            .flatten()
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
+    // What the summary says when there is no parsed status.
+    let mut ca_absent = "no Cluster Autoscaler status ConfigMap".to_owned();
     let ca_status = if ctx.policy.namespace_allowed(CA_NS) {
         match Api::<ConfigMap>::namespaced(client.clone(), CA_NS)
             .get_opt(CA_STATUS)
@@ -110,6 +117,7 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
                     .and_then(|d| d.get("status").cloned());
                 let parsed = text.as_deref().and_then(parse_ca_status);
                 if text.is_some() && parsed.is_none() {
+                    ca_absent = "Cluster Autoscaler status not understood (older format)".into();
                     un.push(Unavailable {
                         what: "the Cluster Autoscaler status".into(),
                         reason: "not in the YAML format of Cluster Autoscaler 1.30+; read the ConfigMap directly".into(),
@@ -118,14 +126,19 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
                 parsed
             }
             Err(e) => {
+                let e = Error::kube(format!("get configmap {CA_STATUS}"), &e);
+                ca_absent = format!("Cluster Autoscaler status {}", unread(&e));
                 un.push(Unavailable {
                     what: "the Cluster Autoscaler status".into(),
-                    reason: Error::kube(format!("get configmap {CA_STATUS}"), &e).to_string(),
+                    reason: e.to_string(),
                 });
                 None
             }
         }
     } else {
+        ca_absent =
+            "Cluster Autoscaler status not checked (kube-system is outside the namespace policy)"
+                .into();
         un.push(Unavailable {
             what: "the Cluster Autoscaler status in kube-system".into(),
             reason: "kube-system is outside the namespaces k8s-mcp may read (--namespaces / --deny-namespaces)".into(),
@@ -169,13 +182,17 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
     };
     let findings = k8s_mcp_diagnose::diagnose_autoscaling(&ev);
 
-    let mut parts = vec![match &ev.nodepools {
-        Some(np) => format!(
-            "Karpenter {} NodePools, {} NodeClaims",
+    let mut parts = vec![match (&ev.nodepools, karpenter_unread) {
+        (Some(np), _) => format!(
+            "Karpenter {} NodePools, {}",
             np.len(),
-            ev.nodeclaims.len()
+            nodeclaims_unread.map_or_else(
+                || format!("{} NodeClaims", ev.nodeclaims.len()),
+                |why| format!("NodeClaims {why}")
+            )
         ),
-        None => "no Karpenter".into(),
+        (None, Some(why)) => format!("Karpenter {why}"),
+        (None, None) => "no Karpenter".into(),
     }];
     parts.push(match &ev.ca_status {
         Some(s) => format!(
@@ -183,7 +200,7 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
             s["autoscalerStatus"].as_str().unwrap_or("?"),
             s["nodeGroups"].as_array().map_or(0, Vec::len)
         ),
-        None => "no Cluster Autoscaler status".into(),
+        None => ca_absent,
     });
     if let Some(h) = &ev.hpas {
         parts.push(format!("{} HPAs", h.len()));

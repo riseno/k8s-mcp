@@ -2,6 +2,7 @@
 
 - [Install](install.md)
 - [In-cluster endpoint (Helm)](in-cluster.md)
+- [Amazon EKS provider](providers/eks.md)
 - [MCP clients](clients.md)
 - [Tools](tools.md)
 - [Output format](output.md)

@@ -6,6 +6,16 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Amazon EKS provider (cargo feature `provider-eks`, default): `eks_cluster_info`,
+  `eks_nodegroups`, `eks_addons` and `eks_access`, with rules `eks.cluster.*` (health
+  issues, public endpoint, audit logging off, aws-auth-only access), `eks.nodegroup.*`
+  (health issues, version skew), `eks.addon.*` (degraded, incompatible with the cluster
+  version) and `eks.access.aws_auth_invalid`. Registered with `--providers auto` (default)
+  when the default context is EKS with high confidence, or `--providers eks`;
+  `--eks-cluster`/`--eks-region` when detection cannot tell. AWS credentials come from the
+  default chain (no `credential_process`); the HTTP client is rustls + ring (ADR 0007). See
+  `docs/providers/eks.md`.
+- `k8s-mcp-provider`: the provider trait and cloud-neutral report types (ADR 0006).
 - Cloud provider detection with no cloud calls (ADR 0010): EKS, GKE and AKS from node
   providerIDs and labels, the API server host, the exec plugin and its arguments, and the
   context name, with the cluster's name, region and account. `cluster_overview` reports it

@@ -18,6 +18,15 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 | `dns.ndots_hint` | External names go through the cluster search domains first (ndots) | [link](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/) |
 | `dns.netpol_blocks_egress` | A NetworkPolicy blocks DNS (port 53) egress | [link](https://kubernetes.io/docs/concepts/services-networking/network-policies/) |
 | `dns.no_endpoints` | The kube-dns Service has no ready endpoints | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
+| `eks.access.aws_auth_invalid` | The aws-auth ConfigMap cannot be parsed | [link](https://docs.aws.amazon.com/eks/latest/userguide/grant-k8s-access.html) |
+| `eks.addon.incompatible` | An EKS add-on version is not compatible with the cluster version | [link](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html) |
+| `eks.addon.unhealthy` | An EKS add-on is degraded or failed | [link](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html) |
+| `eks.cluster.audit_logging_off` | Control-plane audit logs are not sent to CloudWatch | [link](https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html) |
+| `eks.cluster.auth_configmap_only` | Cluster access relies only on the aws-auth ConfigMap | [link](https://docs.aws.amazon.com/eks/latest/userguide/grant-k8s-access.html) |
+| `eks.cluster.public_endpoint` | The API server endpoint is public to the whole internet | [link](https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html) |
+| `eks.cluster.unhealthy` | The EKS control plane reports health issues | [link](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html) |
+| `eks.nodegroup.unhealthy` | A managed node group reports health issues | [link](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html) |
+| `eks.nodegroup.version_skew` | A node group runs an older Kubernetes minor than the control plane | [link](https://docs.aws.amazon.com/eks/latest/best-practices/introduction.html) |
 | `job.backoff_limit` | Job failed: its pods failed more often than backoffLimit allows | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `job.deadline_exceeded` | Job failed: it ran longer than activeDeadlineSeconds | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `node.cordoned` | Node is cordoned: no new pods are scheduled there | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |

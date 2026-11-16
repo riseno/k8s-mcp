@@ -1,0 +1,21 @@
+---
+source: crates/k8s-mcp-provider-eks/tests/mocked.rs
+expression: e.render()
+---
+EKS 3 principals mapped into the cluster, 2 with cluster-admin. Top finding: aws-auth mapUsers is not valid YAML.
+
+FINDINGS
+1. [high/high] eks.access.aws_auth_invalid: aws-auth mapUsers is not valid YAML
+   why: EKS ignores mappings it cannot parse: nodes mapped through aws-auth cannot join and users mapped there are refused.
+   evidence (status): error: line 3 column 11: unclosed bracket '['
+   fix: Fix the YAML of the aws-auth ConfigMap in kube-system (a list of rolearn/userarn, username and groups), or move the mappings to access entries.
+   docs: https://docs.aws.amazon.com/eks/latest/userguide/grant-k8s-access.html
+
+ITEMS (3)
+PRINCIPAL                                      SOURCE                   USERNAME                                                               GRANTS                             ADMIN
+arn:aws:iam::123456789012:role/break-glass     aws-auth mapRoles        break-glass                                                            system:masters                     true
+arn:aws:iam::123456789012:role/platform-admin  access entry (STANDARD)  arn:aws:sts::123456789012:assumed-role/platform-admin/{{SessionName}}  AmazonEKSClusterAdminPolicy        true
+arn:aws:iam::123456789012:role/nodes           aws-auth mapRoles        system:node:{{EC2PrivateDNSName}}                                      system:bootstrappers,system:nodes  false
+
+NEXT
+- get_resource {"kind":"ConfigMap","name":"aws-auth","namespace":"kube-system","view":"yaml"} : read the aws-auth ConfigMap

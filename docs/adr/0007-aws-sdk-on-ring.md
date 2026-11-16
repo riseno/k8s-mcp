@@ -17,3 +17,10 @@ maintainer). EKS tests use `aws-smithy-mocks` as a dev-dependency (approved).
 ## Consequences
 `cargo tree -i aws-lc-rs` must stay empty; `deny.toml` keeps banning `aws-lc-rs`/`aws-lc-sys`.
 SDK upgrades must keep the `rustls-ring` client path working.
+
+`aws-config` is built without `credentials-process` (the default chain otherwise stays:
+environment, profiles, SSO cache, web identity, ECS/Pod Identity, IMDS): k8s-mcp runs no
+commands besides kubeconfig exec plugins. `aws-smithy-mocks` turns on serde_json's
+`preserve_order` in workspace test builds (never in the release binary), which adds the
+Zlib-licensed `foldhash` to the dev graph (allowed in `deny.toml`) and is why generated docs
+sort map keys themselves.

@@ -6,7 +6,7 @@ Thanks for helping. Contributions are accepted under the Apache-2.0 licence with
 
 ## Ground rules
 
-- Read [CLAUDE.md](CLAUDE.md) (project conventions) and the relevant part of [PROPOSAL.md](PROPOSAL.md).
+- Read [CLAUDE.md](CLAUDE.md) (project conventions) and [docs/progress.md](docs/progress.md) (what is planned next).
 - stdout is the MCP channel: never print to it from server code. Logs go to stderr.
 - No `unwrap`/`expect` outside tests. Errors say what failed, why, and what to do next.
 - Never weaken a safety default or disable a safety test.

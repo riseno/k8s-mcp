@@ -19,6 +19,6 @@ access for the strongest guarantee.
 Set `env.PATH` in the client config or pass `--path-prepend /opt/homebrew/bin`.
 `k8s-mcp doctor` shows which plugin is missing.
 
-**How is this different from other Kubernetes MCP servers?** See PROPOSAL.md §3: read-only
+**How is this different from other Kubernetes MCP servers?** It is read-only
 by default, no runtime or kubectl, deterministic diagnosis with evidence, and (from v0.2)
 EKS/GKE/AKS provider depth with one safety model.

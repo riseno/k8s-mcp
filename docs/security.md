@@ -1,7 +1,6 @@
 # Security and threat model
 
-The full threat model is PROPOSAL.md §12. This page summarises what is enforced and how
-it is tested.
+This page summarises the threat model: what is enforced and how it is tested.
 
 | Threat | Mitigation | Test |
 |---|---|---|

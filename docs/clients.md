@@ -6,7 +6,7 @@ Desktop, Cursor and Grok Build. Grok Build also reads `.mcp.json`, `.cursor/mcp.
 
 ## Verified clients
 
-Manual verification (PROPOSAL §16 v0.1 criterion 2) is recorded here with client versions.
+Manual verification (v0.1 acceptance criterion 2 in [progress.md](progress.md)) is recorded here with client versions.
 
 | Client | Version | Platform | Result |
 |---|---|---|---|

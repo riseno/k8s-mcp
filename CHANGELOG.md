@@ -21,6 +21,12 @@ All notable changes are documented here. The format follows
 - `upgrade_readiness`, `autoscaling_status`, `recent_changes` and `diagnose_dns` reject a
   `namespace` that does not exist, like the other namespaced tools, instead of reporting nothing
   found there (#67).
+- `upgrade_readiness` explains core `v1 endpoints` (replaced by EndpointSlices; on most
+  clusters the control plane's endpoints controller writes them and kube-proxy reads them, so
+  act only if your own tools use them) instead of a bare "plan the move", and in-cluster, a
+  forbidden scan of objects written through a deprecated CRD version names the
+  `rbac.extraRules` entry to add (#68). Endpoints objects are not read for their writers:
+  listing them would itself be a deprecated-API request.
 
 ## [0.3.0] - 2026-11-16
 

@@ -164,6 +164,16 @@ const SHOWN: usize = 5;
 const SUPPORT_WARNING_DAYS: i64 = 90;
 const METRIC: &str = "apiserver_requested_deprecated_apis";
 
+/// Built-in APIs deprecated without a planned removal, with what replaces them and who uses
+/// them on most clusters: group, version, resource, replacement, note.
+const DEPRECATED: &[(&str, &str, &str, &str, &str)] = &[(
+    "",
+    "v1",
+    "endpoints",
+    "discovery.k8s.io/v1 EndpointSlices",
+    "the control plane's endpoints controller writes them and kube-proxy or older clients read them; act only if your own tools use v1 Endpoints (the API server audit log names the callers)",
+)];
+
 fn removal(group: &str, version: &str, resource: &str) -> Option<(u32, &'static str)> {
     REMOVED
         .iter()
@@ -195,8 +205,13 @@ pub fn requested_deprecated_apis(metrics: &str) -> Vec<DeprecatedApi> {
             let removed_in = parse_version(&get("removed_release"))
                 .map(|(_, m)| m)
                 .or(table.map(|(m, _)| m));
+            let kept = DEPRECATED
+                .iter()
+                .find(|(g, v, r, ..)| *g == group && *v == version && *r == resource);
             DeprecatedApi {
-                replacement: table.map(|(_, r)| r.to_owned()),
+                replacement: table
+                    .map(|(_, r)| r.to_owned())
+                    .or_else(|| kept.map(|(_, _, _, r, _)| (*r).to_owned())),
                 group,
                 version,
                 resource,
@@ -457,12 +472,25 @@ fn apis(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
         f = f.evidence(
             Source::Status,
             format!(
-                "{}{}{}",
+                "{}{}{}{}",
                 describe(api),
                 if api.crd { " (CRD version)" } else { "" },
                 api.replacement
                     .as_ref()
                     .map(|r| format!(", use {r}"))
+                    .unwrap_or_default(),
+                // Issue #68: on most clusters this one is the control plane itself.
+                DEPRECATED
+                    .iter()
+                    .find(|(g, v, r, ..)| {
+                        (*g, *v, *r)
+                            == (
+                                api.group.as_str(),
+                                api.version.as_str(),
+                                api.resource.as_str(),
+                            )
+                    })
+                    .map(|(.., note)| format!(": {note}"))
                     .unwrap_or_default()
             ),
         );
@@ -871,6 +899,10 @@ mod tests {
         assert_eq!(
             (apis[0].resource.as_str(), apis[0].removed_in),
             ("endpoints", None)
+        );
+        assert_eq!(
+            apis[0].replacement.as_deref(),
+            Some("discovery.k8s.io/v1 EndpointSlices")
         );
         assert_eq!(apis[1].removed_in, Some(32));
         assert_eq!(

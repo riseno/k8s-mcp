@@ -114,10 +114,26 @@ async fn scan(
                     out.extend(stale_writes(t, &info.kind, &o.metadata));
                 }
             }
-            Err(e) => un.push(Unavailable {
-                what,
-                reason: Error::kube(format!("list {}", info.plural), &e).to_string(),
-            }),
+            Err(e) => {
+                let err = Error::kube(format!("list {}", info.plural), &e);
+                // Issue #68: in-cluster, name the chart value that grants it.
+                let reason = if err.is_forbidden()
+                    && sc.target.context == k8s_mcp_core::cluster::IN_CLUSTER
+                {
+                    format!(
+                        "the server's ClusterRole cannot list {plural}; add `{{apiGroups: [{group}], resources: [{plural}], verbs: [list]}}` to the chart's rbac.extraRules",
+                        plural = info.plural,
+                        group = if info.group.is_empty() {
+                            "\"\""
+                        } else {
+                            info.group.as_str()
+                        }
+                    )
+                } else {
+                    err.to_string()
+                };
+                un.push(Unavailable { what, reason });
+            }
         }
     }
     out.sort();

@@ -3,7 +3,7 @@
 
 image:
   repository: ghcr.io/riseno/k8s-mcp
-  # Defaults to the chart appVersion.
+  # Defaults to v<chart appVersion>, the release tag images are published under.
   tag: ""
   pullPolicy: IfNotPresent
 

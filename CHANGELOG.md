@@ -5,6 +5,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The Helm chart's default image is `v<appVersion>`, the tag images are published under; chart
+  0.2.0 pointed at `ghcr.io/riseno/k8s-mcp:0.2.0`, which does not exist (#45). The release
+  workflow now checks that the packaged chart's default image resolves before pushing the
+  chart.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

@@ -73,7 +73,7 @@ kubernetes.io/service-name=kubernetes`). Provider tools also need egress to the 
 
 | Value | Default | Purpose |
 |---|---|---|
-| `image.repository`, `image.tag`, `image.pullPolicy` | `ghcr.io/riseno/k8s-mcp`, the chart `appVersion`, `IfNotPresent` | Image |
+| `image.repository`, `image.tag`, `image.pullPolicy` | `ghcr.io/riseno/k8s-mcp`, `v` + the chart `appVersion` (the release tag), `IfNotPresent` | Image |
 | `replicaCount` | `1` | Replicas (clients on protocol `2025-11-25` keep a session: use session affinity with more than one) |
 | `auth.mode` | `tokenreview` | `tokenreview` or `static` |
 | `auth.existingSecret` | `""` | Secret with key `token`, for `static` |

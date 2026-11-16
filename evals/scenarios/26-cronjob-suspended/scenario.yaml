@@ -1,0 +1,9 @@
+id: cronjob-suspended
+symptom: The nightly-backup cron job in eval-cronjob-suspended has not run. Why?
+tool: diagnose_workload
+args: {kind: CronJob, name: nightly-backup, namespace: eval-cronjob-suspended}
+settle_seconds: 5
+expected:
+  primary: cronjob.not_scheduling
+  acceptable: []
+forbidden: [job.backoff_limit, workload.rollout.stuck]

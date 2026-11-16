@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-service-no-ready-endpoints}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: search, namespace: eval-service-no-ready-endpoints}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: search}}
+  template:
+    metadata: {labels: {app: search}}
+    spec:
+      containers:
+        - name: search
+          image: busybox:1.37
+          command: [sh, -c, "sleep 3600"]
+          ports: [{name: http, containerPort: 8080}]
+          # Nothing listens on 8080: the pods run but never become Ready.
+          readinessProbe: {tcpSocket: {port: 8080}, periodSeconds: 2, failureThreshold: 1}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: search, namespace: eval-service-no-ready-endpoints}
+spec:
+  selector: {app: search}
+  ports: [{name: http, port: 80, targetPort: http}]

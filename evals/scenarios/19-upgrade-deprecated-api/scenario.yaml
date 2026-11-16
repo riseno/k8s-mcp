@@ -1,0 +1,9 @@
+id: upgrade-deprecated-api
+symptom: We want to upgrade the cluster. Does anything in eval-upgrade-deprecated-api still use deprecated APIs?
+tool: upgrade_readiness
+args: {namespace: eval-upgrade-deprecated-api}
+settle_seconds: 10
+expected:
+  primary: upgrade.deprecated_api_in_use
+  acceptable: []
+forbidden: [upgrade.removed_api_in_use, upgrade.target_skips_minor, upgrade.pdb_blocks_drain]

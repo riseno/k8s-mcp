@@ -1,0 +1,9 @@
+id: init-container-failing
+symptom: The migrate pod in eval-init-container-failing never starts. Why?
+tool: diagnose_pod
+args: {name: migrate, namespace: eval-init-container-failing}
+settle_seconds: 30
+expected:
+  primary: pod.init.failing
+  acceptable: []
+forbidden: [pod.crashloop.app_error, pod.image.not_found]

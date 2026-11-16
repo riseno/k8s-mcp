@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-init-container-failing}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: migrate, namespace: eval-init-container-failing}
+spec:
+  initContainers:
+    - name: wait-for-db
+      image: busybox:1.37
+      command: [sh, -c, "echo 'error: database migrations failed: relation \"orders\" does not exist' >&2; exit 1"]
+  containers:
+    - name: app
+      image: "registry.k8s.io/pause:3.10"

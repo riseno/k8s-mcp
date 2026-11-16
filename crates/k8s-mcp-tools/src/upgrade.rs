@@ -33,6 +33,10 @@ pub struct UpgradeReadinessInput {
     /// Kubernetes version to upgrade the control plane to, such as `1.35` (default: the next
     /// minor after the current one).
     pub target_version: Option<String>,
+    /// Only check this namespace's PodDisruptionBudgets, workloads and objects (the control
+    /// plane, nodes and the API server's deprecated-API metric are cluster-wide). Default: all
+    /// allowed namespaces.
+    pub namespace: Option<String>,
     /// Kubeconfig context.
     pub context: Option<String>,
 }
@@ -97,7 +101,13 @@ async fn scan(
                 }
                 for o in &list.items {
                     let ns = o.metadata.namespace.as_deref();
-                    if ns.is_some_and(|ns| !ctx.policy.namespace_allowed(ns)) {
+                    let outside = match (&sc.namespace, ns) {
+                        (Some(only), Some(ns)) => only != ns,
+                        (Some(_), None) => true, // cluster-scoped objects are not in the namespace
+                        (None, Some(ns)) => !ctx.policy.namespace_allowed(ns),
+                        (None, None) => false,
+                    };
+                    if outside {
                         continue;
                     }
                     out.extend(stale_writes(t, &info.kind, &o.metadata));
@@ -189,7 +199,13 @@ async fn provider(
 
 /// Check what stands between the cluster and the next control-plane minor.
 pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Result<Envelope> {
-    let sc = scope(ctx, input.context.as_deref(), None, true).await?;
+    let sc = scope(
+        ctx,
+        input.context.as_deref(),
+        input.namespace.as_deref(),
+        input.namespace.is_none(),
+    )
+    .await?;
     let client = sc.target.client.clone();
     let info = client
         .apiserver_version()

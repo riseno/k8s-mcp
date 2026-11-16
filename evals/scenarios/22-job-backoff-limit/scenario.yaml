@@ -1,0 +1,9 @@
+id: job-backoff-limit
+symptom: The report job in eval-job-backoff-limit did not complete. What happened?
+tool: diagnose_workload
+args: {kind: Job, name: report, namespace: eval-job-backoff-limit}
+settle_seconds: 40
+expected:
+  primary: job.backoff_limit
+  acceptable: [pod.crashloop.app_error]
+forbidden: [job.deadline_exceeded]

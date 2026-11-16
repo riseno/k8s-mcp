@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-invalid-image-name}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: web, namespace: eval-invalid-image-name}
+spec:
+  containers:
+    - name: web
+      # Upper case is not allowed in a repository name.
+      image: "ghcr.io/Acme/Web:1.0"

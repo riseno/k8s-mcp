@@ -1,0 +1,9 @@
+id: hpa-not-scaling
+symptom: The checkout HPA in eval-hpa-not-scaling never scales under load. Is autoscaling working?
+tool: autoscaling_status
+args: {namespace: eval-hpa-not-scaling}
+settle_seconds: 45
+expected:
+  primary: autoscaling.hpa.not_scaling
+  acceptable: []
+forbidden: [autoscaling.hpa.at_max]

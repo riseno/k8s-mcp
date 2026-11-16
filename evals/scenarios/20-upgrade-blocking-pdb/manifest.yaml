@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-upgrade-blocking-pdb}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ledger, namespace: eval-upgrade-blocking-pdb}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ledger}}
+  template:
+    metadata: {labels: {app: ledger}}
+    spec: {containers: [{name: ledger, image: "registry.k8s.io/pause:3.10"}]}
+---
+# One replica and minAvailable 1: no eviction is ever allowed.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: ledger, namespace: eval-upgrade-blocking-pdb}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: ledger}}

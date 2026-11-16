@@ -191,7 +191,7 @@ impl Policy {
             "deny_namespaces": self.deny_namespaces.raw(),
             "redaction": self.redact,
             "max_output_bytes": self.max_output_bytes,
-            "secret_values": "never returned",
+            "secret_values": "never returned by object reads; in pod logs, masked only where k8s-mcp may read the Secrets the pod references (otherwise pattern redaction only, and the summary says so)",
         })
     }
 }

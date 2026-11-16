@@ -186,7 +186,14 @@ async fn gather_pod(
                     )
                 }
                 Ok(None) => (Some(false), None),
-                Err(e) => note(&mut un, &format!("Secret {ref_name} (existence only)"), &e),
+                Err(e) => {
+                    let what = if log_tail.is_some() {
+                        format!("Secret {ref_name}{UNMASKED}")
+                    } else {
+                        format!("Secret {ref_name} (existence only)")
+                    };
+                    note(&mut un, &what, &e)
+                }
             },
             RefKind::PersistentVolumeClaim => {
                 match Api::<PersistentVolumeClaim>::namespaced(client.clone(), &ns)
@@ -350,6 +357,10 @@ fn values_of(s: &Secret) -> Vec<String> {
     data.chain(string_data).collect()
 }
 
+/// Ends the note about a Secret whose values could not be read to mask them in logs;
+/// [`add_notes`](crate::read::add_notes) warns about such Secrets in the summary (issue #46).
+pub(crate) const UNMASKED: &str = " values for masking in logs";
+
 /// Values of the Secrets a pod references, for masking them in its logs. When RBAC forbids
 /// reading a Secret, records a note and returns what it could read.
 pub async fn pod_secret_values(sc: &Scope, pod: &Pod, notes: &mut Vec<Unavailable>) -> Vec<String> {
@@ -365,7 +376,7 @@ pub async fn pod_secret_values(sc: &Scope, pod: &Pod, notes: &mut Vec<Unavailabl
             Ok(Some(s)) => out.extend(values_of(&s)),
             Ok(None) => {}
             Err(e) => notes.push(Unavailable {
-                what: format!("Secret {name} values for masking in logs"),
+                what: format!("Secret {name}{UNMASKED}"),
                 reason: format!(
                     "{}; only pattern redaction was applied",
                     Error::kube(format!("read Secret {name}"), &e)

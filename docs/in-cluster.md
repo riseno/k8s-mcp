@@ -15,6 +15,13 @@ The chart creates:
 - a ServiceAccount bound to a read-only ClusterRole (no Secrets; `templates/rbac.yaml`);
 - a binding to `system:auth-delegator`, so the server can validate callers' tokens.
 
+**Secret values in logs.** Without access to Secrets the server cannot mask the values of the
+Secrets a pod uses in that pod's logs: a pod that prints such a value returns it in clear, with
+only pattern redaction (tokens, keys, passwords) applied. Responses say so in the summary
+(`Secret values could not be masked ...`). `rbac.secretsMetadata: true` adds `get` on Secrets
+so the values can be masked; the server still never returns them, but its ServiceAccount can
+then read every Secret.
+
 The pod runs as non-root (UID 65532) with a read-only root filesystem, all capabilities
 dropped and the `RuntimeDefault` seccomp profile. `/healthz` is the liveness probe, and
 `/readyz` (the API server answers within 3 s) is the readiness probe.
@@ -85,7 +92,7 @@ kubernetes.io/service-name=kubernetes`). Provider tools also need egress to the 
 | `clusterDomain` | `cluster.local` | For the accepted Service DNS names |
 | `serviceAccount.create`, `.name`, `.annotations`, `.labels` | `true`, release name, `{}`, `{}` | ServiceAccount and cloud identity |
 | `rbac.create` | `true` | Read-only ClusterRole and bindings |
-| `rbac.secretsMetadata` | `false` | Adds `get` on Secrets, for existence checks and masking Secret values in logs (values are never returned, but the grant allows reading them) |
+| `rbac.secretsMetadata` | `false` | Adds `get` on Secrets, for existence checks and masking Secret values in logs. Without it, logs may contain the values of Secrets a pod uses (see Install). Values are never returned, but the grant allows reading them |
 | `rbac.extraRules` | `[]` | Extra ClusterRole rules |
 | `service.type`, `service.port` | `ClusterIP`, `8080` | Service |
 | `podLabels`, `podAnnotations` | `{}` | Pod metadata |

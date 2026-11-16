@@ -13,6 +13,11 @@ All notable changes are documented here. The format follows
   DNS (#53).
 
 ### Fixed
+- When RBAC hides a Secret a pod uses, `get_logs`, `diagnose_pod` and `diagnose_dns` say in
+  the summary that its values could not be masked and the logs may contain them, instead of
+  only an `UNAVAILABLE EVIDENCE` line. The policy resource's `secret_values`, the server
+  instructions, `docs/in-cluster.md` and `docs/security.md` describe this instead of
+  "never returned" (#46).
 - The Helm chart's default image is `v<appVersion>`, the tag images are published under; chart
   0.2.0 pointed at `ghcr.io/riseno/k8s-mcp:0.2.0`, which does not exist (#45). The release
   workflow now checks that the packaged chart's default image resolves before pushing the

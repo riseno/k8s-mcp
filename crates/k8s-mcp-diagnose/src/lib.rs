@@ -6,6 +6,7 @@
 //! [`diagnose_node`]. Rules live in [`rules`], one module per area.
 
 pub mod evidence;
+pub mod hints;
 pub mod parse;
 pub mod rules;
 #[cfg(test)]

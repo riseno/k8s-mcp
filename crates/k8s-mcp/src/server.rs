@@ -314,7 +314,8 @@ impl K8sMcp {
             }
         };
         let (call, findings, truncated, error) = match result {
-            Ok(env) => {
+            Ok(mut env) => {
+                t::provider_hints(&self.ctx, &mut env);
                 let (r, env) = result_of(
                     env,
                     self.ctx.policy.max_output_bytes,

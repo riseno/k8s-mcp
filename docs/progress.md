@@ -122,7 +122,7 @@ the v0.3 acceptance criterion it serves.
 | 6 | Chart and docs: `docs/providers/gke.md`, `docs/providers/aks.md` (least-privilege roles, §10.3 and Appendix C), an upgrade-readiness page, regenerated tool and rule references, chart RBAC for `/metrics` | ⬜ | |
 | 7 | Eval scenarios 19–27: deprecated API in use (a CRD version marked deprecated), PDB blocking drains, init container failing, Job backoff limit, Service without ready endpoints, invalid image name, missing Secret, untolerated taint, HPA not scaling | ✅ | Done: 27 scenarios pass on kind 1.37 (top-1 27/27, top-3 27/27, forbidden 0/27); scenario 19 ships its CRD in `crds.yaml`; `upgrade_readiness` takes `namespace` so concurrent scenarios do not mix. Results for 0.3.0 are written at release. AC 4 |
 | 8 | Features and size: `provider-gke` and `provider-aks` in the default build if the size allows; report full and lite sizes; publish a `lite` artifact only if the full build exceeds 50 MB stripped | ⬜ | AC 4 |
-| 9 | Provider hints in findings (§8.4 last row: EKS VPC CNI/ECR, GKE Autopilot/quota/Artifact Registry, AKS CNI subnet/ACR/SKU quota) | ⬜ | Deferred from v0.2; in v0.3 (decided) |
+| 9 | Provider hints in findings (§8.4 last row: EKS VPC CNI/ECR, GKE Autopilot/quota/Artifact Registry, AKS CNI subnet/ACR/SKU quota) | ✅ | Done: `k8s_mcp_diagnose::hints` (pure, keyed on rule id and evidence), applied in the server's tool path with the provider from the kubeconfig or the registered toolset; GKE Autopilot resource-class hints are not included (Autopilot is not visible from the Kubernetes side). |
 
 ## v0.3 acceptance criteria (PROPOSAL §16)
 

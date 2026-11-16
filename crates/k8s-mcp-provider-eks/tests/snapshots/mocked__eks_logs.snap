@@ -1,0 +1,10 @@
+---
+source: crates/k8s-mcp-provider-eks/tests/mocked.rs
+expression: e.render()
+---
+EKS 1 log lines from /aws/containerinsights/shop/application matching { $.kubernetes.namespace_name = "shop" && $.log = "*ECONN*" } (more matched: narrow with grep, since or limit)
+
+LOGS (/aws/containerinsights/shop/application matching { $.kubernetes.namespace_name = "shop" && $.log = "*ECONN*" })
+<<untrusted source="log">>
+  api-1: connect ECONNREFUSED 10.0.3.4:5432
+<</untrusted>>

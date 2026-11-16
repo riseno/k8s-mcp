@@ -32,9 +32,14 @@ pub use diagnose::{
 };
 pub use dns::{DiagnoseDnsInput, diagnose_dns};
 #[cfg(feature = "provider-eks")]
-pub use eks::{EksInput, eks_access, eks_addons, eks_cluster_info, eks_nodegroups};
+pub use eks::{
+    EksIdentityInput, EksInput, EksLogsInput, eks_access, eks_addons, eks_cluster_info,
+    eks_identity_check, eks_logs, eks_nodegroups,
+};
 #[cfg(feature = "provider-eks")]
 pub use k8s_mcp_provider_eks::RULES as EKS_RULES;
+#[cfg(feature = "provider-eks")]
+pub use k8s_mcp_provider_eks::identity::RULES as EKS_IDENTITY_RULES;
 pub use logs::{GetLogsInput, get_logs};
 pub use read::{
     ApiResourcesInput, CheckPermissionsInput, ClusterOverviewInput, GetResourceInput,

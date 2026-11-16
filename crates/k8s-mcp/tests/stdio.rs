@@ -383,7 +383,9 @@ async fn eks_tools_follow_detection_and_need_credentials() {
             "eks_cluster_info",
             "eks_nodegroups",
             "eks_addons",
-            "eks_access"
+            "eks_access",
+            "eks_identity_check",
+            "eks_logs"
         ]
     );
     for t in tools.iter().filter(|t| t.name.starts_with("eks_")) {

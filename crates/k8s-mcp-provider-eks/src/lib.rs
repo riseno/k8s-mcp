@@ -8,6 +8,7 @@
 //! runs no commands besides kubeconfig exec plugins. The HTTP client is rustls + ring
 //! (ADR 0007).
 
+pub mod identity;
 mod rules;
 
 use std::time::Duration;
@@ -20,7 +21,10 @@ use aws_sdk_eks::types::{AssociatedAccessPolicy, FargateProfile, Nodegroup};
 use aws_smithy_http_client::tls::{self, rustls_provider::CryptoMode};
 use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::{Error, Result};
-use k8s_mcp_provider::{AccessMapping, Addon, ClusterInfo, NodePool, Provider, Report};
+use k8s_mcp_provider::{
+    AccessMapping, Addon, CloudLogs, ClusterInfo, IdentityReport, LogQuery, NodePool, Provider,
+    Report, WorkloadIdentity,
+};
 use k8s_openapi::api::core::v1::ConfigMap;
 
 pub use rules::RULES;
@@ -31,6 +35,8 @@ const AWS_TIMEOUT: Duration = Duration::from_secs(15);
 /// An EKS cluster reached through the AWS API.
 pub struct Eks {
     client: Client,
+    iam: aws_sdk_iam::Client,
+    logs: aws_sdk_cloudwatchlogs::Client,
     cluster: String,
     region: String,
     /// The `aws-auth` ConfigMap from kube-system, when readable (for `access`).
@@ -61,16 +67,132 @@ impl Eks {
             loader = loader.profile_name(p);
         }
         let config = loader.load().await;
-        Ok(Self::with_client(Client::new(&config), cluster, region))
+        Ok(Self::with_clients(
+            Client::new(&config),
+            aws_sdk_iam::Client::new(&config),
+            aws_sdk_cloudwatchlogs::Client::new(&config),
+            cluster,
+            region,
+        ))
     }
 
-    /// From an existing client (tests use mocked clients).
-    pub fn with_client(client: Client, cluster: String, region: String) -> Self {
+    /// From existing clients (tests use mocked clients).
+    pub fn with_clients(
+        client: Client,
+        iam: aws_sdk_iam::Client,
+        logs: aws_sdk_cloudwatchlogs::Client,
+        cluster: String,
+        region: String,
+    ) -> Self {
         Self {
             client,
+            iam,
+            logs,
             cluster,
             region,
             aws_auth: None,
+        }
+    }
+
+    /// The facts the identity check needs from AWS.
+    async fn identity_facts(&self, k8s: &WorkloadIdentity) -> Result<identity::CloudFacts> {
+        let cluster = self
+            .client
+            .describe_cluster()
+            .name(&self.cluster)
+            .send()
+            .await
+            .map_err(|e| self.err("describe the cluster", &e))?;
+        let issuer = cluster
+            .cluster
+            .and_then(|c| c.identity)
+            .and_then(|i| i.oidc)
+            .and_then(|o| o.issuer)
+            .unwrap_or_default();
+        let oidc_providers = self
+            .iam
+            .list_open_id_connect_providers()
+            .send()
+            .await
+            .map_err(|e| {
+                aws_error(
+                    "list IAM OIDC providers",
+                    &DisplayErrorContext(&e).to_string(),
+                )
+            })?
+            .open_id_connect_provider_list
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|p| p.arn)
+            .collect();
+        let sa = &k8s.service_account.metadata;
+        let irsa_role = match sa
+            .annotations
+            .as_ref()
+            .and_then(|a| a.get(identity::ROLE_ANNOTATION))
+        {
+            Some(arn) => Some(self.role(arn).await?),
+            None => None,
+        };
+        let associations = self
+            .client
+            .list_pod_identity_associations()
+            .cluster_name(&self.cluster)
+            .set_namespace(sa.namespace.clone())
+            .set_service_account(sa.name.clone())
+            .send()
+            .await
+            .map_err(|e| self.err("list Pod Identity associations", &e))?
+            .associations
+            .unwrap_or_default();
+        let mut roles = Vec::new();
+        for a in associations {
+            let Some(id) = a.association_id else { continue };
+            let described = self
+                .client
+                .describe_pod_identity_association()
+                .cluster_name(&self.cluster)
+                .association_id(&id)
+                .send()
+                .await
+                .map_err(|e| self.err(&format!("describe Pod Identity association {id}"), &e))?;
+            if let Some(arn) = described.association.and_then(|a| a.role_arn) {
+                roles.push(self.role(&arn).await?);
+            }
+        }
+        Ok(identity::CloudFacts {
+            issuer,
+            oidc_providers,
+            irsa_role,
+            associations: roles,
+        })
+    }
+
+    /// A role and its trust policy (`trust: None` when the role does not exist).
+    async fn role(&self, arn: &str) -> Result<identity::RoleFacts> {
+        let name = arn.rsplit('/').next().unwrap_or(arn);
+        match self.iam.get_role().role_name(name).send().await {
+            Ok(out) => Ok(identity::RoleFacts {
+                arn: arn.to_owned(),
+                trust: out
+                    .role
+                    .and_then(|r| r.assume_role_policy_document)
+                    .and_then(|d| identity::decode_policy(&d)),
+            }),
+            Err(e)
+                if e.as_service_error().is_some_and(
+                    aws_sdk_iam::operation::get_role::GetRoleError::is_no_such_entity_exception,
+                ) =>
+            {
+                Ok(identity::RoleFacts {
+                    arn: arn.to_owned(),
+                    trust: None,
+                })
+            }
+            Err(e) => Err(aws_error(
+                &format!("get IAM role {name}"),
+                &DisplayErrorContext(&e).to_string(),
+            )),
         }
     }
 
@@ -283,5 +405,104 @@ impl Provider for Eks {
             }
         }
         Ok(rules::access(&entries, self.aws_auth.as_ref()))
+    }
+
+    async fn identity_check(&self, k8s: &WorkloadIdentity) -> Report<IdentityReport> {
+        match self.identity_facts(k8s).await {
+            Ok(facts) => identity::evaluate(k8s, Ok(&facts)),
+            Err(e) => identity::evaluate(k8s, Err(&skip_reason(&e))),
+        }
+    }
+
+    async fn logs(&self, q: &LogQuery) -> Result<CloudLogs> {
+        let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+        let (group, prefix, pattern) = if q.source == "application" {
+            // Container Insights (Fluent Bit) writes JSON records with kubernetes metadata.
+            let mut terms = Vec::new();
+            if let Some(ns) = &q.namespace {
+                terms.push(format!("$.kubernetes.namespace_name = {}", quote(ns)));
+            }
+            if let Some(p) = &q.pod {
+                terms.push(format!("$.kubernetes.pod_name = {}", quote(p)));
+            }
+            if let Some(g) = &q.grep {
+                terms.push(format!("$.log = {}", quote(&format!("*{g}*"))));
+            }
+            let pattern = (!terms.is_empty()).then(|| format!("{{ {} }}", terms.join(" && ")));
+            (
+                format!("/aws/containerinsights/{}/application", self.cluster),
+                None,
+                pattern,
+            )
+        } else {
+            let prefix = q.component.as_deref().map(|c| {
+                match c {
+                    "audit" => "kube-apiserver-audit-",
+                    "authenticator" => "authenticator-",
+                    "controllerManager" => "kube-controller-manager-",
+                    "scheduler" => "kube-scheduler-",
+                    _ => "kube-apiserver-",
+                }
+                .to_owned()
+            });
+            (
+                format!("/aws/eks/{}/cluster", self.cluster),
+                prefix,
+                q.grep.as_deref().map(quote),
+            )
+        };
+        let out = self
+            .logs
+            .filter_log_events()
+            .log_group_name(&group)
+            .set_log_stream_name_prefix(prefix)
+            .set_filter_pattern(pattern.clone())
+            .start_time(q.since_ms)
+            .limit(q.limit)
+            .send()
+            .await
+            .map_err(|e| {
+                let detail = DisplayErrorContext(&e).to_string();
+                if detail.contains("ResourceNotFound") {
+                    Error::NotFound(format!("log group {group} does not exist: turn on the control-plane log types (eks_cluster_info lists them) or Container Insights for application logs"))
+                } else {
+                    aws_error(&format!("read CloudWatch log group {group}"), &detail)
+                }
+            })?;
+        let lines = out
+            .events
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|e| e.message)
+            .map(|m| application_line(&m).unwrap_or(m))
+            .collect();
+        Ok(CloudLogs {
+            source: match pattern {
+                Some(p) => format!("{group} matching {p}"),
+                None => group,
+            },
+            lines,
+            truncated: out.next_token.is_some(),
+        })
+    }
+}
+
+/// `pod: log` from a Container Insights JSON record.
+fn application_line(message: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(message).ok()?;
+    Some(format!(
+        "{}: {}",
+        v["kubernetes"]["pod_name"].as_str()?,
+        v["log"].as_str()?.trim_end()
+    ))
+}
+
+/// Why the cloud half of a check was skipped, for `cloud_checks`.
+fn skip_reason(e: &Error) -> String {
+    let text = e.to_string();
+    if text.contains("no AWS credentials resolved") {
+        "no AWS credentials".into()
+    } else {
+        k8s_mcp_core::text::truncate(&text, 300)
     }
 }

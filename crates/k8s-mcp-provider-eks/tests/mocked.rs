@@ -262,8 +262,30 @@ fn client() -> Client {
     )
 }
 
+fn no_iam() -> aws_sdk_iam::Client {
+    mock_client!(
+        aws_sdk_iam,
+        RuleMode::MatchAny,
+        &[] as &[&aws_smithy_mocks::Rule]
+    )
+}
+
+fn no_logs() -> aws_sdk_cloudwatchlogs::Client {
+    mock_client!(
+        aws_sdk_cloudwatchlogs,
+        RuleMode::MatchAny,
+        &[] as &[&aws_smithy_mocks::Rule]
+    )
+}
+
 fn eks() -> Eks {
-    Eks::with_client(client(), "shop".into(), "eu-west-1".into())
+    Eks::with_clients(
+        client(),
+        no_iam(),
+        no_logs(),
+        "shop".into(),
+        "eu-west-1".into(),
+    )
 }
 
 #[tokio::test]
@@ -306,6 +328,101 @@ async fn eks_access() {
     let e = access_envelope(
         k8s_mcp_core::provider::ProviderId::Eks,
         p.access().await.unwrap(),
+    );
+    insta::assert_snapshot!(e.render());
+}
+
+/// v0.2 acceptance criterion 4 through the provider: an IRSA role trusting another
+/// ServiceAccount, with IAM's URL-encoded trust document.
+#[tokio::test]
+async fn eks_identity_check() {
+    use aws_sdk_eks::operation::list_pod_identity_associations::ListPodIdentityAssociationsOutput;
+    use aws_sdk_iam::operation::get_role::GetRoleOutput;
+    use aws_sdk_iam::operation::list_open_id_connect_providers::ListOpenIdConnectProvidersOutput;
+    use aws_sdk_iam::types::{OpenIdConnectProviderListEntry, Role};
+    let host = "oidc.eks.eu-west-1.amazonaws.com/id/ABCDEF";
+    let doc = format!(
+        "%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22Federated%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Aoidc-provider%2F{h}%22%7D%2C%22Action%22%3A%22sts%3AAssumeRoleWithWebIdentity%22%2C%22Condition%22%3A%7B%22StringEquals%22%3A%7B%22{h}%3Asub%22%3A%22system%3Aserviceaccount%3Ashop%3Aworker%22%7D%7D%7D%5D%7D",
+        h = host.replace('/', "%2F")
+    );
+    let get_role = mock!(aws_sdk_iam::Client::get_role).then_output(move || {
+        GetRoleOutput::builder()
+            .role(
+                Role::builder()
+                    .role_name("shop-api")
+                    .arn("arn:aws:iam::123456789012:role/shop-api")
+                    .path("/")
+                    .role_id("AROA")
+                    .create_date(aws_smithy_types::DateTime::from_secs(0))
+                    .assume_role_policy_document(doc.clone())
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+    });
+    let providers =
+        mock!(aws_sdk_iam::Client::list_open_id_connect_providers).then_output(move || {
+            ListOpenIdConnectProvidersOutput::builder()
+                .open_id_connect_provider_list(
+                    OpenIdConnectProviderListEntry::builder()
+                        .arn(format!("arn:aws:iam::123456789012:oidc-provider/{host}"))
+                        .build(),
+                )
+                .build()
+        });
+    let iam = mock_client!(aws_sdk_iam, RuleMode::MatchAny, &[&get_role, &providers]);
+    let describe = mock!(Client::describe_cluster)
+        .then_output(|| DescribeClusterOutput::builder().cluster(cluster()).build());
+    let associations = mock!(Client::list_pod_identity_associations)
+        .then_output(|| ListPodIdentityAssociationsOutput::builder().build());
+    let eks_client = mock_client!(aws_sdk_eks, RuleMode::MatchAny, &[&describe, &associations]);
+    let p = Eks::with_clients(
+        eks_client,
+        iam,
+        no_logs(),
+        "shop".into(),
+        "eu-west-1".into(),
+    );
+    let k8s = k8s_mcp_provider::WorkloadIdentity {
+        service_account: serde_json::from_value(json!({"metadata": {"name": "api", "namespace": "shop",
+            "annotations": {"eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/shop-api"}}})).unwrap(),
+        pods: vec![serde_json::from_value(json!({"metadata": {"name": "api-1"}, "spec": {"containers": [{"name": "app",
+            "env": [{"name": "AWS_WEB_IDENTITY_TOKEN_FILE", "value": "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}]}]}})).unwrap()],
+        agent_ready: Some(true),
+    };
+    let e = k8s_mcp_provider::identity_envelope(
+        k8s_mcp_core::provider::ProviderId::Eks,
+        "ServiceAccount shop/api",
+        p.identity_check(&k8s).await,
+    );
+    insta::assert_snapshot!(e.render());
+}
+
+#[tokio::test]
+async fn eks_logs() {
+    use aws_sdk_cloudwatchlogs::operation::filter_log_events::FilterLogEventsOutput;
+    use aws_sdk_cloudwatchlogs::types::FilteredLogEvent;
+    let events = mock!(aws_sdk_cloudwatchlogs::Client::filter_log_events)
+        .match_requests(|r| r.log_group_name() == Some("/aws/containerinsights/shop/application"))
+        .then_output(|| {
+            FilterLogEventsOutput::builder()
+                .events(FilteredLogEvent::builder().message(r#"{"log":"connect ECONNREFUSED 10.0.3.4:5432\n","kubernetes":{"pod_name":"api-1","namespace_name":"shop"}}"#).build())
+                .next_token("more")
+                .build()
+        });
+    let logs = mock_client!(aws_sdk_cloudwatchlogs, RuleMode::MatchAny, &[&events]);
+    let p = Eks::with_clients(client(), no_iam(), logs, "shop".into(), "eu-west-1".into());
+    let q = k8s_mcp_provider::LogQuery {
+        source: "application".into(),
+        namespace: Some("shop".into()),
+        grep: Some("ECONN".into()),
+        since_ms: 0,
+        limit: 50,
+        ..Default::default()
+    };
+    let e = k8s_mcp_provider::logs_envelope(
+        k8s_mcp_core::provider::ProviderId::Eks,
+        p.logs(&q).await.unwrap(),
     );
     insta::assert_snapshot!(e.render());
 }

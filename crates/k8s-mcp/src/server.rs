@@ -143,6 +143,14 @@ tools! {
     "eks_access", "eks", t::EksInput,
         "Who AWS maps into the cluster: access entries with their access policies, and aws-auth roles and users (when kube-system may be read), with cluster-admin flagged.",
         |c, i| t::eks_access(c, i).await;
+    #[cfg(feature = "provider-eks")]
+    "eks_identity_check", "eks", t::EksIdentityInput,
+        "Does a ServiceAccount's AWS identity work? IRSA (role annotation, role exists, trust policy names this cluster's OIDC provider and the ServiceAccount, IAM OIDC provider registered) and EKS Pod Identity (association, role trust, agent), plus whether its pods got the credentials injected. Without AWS credentials it returns the Kubernetes side with cloud_checks: skipped.",
+        |c, i| t::eks_identity_check(c, i).await;
+    #[cfg(feature = "provider-eks")]
+    "eks_logs", "eks", t::EksLogsInput,
+        "CloudWatch Logs for the cluster: control-plane logs (api, audit, authenticator, controllerManager, scheduler) or Container Insights application logs for a namespace or pod, filtered by grep and since (1h). Lines are redacted and untrusted. Control-plane logs are refused while --namespaces restricts namespaces.",
+        |c, i| t::eks_logs(c, i).await;
     "find_problems", "diagnose", t::FindProblemsInput,
         "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
         |c, i| t::find_problems(c, i).await;
@@ -326,6 +334,8 @@ fn rules_catalogue() -> Vec<k8s_mcp_core::finding::RuleMeta> {
     let mut all = k8s_mcp_diagnose::catalogue();
     #[cfg(feature = "provider-eks")]
     all.extend_from_slice(t::EKS_RULES);
+    #[cfg(feature = "provider-eks")]
+    all.extend_from_slice(t::EKS_IDENTITY_RULES);
     all.sort_by_key(|r| r.id);
     all
 }

@@ -9,9 +9,35 @@ cluster to the Kubernetes one. Every tool is read-only.
 | `eks_nodegroups` | Managed node groups (version, instance and capacity type, desired/min/max, health issues) and Fargate profiles |
 | `eks_addons` | Installed add-ons, their status and health, and the newest version compatible with the cluster's Kubernetes version |
 | `eks_access` | Access entries with their access policies, and `aws-auth` role and user mappings, with cluster-admin flagged |
+| `eks_identity_check` | A ServiceAccount's AWS identity: IRSA (annotation, role, trust policy, IAM OIDC provider) and Pod Identity (association, role trust, agent), and whether its pods got the credentials |
+| `eks_logs` | CloudWatch control-plane logs (api, audit, authenticator, controllerManager, scheduler) or Container Insights application logs, redacted and untrusted |
 
-Rules: `eks.cluster.*`, `eks.nodegroup.*`, `eks.addon.*`, `eks.access.*` (see
-[rules.md](../rules.md)).
+Rules: `eks.cluster.*`, `eks.nodegroup.*`, `eks.addon.*`, `eks.access.*`, `eks.irsa.*`,
+`eks.pod_identity.*` and `eks.identity.pods_not_injected` (see [rules.md](../rules.md)).
+
+## Identity checks
+
+`eks_identity_check` always runs the Kubernetes side: the `eks.amazonaws.com/role-arn`
+annotation, whether the ServiceAccount's pods carry the injected credentials
+(`AWS_WEB_IDENTITY_TOKEN_FILE` for IRSA, `AWS_CONTAINER_CREDENTIALS_FULL_URI` for Pod
+Identity; pods created before the identity was set up need a restart), and the
+`eks-pod-identity-agent` DaemonSet when kube-system may be read. The AWS side then checks that
+the IRSA role exists and that its trust policy allows `sts:AssumeRoleWithWebIdentity` for this
+cluster's OIDC provider with a `sub` condition matching `system:serviceaccount:<ns>:<sa>` (and
+an `aud` allowing `sts.amazonaws.com` or the `eks.amazonaws.com/audience` annotation), that the
+issuer is registered as an IAM OIDC provider, and that Pod Identity association roles trust
+`pods.eks.amazonaws.com` with `sts:AssumeRole` and `sts:TagSession`. When AWS cannot be asked
+(no credentials, access denied, cluster unknown) the result says `cloud checks skipped: <why>`
+and still returns the Kubernetes side.
+
+## Logs
+
+`eks_logs` reads `/aws/eks/<cluster>/cluster` (`source: control-plane`, the default; enable the
+log types first) or `/aws/containerinsights/<cluster>/application` (`source: application`,
+needs Container Insights), with `grep`, `since` (default 1h, at most 24h) and `limit` (default
+100, at most 500). Control-plane logs cover every namespace, so they are refused while
+`--namespaces` or `--deny-namespaces` restrict namespaces; application logs then need an
+allowed `namespace`.
 
 ## When the tools are available
 
@@ -61,6 +87,6 @@ your clusters, roles and log groups in production.
 }
 ```
 
-The `iam:` and `logs:` actions are for `eks_identity_check` and `eks_logs` (next release
-step). `eks_access` also reads the `aws-auth` ConfigMap through Kubernetes, when the namespace
-policy allows kube-system.
+The `iam:` actions are for `eks_identity_check` and the `logs:` actions for `eks_logs`.
+`eks_access` also reads the `aws-auth` ConfigMap through Kubernetes, when the namespace policy
+allows kube-system.

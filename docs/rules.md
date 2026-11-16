@@ -25,8 +25,15 @@ Rule ids are stable: they are never renamed once released. Severity and confiden
 | `eks.cluster.auth_configmap_only` | Cluster access relies only on the aws-auth ConfigMap | [link](https://docs.aws.amazon.com/eks/latest/userguide/grant-k8s-access.html) |
 | `eks.cluster.public_endpoint` | The API server endpoint is public to the whole internet | [link](https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html) |
 | `eks.cluster.unhealthy` | The EKS control plane reports health issues | [link](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html) |
+| `eks.identity.pods_not_injected` | Pods of the ServiceAccount did not get the AWS credentials injected | [link](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) |
+| `eks.irsa.oidc_provider_missing` | The cluster's OIDC issuer is not registered as an IAM OIDC provider | [link](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) |
+| `eks.irsa.role_missing` | The IAM role in the IRSA annotation does not exist | [link](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) |
+| `eks.irsa.trust_mismatch` | The IRSA role's trust policy does not allow this ServiceAccount | [link](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) |
 | `eks.nodegroup.unhealthy` | A managed node group reports health issues | [link](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html) |
 | `eks.nodegroup.version_skew` | A node group runs an older Kubernetes minor than the control plane | [link](https://docs.aws.amazon.com/eks/latest/best-practices/introduction.html) |
+| `eks.pod_identity.agent_missing` | The EKS Pod Identity agent is not running | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
+| `eks.pod_identity.association_missing` | The ServiceAccount has no AWS identity (no IRSA role, no Pod Identity association) | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
+| `eks.pod_identity.trust_mismatch` | The Pod Identity role's trust policy does not allow EKS Pod Identity | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `job.backoff_limit` | Job failed: its pods failed more often than backoffLimit allows | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `job.deadline_exceeded` | Job failed: it ran longer than activeDeadlineSeconds | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `node.cordoned` | Node is cordoned: no new pods are scheduled there | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |

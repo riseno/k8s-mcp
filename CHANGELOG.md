@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-16
+
 ### Added
 - `eks_identity_check`: IRSA and EKS Pod Identity for a ServiceAccount, with rules
   `eks.irsa.role_missing`, `eks.irsa.trust_mismatch` (sub/aud conditions, StringLike

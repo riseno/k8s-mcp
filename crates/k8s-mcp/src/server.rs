@@ -342,6 +342,23 @@ fn rules_catalogue() -> Vec<k8s_mcp_core::finding::RuleMeta> {
 /// URI template of the per-context overview resource.
 const OVERVIEW_TEMPLATE: &str = "k8s-mcp://cluster/{context}/overview";
 
+/// A URI template value as clients send it: RFC 6570 `{var}` expansion percent-encodes
+/// reserved characters, so an EKS context ARN arrives as `arn%3Aaws%3Aeks%3A...%2Fshop`.
+/// `None` for an invalid escape.
+fn percent_decode(s: &str) -> Option<String> {
+    let mut out = Vec::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        out.push(if b == b'%' {
+            let hex = [bytes.next()?, bytes.next()?];
+            u8::from_str_radix(std::str::from_utf8(&hex).ok()?, 16).ok()?
+        } else {
+            b
+        });
+    }
+    String::from_utf8(out).ok()
+}
+
 fn prompts() -> Vec<Prompt> {
     let arg = |name: &str, desc: &str, required: bool| {
         PromptArgument::new(name)
@@ -607,6 +624,7 @@ impl ServerHandler for K8sMcp {
         let body = match overview {
             // Through the tool path: context policy, timeout, cap, redaction and audit apply.
             Some(name) => {
+                let name = percent_decode(name).unwrap_or_else(|| name.to_owned());
                 let r = self
                     .run(
                         "cluster_overview",
@@ -723,6 +741,18 @@ mod tests {
                 .unwrap()
                 .contains("system:serviceaccounts:shop")
         );
+    }
+
+    #[test]
+    fn overview_context_is_percent_decoded() {
+        assert_eq!(
+            percent_decode("arn%3Aaws%3Aeks%3Aeu-west-1%3A123456789012%3Acluster%2Fshop")
+                .as_deref(),
+            Some("arn:aws:eks:eu-west-1:123456789012:cluster/shop")
+        );
+        assert_eq!(percent_decode("kind-dev").as_deref(), Some("kind-dev"));
+        assert_eq!(percent_decode("bad%2"), None);
+        assert_eq!(percent_decode("bad%zz"), None);
     }
 
     /// Issue #49: an unknown prompt and a missing required argument get different errors.

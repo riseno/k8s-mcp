@@ -28,6 +28,8 @@ All notable changes are documented here. The format follows
 - A context that is not in the kubeconfig is reported as such (`context "docker-desktop" is
   not in the kubeconfig (<path>); allowed contexts: ...`); the `--contexts` advice is kept for
   contexts that exist but are not allowed (#51).
+- `k8s-mcp://cluster/{context}/overview` percent-decodes the context, so names that RFC 6570
+  expansion encodes (EKS context ARNs with `:` and `/`) resolve.
 
 ## [0.2.0] - 2026-11-16
 

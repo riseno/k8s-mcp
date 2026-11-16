@@ -6,6 +6,17 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `upgrade_readiness` (`target_version?`, default: the next minor): a checklist of what stands
+  between the cluster and the next control-plane minor, with rules `upgrade.target_skips_minor`,
+  `upgrade.removed_api_in_use`, `upgrade.deprecated_api_in_use`, `upgrade.kubelet_skew`,
+  `upgrade.pdb_blocks_drain`, `upgrade.single_replica_workloads` and
+  `upgrade.version_support_ending`. Removed and deprecated APIs come from the API server's
+  `apiserver_requested_deprecated_apis` metric and from objects last written with them (who
+  wrote them, from managedFields), read through each group's preferred version (ADR 0011). With
+  the `eks` toolset it adds the EKS upgrade insights and the end of standard support. The chart
+  grants `get` on `/metrics`.
+- Prompt `upgrade-readiness` (`target_version`); `cluster-health-check` includes upgrade
+  readiness.
 - Provider trait `upgrade_checks(target)` with a cloud-neutral `UpgradeInfo` (versions on offer,
   end of standard support, the cloud's own checks), and a default `access` for providers
   without access mapping before v1.0. EKS implements it with upgrade insights

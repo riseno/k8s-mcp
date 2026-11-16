@@ -23,6 +23,7 @@ pub mod pvc;
 pub mod rollout;
 pub mod service;
 pub mod terminating;
+pub mod upgrade;
 
 use std::collections::BTreeMap;
 
@@ -132,6 +133,19 @@ pub mod docs {
         "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/";
     /// Network plugins.
     pub const NETWORK: &str = "https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/";
+}
+
+/// `(major, minor)` of a Kubernetes version such as `v1.33.5-eks-3025e55`, `1.34` or `33+`
+/// minors (EKS reports minor `33+`).
+pub fn parse_version(v: &str) -> Option<(u32, u32)> {
+    let mut parts = v.trim_start_matches('v').split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor: String = parts
+        .next()?
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    Some((major, minor.parse().ok()?))
 }
 
 /// Pod name and namespace.

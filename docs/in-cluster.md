@@ -14,7 +14,9 @@ The chart creates:
 - a Deployment (1 replica, stateless) and a `ClusterIP` Service on port 8080, path `/mcp`;
 - a ServiceAccount bound to a read-only ClusterRole (`templates/rbac.yaml`), with `get` on
   Secrets so their values can be masked in logs (`rbac.secretsMetadata`);
-- a binding to `system:auth-delegator`, so the server can validate callers' tokens.
+- a binding to `system:auth-delegator`, so the server can validate callers' tokens;
+- `get` on the API server's `/metrics`, for the deprecated-API metric `upgrade_readiness`
+  reads.
 
 **Secret values in logs.** The ClusterRole includes `get` on Secrets (`rbac.secretsMetadata:
 true`, the default) so the server can mask the values of the Secrets a pod uses in that pod's

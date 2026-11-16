@@ -252,6 +252,7 @@ async fn secret_canary_never_leaks() {
         ("diagnose_pvc", json!({"name": "canary", "namespace": ns})),
         ("diagnose_dns", json!({"pod": "canary", "namespace": ns})),
         ("autoscaling_status", json!({"namespace": ns})),
+        ("upgrade_readiness", json!({})),
         ("recent_changes", json!({"namespace": ns})),
         (
             "rollout_history",

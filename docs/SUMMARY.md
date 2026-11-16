@@ -21,3 +21,4 @@
   - [0008 find_problems: Services and PVCs in v0.2](adr/0008-find-problems-services-pvcs-in-v0.2.md)
   - [0009 Mask Secret values in logs](adr/0009-scrub-secret-values-from-logs.md)
   - [0010 Provider detection in core](adr/0010-provider-detection-in-core.md)
+  - [0011 Upgrade readiness signals](adr/0011-upgrade-readiness-signals.md)

@@ -30,9 +30,9 @@ tokio.workspace = true
 tracing.workspace = true
 regex.workspace = true
 jiff.workspace = true
+http.workspace = true
 
 [dev-dependencies]
 k8s-mcp-testkit.workspace = true
 insta.workspace = true
 tower-test.workspace = true
-http.workspace = true

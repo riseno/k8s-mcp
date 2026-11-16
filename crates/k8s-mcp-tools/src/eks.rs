@@ -8,8 +8,8 @@ use k8s_mcp_core::provider::{ClusterIdentity, Detection, ProviderId};
 use k8s_mcp_core::text::parse_duration;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
-    LogQuery, Provider, WorkloadIdentity, access_envelope, addons_envelope, cluster_info_envelope,
-    identity_envelope, logs_envelope, node_pools_envelope,
+    LogQuery, Provider, Report, UpgradeInfo, WorkloadIdentity, access_envelope, addons_envelope,
+    cluster_info_envelope, identity_envelope, logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_eks::{Eks, identity::evaluate};
 use k8s_openapi::api::apps::v1::DaemonSet;
@@ -74,6 +74,11 @@ async fn identity(ctx: &Ctx, sc: &Scope) -> Result<ClusterIdentity> {
 
 async fn eks_for(ctx: &Ctx, sc: &Scope) -> Result<Eks> {
     Eks::connect(&identity(ctx, sc).await?).await
+}
+
+/// The EKS section of `upgrade_readiness`.
+pub(crate) async fn upgrade(ctx: &Ctx, sc: &Scope, target: &str) -> Result<Report<UpgradeInfo>> {
+    eks_for(ctx, sc).await?.upgrade_checks(Some(target)).await
 }
 
 async fn connect(ctx: &Ctx, input: &EksInput) -> Result<(Scope, Eks)> {

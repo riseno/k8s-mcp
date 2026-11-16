@@ -119,6 +119,15 @@ Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and 
 | `context` | string | Kubeconfig context. |
 | `namespace` | string | Limit HPAs and scale-up events to one namespace (Karpenter and the Cluster Autoscaler are cluster-wide). Default: all allowed namespaces. |
 
+### `upgrade_readiness`
+
+Is the cluster ready for the next control-plane minor (or `target_version`)? A checklist: removed and deprecated API versions still in use (the API server's deprecated-API metric, CRD versions marked deprecated, objects last written with them and by whom), kubelets the target leaves beyond the supported skew, PodDisruptionBudgets that block node drains, single-replica workloads, end of standard support, plus the provider's upgrade checks (EKS upgrade insights) when a provider toolset is registered.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `target_version` | string | Kubernetes version to upgrade the control plane to, such as `1.35` (default: the next minor after the current one). |
+
 ### `recent_changes`
 
 What changed recently that could explain this? Rollouts (with image/env-name/resource diffs), objects created or updated (and by which field manager) and Helm release revisions, newest first, in a namespace or the whole cluster (since: default 2h). Env values and object bodies are never read or shown.

@@ -233,3 +233,80 @@ pub struct AutoscalingEvidence {
     /// Current time.
     pub now: Timestamp,
 }
+
+/// A deprecated API version: requested by clients (the API server's
+/// `apiserver_requested_deprecated_apis` metric), or a CRD version marked `deprecated`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DeprecatedApi {
+    /// API group (`""` for core).
+    pub group: String,
+    /// Version, e.g. `v1beta1`.
+    pub version: String,
+    /// Plural resource, e.g. `flowschemas`.
+    pub resource: String,
+    /// Minor version that removes it (`1.32` becomes 32); `None` when no removal is planned
+    /// (or, for CRDs, when the CRD owner decides).
+    pub removed_in: Option<u32>,
+    /// What to use instead, when known.
+    pub replacement: Option<String>,
+    /// A custom resource version.
+    pub crd: bool,
+}
+
+impl DeprecatedApi {
+    /// `group/version`, or `version` for the core group.
+    pub fn group_version(&self) -> String {
+        if self.group.is_empty() {
+            self.version.clone()
+        } else {
+            format!("{}/{}", self.group, self.version)
+        }
+    }
+}
+
+/// An object last written with a deprecated API version: a `managedFields` entry or the
+/// `kubectl.kubernetes.io/last-applied-configuration` annotation names it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StaleWrite {
+    /// The deprecated API it was written with.
+    pub api: DeprecatedApi,
+    /// Object kind.
+    pub kind: String,
+    /// Namespace, when namespaced.
+    pub namespace: Option<String>,
+    /// Object name.
+    pub name: String,
+    /// Field manager (client-supplied text), or `kubectl apply` for the annotation.
+    pub manager: String,
+}
+
+/// Everything `upgrade_readiness` knows about upgrading the control plane to `target`.
+#[derive(Debug, Clone, Default)]
+pub struct UpgradeEvidence {
+    /// Control-plane minor version now (`1.33` is 33).
+    pub current: u32,
+    /// Minor version to upgrade to.
+    pub target: u32,
+    /// Deprecated APIs clients requested since the API server started; `None` if the metric
+    /// could not be read.
+    pub requested: Option<Vec<DeprecatedApi>>,
+    /// Served CRD versions marked deprecated.
+    pub deprecated_crd_versions: Vec<DeprecatedApi>,
+    /// Objects last written with a deprecated API version.
+    pub stale_writes: Vec<StaleWrite>,
+    /// Nodes (kubelet versions); `None` if unreadable.
+    pub nodes: Option<Vec<Node>>,
+    /// PodDisruptionBudgets in the allowed namespaces; `None` if unreadable.
+    pub pdbs: Option<Vec<k8s_openapi::api::policy::v1::PodDisruptionBudget>>,
+    /// Deployments in the allowed namespaces; `None` if unreadable.
+    pub deployments: Option<Vec<Deployment>>,
+    /// StatefulSets in the allowed namespaces; `None` if unreadable.
+    pub statefulsets: Option<Vec<StatefulSet>>,
+    /// The managed cluster's cloud (`EKS`, ...) and when standard support of the current
+    /// version ends (Unix seconds), when a provider says.
+    pub support_ends: Option<(String, i64)>,
+    /// Evidence that could not be gathered.
+    pub unavailable: Vec<Unavailable>,
+    /// Current time.
+    pub now: Timestamp,
+}

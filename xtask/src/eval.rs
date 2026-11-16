@@ -131,11 +131,8 @@ pub fn main(args: &[String]) -> Result<()> {
     let (only, keep) = parse_args(args)?;
     let scenarios = load_scenarios(only.as_deref())?;
     verify_context()?;
-    run(Command::new("cargo").args(["build", "-p", "k8s-mcp-server"]))?;
-    let target =
-        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root().join("target"), PathBuf::from);
-    let bin = target.join("debug/k8s-mcp");
 
+    // Apply first, then build while the scenarios settle: the wait overlaps the compile.
     let mut apply = kubectl();
     apply.arg("apply");
     for (dir, _) in &scenarios {
@@ -144,16 +141,26 @@ pub fn main(args: &[String]) -> Result<()> {
             .arg(scenarios_dir().join(dir).join("manifest.yaml"));
     }
     run(&mut apply)?;
-    let settle = scenarios
-        .iter()
-        .map(|(_, s)| s.settle_seconds)
-        .max()
-        .unwrap_or(0);
+    let applied = std::time::Instant::now();
+    run(Command::new("cargo").args(["build", "-p", "k8s-mcp-server"]))?;
+    let target =
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root().join("target"), PathBuf::from);
+    let bin = target.join("debug/k8s-mcp");
+    let settle = Duration::from_secs(
+        scenarios
+            .iter()
+            .map(|(_, s)| s.settle_seconds)
+            .max()
+            .unwrap_or(0),
+    );
+    let left = settle.saturating_sub(applied.elapsed());
     println!(
-        "waiting {settle}s for {} scenario(s) to settle",
+        "waiting {}s more (settle {}s) for {} scenario(s)",
+        left.as_secs(),
+        settle.as_secs(),
         scenarios.len()
     );
-    std::thread::sleep(Duration::from_secs(settle));
+    std::thread::sleep(left);
 
     let outcomes: Vec<Outcome> = scenarios
         .iter()

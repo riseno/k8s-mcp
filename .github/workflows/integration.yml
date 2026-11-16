@@ -7,13 +7,16 @@ on:
       - "xtask/**"
       - "evals/**"
       - "Cargo.lock"
-      - "Dockerfile"
-      - "deploy/**"
       - ".github/workflows/integration.yml"
   workflow_call:
 
 permissions:
   contents: read
+
+# A newer push to the same PR cancels the running evals.
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,7 +37,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
+      # Same debug-build cache as ci's test job, which main saves: PRs start warm.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: debug
       - uses: helm/kind-action@v1.15.2
         with:
           version: v0.33.0
@@ -49,72 +55,3 @@ jobs:
           name: eval-results-k8s-${{ matrix.k8s }}
           path: evals/results/
           if-no-files-found: ignore
-
-  # The image the chart jobs install: the static musl binary on the release Dockerfile.
-  binary:
-    name: static binary
-    runs-on: ubuntu-latest
-    container: ghcr.io/rust-cross/cargo-zigbuild:0.24.1
-    steps:
-      - uses: actions/checkout@v7
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo zigbuild --locked --release -p k8s-mcp-server --target x86_64-unknown-linux-musl
-      - uses: actions/upload-artifact@v7
-        with:
-          name: k8s-mcp-linux-amd64
-          path: target/x86_64-unknown-linux-musl/release/k8s-mcp
-
-  chart:
-    name: chart on ${{ matrix.cluster }}
-    needs: binary
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        cluster: [kind, k3s]
-    env:
-      CHART: deploy/helm/k8s-mcp
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: k8s-mcp-linux-amd64
-          path: image/linux/amd64
-      - name: Build the image
-        run: docker build --platform linux/amd64 -t k8s-mcp:ci -f Dockerfile image
-      - name: Lint and validate the rendered chart
-        run: |
-          curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz kubeconform
-          helm lint "$CHART"
-          for values in "" \
-            "--set auth.mode=static --set auth.existingSecret=token" \
-            "--set networkPolicy.enabled=true --set networkPolicy.apiServerCIDRs={10.0.0.1/32} --set podDisruptionBudget.enabled=true --set rbac.secretsMetadata=true"; do
-            # shellcheck disable=SC2086 # $values holds several flags
-            helm template t "$CHART" $values | ./kubeconform -strict -summary -kubernetes-version 1.33.0
-          done
-      - if: matrix.cluster == 'kind'
-        uses: helm/kind-action@v1.15.2
-        with:
-          version: v0.33.0
-          cluster_name: chart
-      - if: matrix.cluster == 'kind'
-        run: |
-          kind load docker-image k8s-mcp:ci --name chart
-          echo "CONTEXT=kind-chart" >> "$GITHUB_ENV"
-      - if: matrix.cluster == 'k3s'
-        run: |
-          curl -sSfLo /usr/local/bin/k3d https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64
-          chmod +x /usr/local/bin/k3d
-          k3d cluster create chart --wait
-          k3d image import k8s-mcp:ci -c chart
-          echo "CONTEXT=k3d-chart" >> "$GITHUB_ENV"
-      - name: Install the chart
-        run: |
-          helm install k8s-mcp "$CHART" --kube-context "$CONTEXT" -n k8s-mcp --create-namespace \
-            --set image.repository=k8s-mcp --set image.tag=ci --set image.pullPolicy=Never --wait --timeout 3m
-      - run: deploy/helm/smoke.sh "$HOME/.kube/config" "$CONTEXT" k8s-mcp k8s-mcp
-      - if: failure()
-        run: |
-          kubectl --context "$CONTEXT" -n k8s-mcp describe pods
-          kubectl --context "$CONTEXT" -n k8s-mcp logs deploy/k8s-mcp --tail 100

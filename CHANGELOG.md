@@ -5,6 +5,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `diagnose_dns` rule `dns.pod_bypasses_cluster_dns`: a pod whose nameservers skip the kube-dns
+  Service (`dnsPolicy: None` or `Default` without its ClusterIP, or `ClusterFirst` with
+  `hostNetwork`, which falls back to `Default`). `medium` when the pod's logs show failed
+  `.svc` lookups, `info` otherwise; NodeLocal DNSCache (169.254.20.10) counts as the cluster
+  DNS (#53).
+
 ### Fixed
 - The Helm chart's default image is `v<appVersion>`, the tag images are published under; chart
   0.2.0 pointed at `ghcr.io/riseno/k8s-mcp:0.2.0`, which does not exist (#45). The release

@@ -18,6 +18,7 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 | `dns.ndots_hint` | External names go through the cluster search domains first (ndots) | [link](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/) |
 | `dns.netpol_blocks_egress` | A NetworkPolicy blocks DNS (port 53) egress | [link](https://kubernetes.io/docs/concepts/services-networking/network-policies/) |
 | `dns.no_endpoints` | The kube-dns Service has no ready endpoints | [link](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) |
+| `dns.pod_bypasses_cluster_dns` | The pod's DNS settings bypass the cluster DNS | [link](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/) |
 | `eks.access.aws_auth_invalid` | The aws-auth ConfigMap cannot be parsed | [link](https://docs.aws.amazon.com/eks/latest/userguide/grant-k8s-access.html) |
 | `eks.addon.incompatible` | An EKS add-on version is not compatible with the cluster version | [link](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html) |
 | `eks.addon.unhealthy` | An EKS add-on is degraded or failed | [link](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html) |

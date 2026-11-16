@@ -206,15 +206,16 @@ impl ClusterManager {
     /// Detect the cloud provider of a context from its kubeconfig and, when given, its nodes.
     /// No cloud calls.
     pub fn detect_provider(&self, context: &str, nodes: &[Node]) -> Option<Detection> {
-        let (host, exec_command, exec_args) = match &self.source {
+        let (host, exec_command, exec_args, exec_env) = match &self.source {
             Source::Kubeconfig(kc) => kubeconfig_signals(kc, context),
-            _ => (String::new(), String::new(), Vec::new()),
+            _ => Default::default(),
         };
         detect(&Signals {
             context,
             server_host: &host,
             exec_command: &exec_command,
             exec_args: &exec_args,
+            exec_env: &exec_env,
             nodes,
         })
     }
@@ -447,8 +448,11 @@ pub fn server_host(server: &str) -> String {
     rest.rsplit('@').next().unwrap_or(rest).to_owned()
 }
 
-/// API server host and exec plugin (command, args) of a kubeconfig context.
-fn kubeconfig_signals(kc: &Kubeconfig, context: &str) -> (String, String, Vec<String>) {
+/// API server host and exec plugin (command, args, env) of a kubeconfig context.
+fn kubeconfig_signals(
+    kc: &Kubeconfig,
+    context: &str,
+) -> (String, String, Vec<String>, Vec<(String, String)>) {
     let ctx = kc
         .contexts
         .iter()
@@ -468,6 +472,11 @@ fn kubeconfig_signals(kc: &Kubeconfig, context: &str) -> (String, String, Vec<St
         server_host(&server),
         exec.and_then(|e| e.command.clone()).unwrap_or_default(),
         exec.and_then(|e| e.args.clone()).unwrap_or_default(),
+        exec.and_then(|e| e.env.as_ref())
+            .into_iter()
+            .flatten()
+            .filter_map(|v| Some((v.get("name")?.clone(), v.get("value")?.clone())))
+            .collect(),
     )
 }
 

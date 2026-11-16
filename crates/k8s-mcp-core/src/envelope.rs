@@ -285,8 +285,9 @@ impl Envelope {
             out.push_str("\nNEXT\n");
             let mut seen = std::collections::HashSet::new();
             for n in next {
-                let line = format!("- {} {} : {}", n.tool, n.args, n.why);
-                if seen.insert((n.tool.clone(), n.args.to_string())) {
+                let args = sorted_keys(&n.args).to_string();
+                let line = format!("- {} {args} : {}", n.tool, n.why);
+                if seen.insert((n.tool.clone(), args)) {
                     out.push_str(&line);
                     out.push('\n');
                 }
@@ -378,6 +379,24 @@ impl Envelope {
             self.findings.clear();
             return;
         }
+    }
+}
+
+/// `v` with object keys in sorted order at every level, so rendered JSON does not depend on
+/// serde_json's `preserve_order` feature (which other crates may turn on).
+fn sorted_keys(v: &Value) -> Value {
+    match v {
+        Value::Object(m) => {
+            let mut keys: Vec<&String> = m.keys().collect();
+            keys.sort();
+            Value::Object(
+                keys.into_iter()
+                    .map(|k| (k.clone(), sorted_keys(&m[k])))
+                    .collect(),
+            )
+        }
+        Value::Array(a) => Value::Array(a.iter().map(sorted_keys).collect()),
+        other => other.clone(),
     }
 }
 

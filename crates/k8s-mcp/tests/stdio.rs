@@ -309,3 +309,130 @@ async fn kind_cluster_overview_and_find_problems() {
     assert_ne!(r.is_error, Some(true), "{}", text(&r));
     client.cancel().await.unwrap();
 }
+
+/// A process with no AWS credentials or config at all, whose AWS requests could only reach
+/// 127.0.0.1:1, so a test can never call a real AWS account.
+async fn spawn_without_aws(args: &[&str], home: &Path) -> RunningService<RoleClient, ()> {
+    let bin = env!("CARGO_BIN_EXE_k8s-mcp");
+    let args: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
+    let home = home.to_owned();
+    let transport = TokioChildProcess::new(tokio::process::Command::new(bin).configure(|cmd| {
+        cmd.args(&args)
+            .env_clear()
+            .env("HOME", &home)
+            .env("AWS_CONFIG_FILE", home.join("no-aws-config"))
+            .env(
+                "AWS_SHARED_CREDENTIALS_FILE",
+                home.join("no-aws-credentials"),
+            )
+            .env("AWS_EC2_METADATA_DISABLED", "true")
+            .env("AWS_ENDPOINT_URL", "http://127.0.0.1:1");
+    }))
+    .unwrap();
+    ().serve(transport).await.unwrap()
+}
+
+/// v0.2: EKS tools are registered when the kubeconfig says EKS (and not otherwise), are
+/// read-only and open-world, and without AWS credentials fail with an actionable message.
+#[cfg(all(unix, feature = "provider-eks"))]
+#[tokio::test]
+async fn eks_tools_follow_detection_and_need_credentials() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    // A fake `aws` found first on the plugin PATH: the real CLI must never run in tests.
+    let plugins = dir.path().join("plugins");
+    std::fs::create_dir(&plugins).unwrap();
+    let fake = plugins.join("aws");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\necho '{\"apiVersion\":\"client.authentication.k8s.io/v1beta1\",\"kind\":\"ExecCredential\",\"status\":{\"token\":\"fake\"}}'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let plugins = plugins.to_str().unwrap().to_owned();
+    let user = "    exec:\n      apiVersion: client.authentication.k8s.io/v1beta1\n      command: aws\n      args: [--region, eu-west-1, eks, get-token, --cluster-name, shop]";
+    let kc = offline_kubeconfig(
+        dir.path(),
+        "https://ABCDEF.gr7.eu-west-1.eks.amazonaws.com",
+        user,
+    );
+    let eks_tools = |tools: &[rmcp::model::Tool]| -> Vec<String> {
+        tools
+            .iter()
+            .map(|t| t.name.to_string())
+            .filter(|n| n.starts_with("eks_"))
+            .collect()
+    };
+
+    let client = spawn_without_aws(
+        &[
+            "--kubeconfig",
+            kc.to_str().unwrap(),
+            "--audit-log",
+            "off",
+            "--path-prepend",
+            &plugins,
+        ],
+        dir.path(),
+    )
+    .await;
+    let tools = client.list_all_tools().await.unwrap();
+    assert_eq!(
+        eks_tools(&tools),
+        [
+            "eks_cluster_info",
+            "eks_nodegroups",
+            "eks_addons",
+            "eks_access"
+        ]
+    );
+    for t in tools.iter().filter(|t| t.name.starts_with("eks_")) {
+        let a = t.annotations.as_ref().unwrap();
+        assert_eq!(
+            (a.read_only_hint, a.open_world_hint),
+            (Some(true), Some(true)),
+            "{}",
+            t.name
+        );
+    }
+    let r = call(&client, "eks_cluster_info", json!({})).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(
+        text(&r).contains("no AWS credentials resolved"),
+        "{}",
+        text(&r)
+    );
+    client.cancel().await.unwrap();
+
+    let none = spawn_without_aws(
+        &[
+            "--kubeconfig",
+            kc.to_str().unwrap(),
+            "--audit-log",
+            "off",
+            "--providers",
+            "none",
+        ],
+        dir.path(),
+    )
+    .await;
+    assert!(eks_tools(&none.list_all_tools().await.unwrap()).is_empty());
+    none.cancel().await.unwrap();
+
+    let local = offline_kubeconfig(dir.path(), "https://127.0.0.1:1", "    token: t");
+    let plain = spawn_without_aws(
+        &[
+            "--kubeconfig",
+            local.to_str().unwrap(),
+            "--audit-log",
+            "off",
+        ],
+        dir.path(),
+    )
+    .await;
+    assert!(
+        eks_tools(&plain.list_all_tools().await.unwrap()).is_empty(),
+        "not EKS: not registered"
+    );
+    plain.cancel().await.unwrap();
+}

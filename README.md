@@ -122,6 +122,8 @@ No config file is needed; every flag also reads `K8S_MCP_<FLAG>` (for example `K
 | `--auth-token-file <path>` | none | Bearer token file for `--auth static` |
 | `--allowed-hosts <host,...>` | `localhost`, `127.0.0.1`, `::1` | HTTP `Host` values accepted (DNS-rebinding protection) |
 | `--allowed-origins <origin,...>` | none | Browser `Origin` values accepted; any other `Origin` gets 403 |
+| `--providers auto\|none\|eks` | `auto` | Cloud provider toolsets: `auto` registers one when the default context is detected as that provider |
+| `--eks-cluster`, `--eks-region` | detected | EKS cluster name and region when detection cannot tell (in-cluster) |
 | `--kubeconfig <path>` | `$KUBECONFIG` or `~/.kube/config` | Kubeconfig |
 | `--in-cluster` | auto | Use the ServiceAccount token |
 | `--context <name>` | current-context | Default context |

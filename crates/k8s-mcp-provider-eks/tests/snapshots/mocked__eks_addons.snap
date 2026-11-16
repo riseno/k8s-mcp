@@ -1,0 +1,22 @@
+---
+source: crates/k8s-mcp-provider-eks/tests/mocked.rs
+expression: e.render()
+---
+EKS 2 add-ons. Top finding: Add-on vpc-cni is DEGRADED.
+
+FINDINGS
+1. [high/high] eks.addon.unhealthy: Add-on vpc-cni is DEGRADED
+   why: EKS manages this add-on and reports that it is not working; the cluster feature it provides (networking, DNS, storage, identity) may be impaired.
+   evidence (status): InsufficientNumberOfReplicas: The add-on is unhealthy because it doesn't have the desired number of replicas.
+   fix: Fix the issues in the evidence (often a missing IAM role for the add-on's ServiceAccount, or configuration values the add-on rejects), then update the add-on to retry.
+   docs: https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html
+2. [high/high] eks.addon.incompatible: Add-on vpc-cni v1.16.0-eksbuild.1 is not a published version for Kubernetes 1.33
+   why: EKS publishes the add-on versions it supports per Kubernetes version; this one is not among them, so it may misbehave and blocks a clean upgrade.
+   evidence (related): compatible versions: v1.20.4-eksbuild.1, v1.19.6-eksbuild.1
+   fix: Update vpc-cni to v1.20.4-eksbuild.1 (or another compatible version) with the EKS add-on API before the next cluster upgrade.
+   docs: https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html
+
+ITEMS (2)
+NAME     VERSION             STATUS    LATEST
+vpc-cni  v1.16.0-eksbuild.1  DEGRADED  v1.20.4-eksbuild.1
+coredns  v1.12.1-eksbuild.2  ACTIVE    v1.12.1-eksbuild.2

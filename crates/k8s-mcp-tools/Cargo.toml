@@ -14,12 +14,15 @@ workspace = true
 [features]
 # The Amazon EKS provider tools (eks_*).
 provider-eks = ["dep:k8s-mcp-provider", "dep:k8s-mcp-provider-eks"]
+# The Google Kubernetes Engine provider tools (gke_*).
+provider-gke = ["dep:k8s-mcp-provider", "dep:k8s-mcp-provider-gke"]
 
 [dependencies]
 k8s-mcp-core.workspace = true
 k8s-mcp-diagnose.workspace = true
 k8s-mcp-provider = { workspace = true, optional = true }
 k8s-mcp-provider-eks = { workspace = true, optional = true }
+k8s-mcp-provider-gke = { workspace = true, optional = true }
 k8s-openapi.workspace = true
 kube.workspace = true
 serde.workspace = true

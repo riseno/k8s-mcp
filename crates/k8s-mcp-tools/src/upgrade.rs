@@ -122,7 +122,8 @@ type ProviderSection = (
     (String, &'static str, String),
 );
 
-#[cfg(feature = "provider-eks")]
+/// The registered provider's upgrade data (a cluster has one cloud).
+#[cfg(any(feature = "provider-eks", feature = "provider-gke"))]
 async fn provider(
     ctx: &Ctx,
     sc: &Scope,
@@ -130,10 +131,17 @@ async fn provider(
     un: &mut Vec<Unavailable>,
 ) -> Option<ProviderSection> {
     use k8s_mcp_core::provider::ProviderId;
-    if !ctx.providers.contains(&ProviderId::Eks) {
-        return None;
-    }
-    match crate::eks::upgrade(ctx, sc, target).await {
+    let id = ctx.providers.first().copied()?;
+    let result = match id {
+        #[cfg(feature = "provider-eks")]
+        ProviderId::Eks => crate::eks::upgrade(ctx, sc, target).await,
+        #[cfg(feature = "provider-gke")]
+        ProviderId::Gke => crate::gke::upgrade(ctx, sc, target).await,
+        #[allow(unreachable_patterns)] // every provider compiled in
+        _ => return None,
+    };
+    let cloud = id.as_str().to_uppercase();
+    match result {
         Ok((info, findings)) => {
             let failing = info
                 .checks
@@ -141,16 +149,16 @@ async fn provider(
                 .filter(|c| matches!(c.status.as_str(), "error" | "warning"))
                 .count();
             let row = (
-                "EKS upgrade insights".to_owned(),
+                format!("{cloud} upgrade checks"),
                 if failing == 0 { "ok" } else { "warn" },
                 format!("{} checked, {failing} failing", info.checks.len()),
             );
-            let lines = k8s_mcp_provider::upgrade_lines(ProviderId::Eks, &info);
-            Some(("EKS".into(), info.support_ends, lines, findings, row))
+            let lines = k8s_mcp_provider::upgrade_lines(id, &info);
+            Some((cloud, info.support_ends, lines, findings, row))
         }
         Err(e) => {
             un.push(Unavailable {
-                what: "EKS upgrade insights".into(),
+                what: format!("{cloud} upgrade checks"),
                 reason: e.to_string(),
             });
             None
@@ -158,7 +166,7 @@ async fn provider(
     }
 }
 
-#[cfg(not(feature = "provider-eks"))]
+#[cfg(not(any(feature = "provider-eks", feature = "provider-gke")))]
 #[allow(clippy::unused_async)] // same signature as the provider build
 async fn provider(
     _: &Ctx,

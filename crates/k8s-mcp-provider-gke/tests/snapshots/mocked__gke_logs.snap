@@ -1,0 +1,11 @@
+---
+source: crates/k8s-mcp-provider-gke/tests/mocked.rs
+expression: e.render()
+---
+GKE 2 log lines from Cloud Logging matching resource.labels.project_id="acme" AND resource.labels.location="europe-west1" AND resource.labels.cluster_name="shop" AND timestamp>="2026-11-06T21:20:00Z" AND resource.type="k8s_container" AND resource.labels.namespace_name="shop" AND "ECONN" (more matched: narrow with grep, since or limit)
+
+LOGS (Cloud Logging matching resource.labels.project_id="acme" AND resource.labels.location="europe-west1" AND resource.labels.cluster_name="shop" AND timestamp>="2026-11-06T21:20:00Z" AND resource.type="k8s_container" AND resource.labels.namespace_name="shop" AND "ECONN")
+<<untrusted source="log">>
+  api-1: starting
+  api-1: connect ECONNREFUSED 10.0.3.4:5432
+<</untrusted>>

@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Google Kubernetes Engine provider (cargo feature `provider-gke`, default): `gke_cluster_info`,
+  `gke_node_pools`, `gke_addons`, `gke_identity_check` (Workload Identity: annotation, workload
+  pool, node pools in `GKE_METADATA` mode, the Google service account and its
+  `roles/iam.workloadIdentityUser` binding) and `gke_logs` (Cloud Logging), with rules
+  `gke.cluster.*`, `gke.nodepool.*` and `gke.wi.*`, and the release channel's versions in
+  `upgrade_readiness`. Registered with `--providers auto` when the default context is GKE with
+  high confidence, `--providers gke`, or `--gke-cluster <project>/<location>/<name>`.
+  Credentials: Application Default Credentials (no executable-sourced credentials); the SDK runs
+  on rustls + ring (ADR 0012). See `docs/providers/gke.md`.
 - `upgrade_readiness` (`target_version?`, default: the next minor): a checklist of what stands
   between the cluster and the next control-plane minor, with rules `upgrade.target_skips_minor`,
   `upgrade.removed_api_in_use`, `upgrade.deprecated_api_in_use`, `upgrade.kubelet_skew`,

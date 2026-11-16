@@ -1,0 +1,17 @@
+---
+source: crates/k8s-mcp-provider-gke/tests/mocked.rs
+expression: e.render()
+---
+GKE cluster shop: Kubernetes 1.33.5-gke.1000, status RUNNING; no problems found by the provider rules.
+
+ITEMS (9)
+FIELD                   VALUE
+endpoint                34.76.0.10
+endpoint access         public endpoint=true authorized networks=true private nodes=false
+location                europe-west1
+logging                 logging.googleapis.com/kubernetes
+maintenance window      none (GKE picks the time)
+mode                    Standard
+monitoring              monitoring.googleapis.com/kubernetes
+release channel         REGULAR
+workload identity pool  acme.svc.id.goog

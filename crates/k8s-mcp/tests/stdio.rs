@@ -462,3 +462,73 @@ async fn eks_tools_follow_detection_and_need_credentials() {
     );
     plain.cancel().await.unwrap();
 }
+
+/// v0.3: GKE tools follow the provider flags, are read-only and open-world, and without Google
+/// Cloud credentials fail with one line of guidance before any network call (the process has no
+/// credentials file and no metadata server).
+#[cfg(all(unix, feature = "provider-gke"))]
+#[tokio::test]
+async fn gke_tools_need_credentials() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    // A fake plugin first on the plugin PATH: the real gcloud tooling must never run in tests.
+    let plugins = dir.path().join("plugins");
+    std::fs::create_dir(&plugins).unwrap();
+    let fake = plugins.join("gke-gcloud-auth-plugin");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\necho '{\"apiVersion\":\"client.authentication.k8s.io/v1beta1\",\"kind\":\"ExecCredential\",\"status\":{\"token\":\"fake\"}}'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let plugins = plugins.to_str().unwrap().to_owned();
+    let user = "    exec:\n      apiVersion: client.authentication.k8s.io/v1beta1\n      command: gke-gcloud-auth-plugin";
+    let kc = offline_kubeconfig(dir.path(), "https://127.0.0.1:1", user);
+    let client = spawn_without_aws(
+        &[
+            "--kubeconfig",
+            kc.to_str().unwrap(),
+            "--audit-log",
+            "off",
+            "--path-prepend",
+            &plugins,
+            "--gke-cluster",
+            "acme/europe-west1/shop",
+        ],
+        dir.path(),
+    )
+    .await;
+    let tools = client.list_all_tools().await.unwrap();
+    let gke: Vec<String> = tools
+        .iter()
+        .map(|t| t.name.to_string())
+        .filter(|n| n.starts_with("gke_"))
+        .collect();
+    assert_eq!(
+        gke,
+        [
+            "gke_cluster_info",
+            "gke_node_pools",
+            "gke_addons",
+            "gke_identity_check",
+            "gke_logs"
+        ]
+    );
+    assert!(!tools.iter().any(|t| t.name.starts_with("eks_")));
+    for t in tools.iter().filter(|t| t.name.starts_with("gke_")) {
+        let a = t.annotations.as_ref().unwrap();
+        assert_eq!(
+            (a.read_only_hint, a.open_world_hint),
+            (Some(true), Some(true)),
+            "{}",
+            t.name
+        );
+    }
+    let r = call(&client, "gke_cluster_info", json!({})).await;
+    assert_eq!(r.is_error, Some(true));
+    assert_eq!(
+        text(&r),
+        "no Google Cloud credentials found (tried GOOGLE_APPLICATION_CREDENTIALS, the gcloud ADC file and, in a cluster, the metadata server). Run `gcloud auth application-default login`, set GOOGLE_APPLICATION_CREDENTIALS, or use GKE Workload Identity."
+    );
+    client.cancel().await.unwrap();
+}

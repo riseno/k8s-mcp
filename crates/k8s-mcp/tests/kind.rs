@@ -77,6 +77,15 @@ async fn apply(client: &kube::Client, ns: &str, docs: &[Value]) {
                 kube::discovery::ApiResource::erase::<k8s_openapi::api::core::v1::ConfigMap>(&())
             }
             "Pod" => kube::discovery::ApiResource::erase::<Pod>(&()),
+            "Service" => {
+                kube::discovery::ApiResource::erase::<k8s_openapi::api::core::v1::Service>(&())
+            }
+            "PersistentVolumeClaim" => kube::discovery::ApiResource::erase::<
+                k8s_openapi::api::core::v1::PersistentVolumeClaim,
+            >(&()),
+            "Deployment" => {
+                kube::discovery::ApiResource::erase::<k8s_openapi::api::apps::v1::Deployment>(&())
+            }
             "ServiceAccount" => kube::discovery::ApiResource::erase::<ServiceAccount>(&()),
             "Role" => kube::discovery::ApiResource::erase::<k8s_openapi::api::rbac::v1::Role>(&()),
             "RoleBinding" => {
@@ -156,6 +165,14 @@ async fn secret_canary_never_leaks() {
                 "envFrom": [{"secretRef": {"name": "canary"}}],
                 "volumeMounts": [{"name": "s", "mountPath": "/etc/canary"}]}],
             "volumes": [{"name": "s", "secret": {"secretName": "canary"}}]}}),
+        // For the v0.2 tools: a Service, a claim and a Deployment that also use the Secret.
+        json!({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "canary"}, "spec": {"selector": {"app": "canary"}, "ports": [{"port": 80}]}}),
+        json!({"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "canary"}, "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Mi"}}}}),
+        json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "canary-web"}, "spec": {"replicas": 0,
+            "selector": {"matchLabels": {"app": "canary-web"}}, "template": {"metadata": {"labels": {"app": "canary-web"}}, "spec": {
+                "containers": [{"name": "app", "image": "busybox:1.36", "env": [
+                    {"name": "FROM_REF", "valueFrom": {"secretKeyRef": {"name": "canary", "key": "token"}}},
+                    {"name": "DB_PASSWORD", "value": literal}]}]}}}}),
     ])
     .await;
     wait_for(&client, &ns, "canary", |p| {
@@ -228,6 +245,18 @@ async fn secret_canary_never_leaks() {
             json!({"namespace": ns, "min_severity": "info"}),
         ),
         ("diagnose_node", json!({"name": node})),
+        (
+            "diagnose_service",
+            json!({"name": "canary", "namespace": ns}),
+        ),
+        ("diagnose_pvc", json!({"name": "canary", "namespace": ns})),
+        ("diagnose_dns", json!({"pod": "canary", "namespace": ns})),
+        ("autoscaling_status", json!({"namespace": ns})),
+        ("recent_changes", json!({"namespace": ns})),
+        (
+            "rollout_history",
+            json!({"kind": "Deployment", "name": "canary-web", "namespace": ns}),
+        ),
     ];
     for (tool, args) in calls {
         let (raw, r) = call(&mcp, tool, args.clone()).await;
@@ -247,7 +276,7 @@ async fn secret_canary_never_leaks() {
     mcp.cancel().await.unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;
     let log = std::fs::read_to_string(&audit).unwrap();
-    assert!(log.lines().count() >= 19 && !log.contains(&canary) && !log.contains(&literal));
+    assert!(log.lines().count() >= 25 && !log.contains(&canary) && !log.contains(&literal));
     cleanup(&client, &ns).await;
 }
 

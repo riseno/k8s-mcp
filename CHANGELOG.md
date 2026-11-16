@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-16
+
 ### Fixed
 - Provider detection treats listed nodes as authoritative: a kubeconfig that looks like one
   cloud (a `gke_...` context name, an EKS ARN, an exec plugin) no longer wins over nodes whose

@@ -106,7 +106,7 @@ row ends with the v0.2 acceptance criterion it serves.
 
 Evals for 0.2.1 on kind 1.37: top-1 18/18, top-3 18/18, forbidden 0/18 (`evals/results/0.2.1.md`).
 
-## v0.3: GKE and AKS parity, upgrade readiness (plan)
+## v0.3: GKE and AKS parity, upgrade readiness (released in 0.3.0)
 
 Order follows PROPOSAL §5/§16 and Appendix A: the shared trait change first, then the core
 tool, then GKE and AKS against the same trait so the parity test applies. Each row ends with
@@ -131,7 +131,7 @@ the v0.3 acceptance criterion it serves.
 | 1 | GKE and AKS implement every `Provider` method; their outputs follow the EKS structure (automated schema-parity test) | ✅ | `provider_tools_have_parity` (same input schema, tier and capabilities across EKS, GKE and AKS); one set of renderers in `k8s-mcp-provider`; `access` defaults to "not available yet" until v1.0 |
 | 2 | Mocked identity-check failure cases (GKE: no `workloadIdentityUser` binding, node pool not `GKE_METADATA`, no WI pool; AKS: no federated credential, wrong subject, pod label missing, OIDC issuer disabled) | ✅ | `k8s-mcp-provider-gke` and `k8s-mcp-provider-aks` `identity::tests::identity_failure_cases`, plus the mocked goldens (`gke_identity_check`, `aks_identity_check`) |
 | 3 | `upgrade_readiness` flags removed-API usage and blocking PDBs on kind fixtures, with provider sections from mocks | ✅ | `rules::upgrade::tests::removed_apis_and_blocking_pdbs` (fixtures), `upgrade_readiness_flags_removed_apis_and_blocking_pdbs` (mock API), eval scenarios 19 and 20 on kind; provider sections from mocks: `eks_upgrade_checks`, `gke_upgrade_checks`, `aks_upgrade_checks` |
-| 4 | 25+ scenarios, all gates met; binary size reported (`lite` artifact if the full build exceeds 50 MB stripped) | ✅ | 27 scenarios: top-1 27/27, top-3 27/27, forbidden 0/27 on kind 1.37 (results for 0.3.0 at release); full build 32.0 MB stripped, so no `lite` artifact |
+| 4 | 25+ scenarios, all gates met; binary size reported (`lite` artifact if the full build exceeds 50 MB stripped) | ✅ | 27 scenarios: top-1 27/27, top-3 27/27, forbidden 0/27 on kind 1.37, median 3,701 bytes, p95 111 ms (`evals/results/0.3.0.md`); full build 32.0 MB stripped, so no `lite` artifact |
 
 **Decisions (resolved 2026-11-16)**
 - The chart ClusterRole gets `get` on the `/metrics` non-resource URL, for `apiserver_requested_deprecated_apis` (task 2, 6).

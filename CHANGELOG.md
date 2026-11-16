@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-16
+
 ### Added
 - Provider hints: when the cluster's cloud is known (from the kubeconfig, or the registered
   provider toolset in-cluster), findings whose cause is often cloud-specific get a concrete hint

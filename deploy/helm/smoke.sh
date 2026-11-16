@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke test of an installed k8s-mcp chart: probes, 401/403, and a TokenReview-authenticated
 # client that lists tools and runs diagnose_pod; the audit log must name the caller and never
-# the token. Only kind and k3d clusters are allowed.
+# the token. A token without the chart's audience (k8s-mcp) must get 401. Only kind and k3d
+# clusters are allowed.
 #
 # Usage: deploy/helm/smoke.sh <kubeconfig> <context> <namespace> <release>
 set -euo pipefail
@@ -10,7 +11,8 @@ case "$CTX" in kind-* | k3d-*) ;; *) echo "refusing context $CTX: only kind-* an
 k() { kubectl --kubeconfig "$KC" --context "$CTX" "$@"; }
 
 k create serviceaccount mcp-caller -n default --dry-run=client -o yaml | k apply -f - >/dev/null
-TOKEN=$(k create token mcp-caller -n default --duration 10m)
+TOKEN=$(k create token mcp-caller -n default --duration 10m --audience k8s-mcp)
+DEFAULT_TOKEN=$(k create token mcp-caller -n default --duration 10m)
 PORT=18081
 k -n "$NS" port-forward "svc/$REL" "$PORT:8080" >/dev/null 2>&1 &
 PF=$!
@@ -33,6 +35,7 @@ check "/healthz" 200 "$(code "$URL/healthz")"
 check "/readyz" 200 "$(code "$URL/readyz")"
 check "no token -> 401" 401 "$(code "${H[@]}" -d "$INIT" "$URL/mcp")"
 check "bad token -> 401" 401 "$(code "${H[@]}" -H 'Authorization: Bearer nope' -d "$INIT" "$URL/mcp")"
+check "API-server-audience token -> 401" 401 "$(code "${H[@]}" -H "Authorization: Bearer $DEFAULT_TOKEN" -d "$INIT" "$URL/mcp")"
 check "bad Origin -> 403" 403 "$(code "${H[@]}" "${A[@]}" -H 'Origin: https://evil.example' -d "$INIT" "$URL/mcp")"
 SID=$(curl -s -D - -o /dev/null "${H[@]}" "${A[@]}" -d "$INIT" "$URL/mcp" | tr -d '\r' | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}')
 check "session" yes "${SID:+yes}"
@@ -45,5 +48,5 @@ echo "     $(jq -r '.result.structuredContent.summary' <<<"$R" | cut -c1-120)"
 sleep 1
 LOGS=$(k -n "$NS" logs "deploy/$REL")
 check "audit caller" found "$(grep -q -F '"caller":"system:serviceaccount:default:mcp-caller"' <<<"$LOGS" && echo found || echo missing)"
-check "token in pod log" 0 "$(grep -c -F "$TOKEN" <<<"$LOGS" || true)"
+check "token in pod log" 0 "$(grep -c -F -e "$TOKEN" -e "$DEFAULT_TOKEN" <<<"$LOGS" || true)"
 exit $fail

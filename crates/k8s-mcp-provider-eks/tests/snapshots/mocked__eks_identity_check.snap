@@ -2,7 +2,7 @@
 source: crates/k8s-mcp-provider-eks/tests/mocked.rs
 expression: e.render()
 ---
-EKS identity of ServiceAccount shop/api: 6 checks, 1 failed; cloud checks done. Top finding: The trust policy of arn:aws:iam::123456789012:role/shop-api does not allow ServiceAccount shop/api.
+EKS identity of ServiceAccount shop/api: 6 checks (4 passed, 1 failed, 1 not configured); cloud checks done. Top finding: The trust policy of arn:aws:iam::123456789012:role/shop-api does not allow ServiceAccount shop/api.
 
 FINDINGS
 1. [critical/high] eks.irsa.trust_mismatch: The trust policy of arn:aws:iam::123456789012:role/shop-api does not allow ServiceAccount shop/api
@@ -12,13 +12,13 @@ FINDINGS
    docs: https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html
 
 ITEMS (6)
-SIDE        CHECK                                        RESULT  DETAIL
-kubernetes  IRSA role annotation                         ok      arn:aws:iam::123456789012:role/shop-api
-kubernetes  IRSA credentials injected into pods          ok      1/1 pods have AWS_WEB_IDENTITY_TOKEN_FILE
-aws         IAM OIDC provider for the cluster issuer     ok      arn:aws:iam::123456789012:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/ABCDEF
-aws         IRSA role exists                             ok      arn:aws:iam::123456789012:role/shop-api
-aws         IRSA trust policy allows the ServiceAccount  fail    the trust policy's oidc.eks.eu-west-1.amazonaws.com/id/ABCDEF:sub condition allows system:serviceaccount:shop:worker but not system:serviceaccount:shop:api (or its :aud does not allow sts.amazonaws.com)
-aws         Pod Identity associations                    none    none for this ServiceAccount
+SIDE        CHECK                                        RESULT          DETAIL
+kubernetes  IRSA role annotation                         ok              arn:aws:iam::123456789012:role/shop-api
+kubernetes  IRSA credentials injected into pods          ok              1/1 pods have AWS_WEB_IDENTITY_TOKEN_FILE
+aws         IAM OIDC provider for the cluster issuer     ok              arn:aws:iam::123456789012:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/ABCDEF
+aws         IRSA role exists                             ok              arn:aws:iam::123456789012:role/shop-api
+aws         IRSA trust policy allows the ServiceAccount  fail            the trust policy's oidc.eks.eu-west-1.amazonaws.com/id/ABCDEF:sub condition allows system:serviceaccount:shop:worker but not system:serviceaccount:shop:api (or its :aud does not allow sts.amazonaws.com)
+aws         Pod Identity associations                    not configured  none for this ServiceAccount
 
 NEXT
 - get_resource {"kind":"ServiceAccount","name":"api","namespace":"shop"} : check the ServiceAccount name and namespace the policy must name

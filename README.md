@@ -127,6 +127,8 @@ No config file is needed; every flag also reads `K8S_MCP_<FLAG>` (for example `K
 | `--listen <addr>` | `127.0.0.1:8080` | HTTP listen address |
 | `--auth tokenreview\|static\|none` | `tokenreview` | HTTP bearer auth: Kubernetes tokens checked with TokenReview, one token from `--auth-token-file`, or none (loopback only) |
 | `--auth-token-file <path>` | none | Bearer token file for `--auth static` |
+| `--auth-audience <aud,...>` | none (the Helm chart: `k8s-mcp`) | Audiences `tokenreview` tokens must be minted for; without one, every pod's default ServiceAccount token is accepted |
+| `--allowed-callers <glob,...>` | all authenticated | `tokenreview` callers let in: username globs or `group:<glob>`; others get 403, audited |
 | `--allowed-hosts <host,...>` | `localhost`, `127.0.0.1`, `::1` | HTTP `Host` values accepted (DNS-rebinding protection) |
 | `--allowed-origins <origin,...>` | none | Browser `Origin` values accepted; any other `Origin` gets 403 |
 | `--providers auto\|none\|eks` | `auto` | Cloud provider toolsets: `auto` registers one when the default context is detected as that provider |

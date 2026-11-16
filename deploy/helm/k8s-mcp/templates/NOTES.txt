@@ -4,7 +4,11 @@ Try it from your machine:
 
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "k8s-mcp.fullname" . }} 8080:{{ .Values.service.port }}
 {{- if eq .Values.auth.mode "tokenreview" }}
+{{- if .Values.auth.audience }}
+  TOKEN=$(kubectl -n <namespace> create token <serviceaccount> --audience {{ .Values.auth.audience }})
+{{- else }}
   TOKEN=$(kubectl -n <namespace> create token <serviceaccount>)   # any identity the cluster authenticates
+{{- end }}
 {{- else }}
   TOKEN=<the token in Secret {{ .Values.auth.existingSecret }}>
 {{- end }}

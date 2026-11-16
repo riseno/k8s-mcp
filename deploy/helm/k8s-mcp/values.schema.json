@@ -20,6 +20,8 @@
       "additionalProperties": false,
       "properties": {
         "mode": { "enum": ["tokenreview", "static"] },
+        "audience": { "type": "string", "pattern": "^[^,]*$" },
+        "allowedCallers": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "^[^,]*$" } },
         "existingSecret": { "type": "string" }
       }
     },

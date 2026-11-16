@@ -5,6 +5,50 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `diagnose_dns` rule `dns.pod_bypasses_cluster_dns`: a pod whose nameservers skip the kube-dns
+  Service (`dnsPolicy: None` or `Default` without its ClusterIP, or `ClusterFirst` with
+  `hostNetwork`, which falls back to `Default`). `medium` when the pod's logs show failed
+  `.svc` lookups, `info` otherwise; NodeLocal DNSCache (169.254.20.10) counts as the cluster
+  DNS (#53).
+- `--auth-audience` and `--allowed-callers` for `--auth tokenreview`. With an audience, only
+  tokens the API server confirms for it pass (`kubectl create token <sa> --audience k8s-mcp`),
+  so the ServiceAccount token every pod has by default no longer works. Allowed callers are
+  globs over the TokenReview username or `group:<glob>`; others get 403 and an audit record
+  with `"result": "refused"`. The Helm chart sets `auth.audience: k8s-mcp` by default and adds
+  `auth.allowedCallers`; without an audience the server warns at startup (#52).
+
+### Fixed
+- When RBAC hides a Secret a pod uses, `get_logs`, `diagnose_pod` and `diagnose_dns` say in
+  the summary that its values could not be masked and the logs may contain them, instead of
+  only an `UNAVAILABLE EVIDENCE` line. The policy resource's `secret_values`, the server
+  instructions, `docs/in-cluster.md` and `docs/security.md` describe this instead of
+  "never returned" (#46).
+- The Helm chart's default image is `v<appVersion>`, the tag images are published under; chart
+  0.2.0 pointed at `ghcr.io/riseno/k8s-mcp:0.2.0`, which does not exist (#45). The release
+  workflow now checks that the packaged chart's default image resolves before pushing the
+  chart.
+- `prompts/get` tells an unknown prompt (`unknown prompt "x"`) apart from a missing required
+  argument (`prompt "explain-workload" needs argument "kind" (...)`); `investigate-incident`
+  now requires its `symptom` as declared (#49).
+- `eks_identity_check` reports an absent IRSA annotation or Pod Identity association as
+  `not configured` instead of a failure, a missing OIDC provider or role as `fail`, and
+  tallies the results in the summary (`2 checks (1 not configured, 1 skipped): no cloud
+  identity that k8s-mcp can see`) instead of "1 failed ... no problems found" (#48).
+- `autoscaling_status` summaries tell "not checked" from "absent": `Karpenter not checked
+  (RBAC forbids reading it)`, `Cluster Autoscaler status not checked (kube-system is outside
+  the namespace policy)` and `no Cluster Autoscaler status ConfigMap`, instead of
+  `no Karpenter; no Cluster Autoscaler status` for all of them (#50).
+- EKS tools without AWS credentials return one line with the guidance (`no AWS credentials
+  found (tried ...), so k8s-mcp cannot describe the cluster ... Provide them through ...`)
+  instead of 1.7 KB of AWS SDK debug output; other AWS errors drop the SDK debug dump too.
+  The full SDK error is logged at `--log-level debug` (#47).
+- A context that is not in the kubeconfig is reported as such (`context "docker-desktop" is
+  not in the kubeconfig (<path>); allowed contexts: ...`); the `--contexts` advice is kept for
+  contexts that exist but are not allowed (#51).
+- `k8s-mcp://cluster/{context}/overview` percent-decodes the context, so names that RFC 6570
+  expansion encodes (EKS context ARNs with `:` and `/`) resolve.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

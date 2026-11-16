@@ -114,12 +114,7 @@ impl Eks {
             .list_open_id_connect_providers()
             .send()
             .await
-            .map_err(|e| {
-                aws_error(
-                    "list IAM OIDC providers",
-                    &DisplayErrorContext(&e).to_string(),
-                )
-            })?
+            .map_err(|e| aws_error("list IAM OIDC providers", &e))?
             .open_id_connect_provider_list
             .unwrap_or_default()
             .into_iter()
@@ -189,10 +184,7 @@ impl Eks {
                     trust: None,
                 })
             }
-            Err(e) => Err(aws_error(
-                &format!("get IAM role {name}"),
-                &DisplayErrorContext(&e).to_string(),
-            )),
+            Err(e) => Err(aws_error(&format!("get IAM role {name}"), &e)),
         }
     }
 
@@ -203,7 +195,7 @@ impl Eks {
     {
         aws_error(
             &format!("{what} for EKS cluster {} in {}", self.cluster, self.region),
-            &DisplayErrorContext(e).to_string(),
+            e,
         )
     }
 
@@ -271,22 +263,32 @@ impl Eks {
     }
 }
 
-/// An AWS error as a k8s-mcp error: what failed, why, and what to do.
-fn aws_error(what: &str, detail: &str) -> Error {
-    if detail.contains("AccessDenied")
-        || detail.contains("UnauthorizedOperation")
-        || detail.contains("not authorized")
+/// An AWS error as a k8s-mcp error: what failed, why, and what to do. The SDK's debug dump
+/// is only logged (`--log-level debug`): it is long and buries the guidance.
+fn aws_error(what: &str, e: &dyn std::error::Error) -> Error {
+    let full = DisplayErrorContext(e).to_string();
+    tracing::debug!(error = %full, "AWS call failed: {what}");
+    // CredentialsNotLoaded: every provider of the default chain found nothing to use.
+    if full.contains("the credential provider was not enabled") {
+        return Error::Forbidden(format!(
+            "no AWS credentials found (tried environment variables, the shared config and credentials files, web identity, the container and instance metadata endpoints), so k8s-mcp cannot {what}. Provide them through AWS_PROFILE or environment variables, an SSO login, IRSA or EKS Pod Identity."
+        ));
+    }
+    let detail = k8s_mcp_core::text::truncate(&k8s_mcp_core::error::error_chain(e), 500);
+    if full.contains("AccessDenied")
+        || full.contains("UnauthorizedOperation")
+        || full.contains("not authorized")
     {
         Error::Forbidden(format!(
             "{what}: {detail}. Grant the read-only EKS permissions in docs/providers/eks.md to the AWS identity k8s-mcp uses."
         ))
-    } else if detail.contains("ResourceNotFound") {
+    } else if full.contains("ResourceNotFound") {
         Error::NotFound(format!(
             "{what}: {detail}. Check the cluster name and region, or pass --eks-cluster and --eks-region."
         ))
-    } else if detail.to_ascii_lowercase().contains("credential") {
+    } else if full.to_ascii_lowercase().contains("credential") {
         Error::Forbidden(format!(
-            "{what}: no AWS credentials resolved ({detail}). Provide them through the default chain: AWS_PROFILE or environment variables, an SSO login, IRSA or EKS Pod Identity."
+            "{what}: the AWS credentials could not be loaded ({detail}). Check AWS_PROFILE or the environment variables, renew an expired SSO login (`aws sso login`), or check IRSA or EKS Pod Identity."
         ))
     } else {
         Error::Api(format!("{what}: {detail}"))
@@ -462,11 +464,10 @@ impl Provider for Eks {
             .send()
             .await
             .map_err(|e| {
-                let detail = DisplayErrorContext(&e).to_string();
-                if detail.contains("ResourceNotFound") {
+                if DisplayErrorContext(&e).to_string().contains("ResourceNotFound") {
                     Error::NotFound(format!("log group {group} does not exist: turn on the control-plane log types (eks_cluster_info lists them) or Container Insights for application logs"))
                 } else {
-                    aws_error(&format!("read CloudWatch log group {group}"), &detail)
+                    aws_error(&format!("read CloudWatch log group {group}"), &e)
                 }
             })?;
         let lines = out
@@ -500,9 +501,32 @@ fn application_line(message: &str) -> Option<String> {
 /// Why the cloud half of a check was skipped, for `cloud_checks`.
 fn skip_reason(e: &Error) -> String {
     let text = e.to_string();
-    if text.contains("no AWS credentials resolved") {
+    if text.starts_with("no AWS credentials found") {
         "no AWS credentials".into()
     } else {
         k8s_mcp_core::text::truncate(&text, 300)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Issue #47: the no-credentials error is one line, and the identity check still turns it
+    /// into its short skip reason.
+    #[test]
+    fn no_credentials_is_one_short_line() {
+        #[derive(Debug)]
+        struct NotLoaded;
+        impl std::fmt::Display for NotLoaded {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("the credential provider was not enabled")
+            }
+        }
+        impl std::error::Error for NotLoaded {}
+        let e = aws_error("describe the cluster", &NotLoaded);
+        assert!(matches!(e, Error::Forbidden(_)));
+        assert!(!e.to_string().contains('\n'));
+        assert_eq!(skip_reason(&e), "no AWS credentials");
     }
 }

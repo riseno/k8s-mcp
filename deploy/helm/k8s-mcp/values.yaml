@@ -3,7 +3,7 @@
 
 image:
   repository: ghcr.io/riseno/k8s-mcp
-  # Defaults to the chart appVersion.
+  # Defaults to v<chart appVersion>, the release tag images are published under.
   tag: ""
   pullPolicy: IfNotPresent
 
@@ -18,6 +18,14 @@ auth:
   #   TokenReview API (the chart binds system:auth-delegator to the server's ServiceAccount).
   # static: callers send one shared token, read from a Secret (key `token`).
   mode: tokenreview
+  # tokenreview: the audience callers' tokens must be minted for
+  # (`kubectl create token <sa> --audience k8s-mcp`). This keeps the ServiceAccount token every
+  # pod gets by default (API server audience) from working. Empty accepts those tokens too.
+  audience: k8s-mcp
+  # tokenreview: callers let in, as globs over the username (`system:serviceaccount:platform:*`)
+  # or `group:<glob>` over its groups. Others get 403 and an audit record. Empty: everyone the
+  # cluster authenticates (with a token for `audience`).
+  allowedCallers: []
   # Secret holding the static token (key `token`); required when mode is static.
   existingSecret: ""
 
@@ -51,7 +59,9 @@ rbac:
   # Read-only ClusterRole (no Secrets) bound to the ServiceAccount.
   create: true
   # Adds `get` on Secrets so the server can check that referenced Secrets exist and mask their
-  # values in logs. Values are never returned, but the grant itself allows reading them.
+  # values in logs. Without it, a pod that prints a value from a Secret it uses returns it in
+  # clear (pattern redaction only; the summary warns). Values are never returned, but the
+  # grant itself allows reading them.
   secretsMetadata: false
   # Extra ClusterRole rules, for example read access to more CRDs.
   extraRules: []

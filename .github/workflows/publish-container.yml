@@ -67,6 +67,10 @@ jobs:
           version="${TAG#v}"
           helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin <<<"$GH_TOKEN"
           helm package deploy/helm/k8s-mcp --version "$version" --app-version "$version" -d target/chart
+          # The chart's default image must be the one just pushed (issue #45).
+          image=$(helm template k8s-mcp "target/chart/k8s-mcp-$version.tgz" | awk '$1 == "image:" {gsub(/"/, "", $2); print $2}')
+          test "$image" = "$IMAGE:$TAG" || { echo "the chart's default image is $image, not $IMAGE:$TAG" >&2; exit 1; }
+          docker buildx imagetools inspect "$image" >/dev/null
           digest=$(helm push "target/chart/k8s-mcp-$version.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" 2>&1 | tee /dev/stderr | awk '/^Digest:/ {print $2}')
           if [ "${{ github.event.repository.private }}" = false ]; then
             cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts/k8s-mcp@$digest"

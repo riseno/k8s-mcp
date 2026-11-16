@@ -36,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: k8s-mcp
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "v%s" .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - serve
@@ -46,6 +46,13 @@ spec:
             - --auth={{ .Values.auth.mode }}
             {{- if eq .Values.auth.mode "static" }}
             - --auth-token-file=/var/run/k8s-mcp/auth/token
+            {{- else }}
+            {{- with .Values.auth.audience }}
+            - {{ printf "--auth-audience=%s" . | quote }}
+            {{- end }}
+            {{- with .Values.auth.allowedCallers }}
+            - {{ printf "--allowed-callers=%s" (join "," .) | quote }}
+            {{- end }}
             {{- end }}
             - --allowed-hosts={{ include "k8s-mcp.allowedHosts" . }}
             {{- with .Values.allowedOrigins }}

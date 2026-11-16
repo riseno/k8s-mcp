@@ -262,23 +262,45 @@ impl ClusterManager {
     /// client for it.
     pub async fn target(&self, context: Option<&str>, policy: &Policy) -> Result<Target> {
         let name = context.unwrap_or(&self.default_context);
-        if !policy.context_allowed(name, &self.default_context) {
+        let allowed = self.contexts(policy);
+        let names = || {
+            allowed
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let exists = match &self.source {
+            Source::Kubeconfig(kc) => kc.contexts.iter().any(|c| c.name == name),
+            _ => name == self.default_context,
+        };
+        // Only a context that exists can be allowed with --contexts (issue #51).
+        if !exists {
+            let files: Vec<String> = self
+                .kubeconfig_paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
+            return Err(Error::NotFound(format!(
+                "context {name:?} is not in the kubeconfig{}; allowed contexts: {}. Use one of them (list_contexts shows them).",
+                if files.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", files.join(", "))
+                },
+                names()
+            )));
+        }
+        let Some(namespace) = allowed
+            .iter()
+            .find(|c| c.name == name)
+            .map(|c| c.namespace.clone())
+        else {
             return Err(Error::ContextNotAllowed {
                 context: name.into(),
-                allowed: self
-                    .contexts(policy)
-                    .iter()
-                    .map(|c| c.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
+                allowed: names(),
             });
-        }
-        let namespace = self
-            .contexts(policy)
-            .into_iter()
-            .find(|c| c.name == name)
-            .map(|c| c.namespace)
-            .ok_or_else(|| Error::NotFound(format!("context {name:?} does not exist in the kubeconfig; call list_contexts to see the allowed contexts")))?;
+        };
         if let Some(c) = self.lock_clients().get(name) {
             return Ok(Target {
                 context: name.into(),
@@ -556,6 +578,24 @@ users:
             .to_string();
         assert!(
             err.contains("not allowed") && err.contains("Allowed contexts: dev"),
+            "{err}"
+        );
+    }
+
+    /// Issue #51: a name the kubeconfig does not have gets no `--contexts` advice.
+    #[tokio::test]
+    async fn unknown_context_is_reported_as_not_in_the_kubeconfig() {
+        let (cm, policy) = load(&[]);
+        let err = cm
+            .target(Some("docker-desktop"), &policy)
+            .await
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            err.starts_with("context \"docker-desktop\" is not in the kubeconfig (")
+                && err.contains("/config); allowed contexts: dev.")
+                && !err.contains("--contexts"),
             "{err}"
         );
     }

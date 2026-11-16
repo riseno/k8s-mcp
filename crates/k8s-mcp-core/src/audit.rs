@@ -42,7 +42,8 @@ pub struct Record {
     pub namespace: Option<String>,
     /// Redacted arguments.
     pub args: Value,
-    /// `ok` or `error`.
+    /// `ok`, `error`, or `refused` (an HTTP caller outside `--allowed-callers`; no tool ran,
+    /// and `tool` is `-`).
     pub result: &'static str,
     /// Error message (redacted) when `result` is `error`.
     #[serde(skip_serializing_if = "Option::is_none")]

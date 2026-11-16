@@ -277,6 +277,22 @@ pub fn add_notes(e: &mut Envelope, notes: &[Unavailable]) {
     if notes.is_empty() {
         return;
     }
+    // Unmasked Secret values are a leak, not just missing evidence: say so up front.
+    let unmasked: Vec<&str> = notes
+        .iter()
+        .filter_map(|n| {
+            n.what
+                .strip_prefix("Secret ")?
+                .strip_suffix(crate::diagnose::UNMASKED)
+        })
+        .collect();
+    if !unmasked.is_empty() {
+        e.summary = format!(
+            "{} Secret values could not be masked (k8s-mcp may not read Secret {}): the logs may contain them.",
+            e.summary,
+            unmasked.join(", ")
+        );
+    }
     e.sections.push(Section {
         title: "UNAVAILABLE EVIDENCE".into(),
         lines: notes

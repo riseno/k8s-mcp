@@ -823,6 +823,41 @@ async fn get_logs_masks_secret_values_and_multi_line_keys() {
     assert!(all.contains("ready"));
 }
 
+/// riseno/k8s-mcp#46: when RBAC hides a Secret the pod uses, its values cannot be masked, and
+/// the summary says so (get_logs and diagnose_pod).
+#[tokio::test]
+async fn unmasked_secret_values_are_flagged_in_the_summary() {
+    let mut p = pod("shop", "api-1", "Running", None, 3);
+    p["spec"]["containers"][0]["env"] = json!([{"name": "FROM_SECRET", "valueFrom": {"secretKeyRef": {"name": "db", "key": "pw"}}}]);
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/pods/api-1", p)
+        .forbid("/api/v1/namespaces/shop/secrets/db")
+        .get("/api/v1/namespaces/shop/pods/api-1/log", json!("ready\n"))
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let warning = " Secret values could not be masked (k8s-mcp may not read Secret db): the logs may contain them.";
+    let env = k8s_mcp_tools::get_logs(
+        &ctx(&mock, Policy::permissive()),
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(env.summary.ends_with(warning), "{}", env.summary);
+    let env = k8s_mcp_tools::diagnose_pod(
+        &ctx(&mock, Policy::permissive()),
+        DiagnosePodInput {
+            name: "api-1".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(env.summary.contains(warning), "{}", env.summary);
+}
+
 /// riseno/k8s-mcp#28: between restarts the crashed run is the current instance; previous=true
 /// falls back to it instead of returning nothing.
 #[tokio::test]
@@ -1302,9 +1337,36 @@ async fn autoscaling_status_without_karpenter_or_ca() {
     .unwrap();
     assert_eq!(
         env.summary,
-        "no Karpenter; no Cluster Autoscaler status; 0 HPAs; no problems found by the diagnosis rules."
+        "no Karpenter; no Cluster Autoscaler status ConfigMap; 0 HPAs; no problems found by the diagnosis rules."
     );
     assert!(env.sections.is_empty(), "{:?}", env.sections);
+}
+
+/// Issue #50: unreadable is not absent. Karpenter forbidden by RBAC and kube-system outside
+/// the namespace policy say "not checked", and the CA status ConfigMap forbidden too.
+#[tokio::test]
+async fn autoscaling_status_tells_not_checked_from_absent() {
+    let mock = MockApi::new()
+        .forbid("/apis/karpenter.sh/v1/nodepools")
+        .forbid("/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status")
+        .list("/apis/autoscaling/v2/horizontalpodautoscalers", vec![])
+        .list("/api/v1/events", vec![])
+        .start();
+    let summary = |p| async {
+        k8s_mcp_tools::autoscaling_status(&ctx(&mock, p), AutoscalingStatusInput::default())
+            .await
+            .unwrap()
+            .summary
+    };
+    assert_eq!(
+        summary(policy(&[], &["kube-system"])).await,
+        "Karpenter not checked (RBAC forbids reading it); Cluster Autoscaler status not checked (kube-system is outside the namespace policy); 0 HPAs; no problems found by the diagnosis rules."
+    );
+    assert!(
+        summary(Policy::permissive())
+            .await
+            .contains("; Cluster Autoscaler status not checked (RBAC forbids reading it);")
+    );
 }
 
 /// v0.2 acceptance criterion 3 through cluster_overview: EKS and its identity from node

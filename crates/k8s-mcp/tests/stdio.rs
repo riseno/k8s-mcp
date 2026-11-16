@@ -49,7 +49,7 @@ fn offline_kubeconfig(dir: &Path, server: &str, user: &str) -> PathBuf {
     std::fs::write(
         &path,
         format!(
-            "apiVersion: v1\nkind: Config\ncurrent-context: test\nclusters:\n- name: test\n  cluster: {{server: '{server}'}}\ncontexts:\n- name: test\n  context: {{cluster: test, user: test, namespace: shop}}\nusers:\n- name: test\n  user:\n{user}\n"
+            "apiVersion: v1\nkind: Config\ncurrent-context: test\nclusters:\n- name: test\n  cluster: {{server: '{server}'}}\ncontexts:\n- name: test\n  context: {{cluster: test, user: test, namespace: shop}}\n- name: prod\n  context: {{cluster: test, user: test}}\nusers:\n- name: test\n  user:\n{user}\n"
         ),
     )
     .unwrap();
@@ -103,6 +103,30 @@ async fn default_tool_list_is_read_only_and_well_formed() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("not allowed"), "{err}");
+    // Names the kubeconfig does not have get no --contexts advice (issue #51), after the
+    // template value is percent-decoded.
+    for (uri, context) in [
+        (
+            "k8s-mcp://cluster/docker-desktop/overview",
+            "docker-desktop",
+        ),
+        (
+            "k8s-mcp://cluster/..%2F..%2Fpolicy/overview",
+            "../../policy",
+        ),
+    ] {
+        let err = client
+            .read_resource(ReadResourceRequestParams::new(uri))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("context {context:?} is not in the kubeconfig"))
+                && err.contains("allowed contexts: test.")
+                && !err.contains("--contexts"),
+            "{err}"
+        );
+    }
     let policy = client
         .read_resource(ReadResourceRequestParams::new("k8s-mcp://policy"))
         .await
@@ -397,12 +421,12 @@ async fn eks_tools_follow_detection_and_need_credentials() {
             t.name
         );
     }
+    // Issue #47: one short line with the guidance, not the SDK's debug dump.
     let r = call(&client, "eks_cluster_info", json!({})).await;
     assert_eq!(r.is_error, Some(true));
-    assert!(
-        text(&r).contains("no AWS credentials resolved"),
-        "{}",
-        text(&r)
+    assert_eq!(
+        text(&r),
+        "no AWS credentials found (tried environment variables, the shared config and credentials files, web identity, the container and instance metadata endpoints), so k8s-mcp cannot describe the cluster for EKS cluster shop in eu-west-1. Provide them through AWS_PROFILE or environment variables, an SSO login, IRSA or EKS Pod Identity."
     );
     client.cancel().await.unwrap();
 

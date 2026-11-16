@@ -77,7 +77,7 @@ pub struct IdentityCheck {
     pub side: &'static str,
     /// What was checked.
     pub check: String,
-    /// `ok`, `fail`, `missing` or `skipped`.
+    /// `ok`, `fail` (configured and wrong), `not configured` or `skipped` (not checkable).
     pub result: &'static str,
     /// What was found.
     pub detail: String,
@@ -251,15 +251,29 @@ pub fn identity_envelope(
     subject: &str,
     (report, findings): Report<IdentityReport>,
 ) -> Envelope {
-    let failed = report
-        .checks
-        .iter()
-        .filter(|c| matches!(c.result, "fail" | "missing"))
-        .count();
+    let count = |r: &str| report.checks.iter().filter(|c| c.result == r).count();
+    let tally: Vec<String> = [
+        ("ok", "passed"),
+        ("fail", "failed"),
+        ("not configured", "not configured"),
+        ("skipped", "skipped"),
+    ]
+    .iter()
+    .filter_map(|(r, label)| {
+        let n = count(r);
+        (n > 0).then(|| format!("{n} {label}"))
+    })
+    .collect();
+    let unseen = if count("ok") + count("fail") == 0 {
+        ": no cloud identity that k8s-mcp can see"
+    } else {
+        ""
+    };
     let mut e = Envelope::new(format!(
-        "{} identity of {subject}: {} checks, {failed} failed; cloud checks {}{}",
+        "{} identity of {subject}: {} checks ({}){unseen}; cloud checks {}{}",
         p.as_str().to_uppercase(),
         report.checks.len(),
+        tally.join(", "),
         report.cloud_checks,
         top(&findings)
     ));

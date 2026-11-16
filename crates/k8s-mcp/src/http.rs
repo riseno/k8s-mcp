@@ -14,6 +14,7 @@ use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use k8s_mcp_core::policy::Patterns;
 use k8s_openapi::api::authentication::v1::{TokenReview, TokenReviewSpec};
 use kube::api::{Api, PostParams};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -28,12 +29,53 @@ const REVIEW_CACHE: usize = 1024;
 /// Largest accepted request body (tool arguments are small).
 const MAX_BODY: usize = 1 << 20;
 
+/// Who a TokenReview says the caller is.
+#[derive(Clone)]
+pub struct Identity {
+    username: String,
+    groups: Vec<String>,
+}
+
+/// `--allowed-callers`: globs over the TokenReview username, or `group:<glob>` over its groups.
+pub struct Callers {
+    users: Patterns,
+    groups: Patterns,
+}
+
+impl Callers {
+    /// `None` (every authenticated caller) when no pattern is given.
+    pub fn new(patterns: &[String]) -> anyhow::Result<Option<Self>> {
+        let (mut users, mut groups) = (Vec::new(), Vec::new());
+        for p in patterns.iter().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+            match p.strip_prefix("group:") {
+                Some(g) => groups.push(g.to_owned()),
+                None => users.push(p.to_owned()),
+            }
+        }
+        if users.is_empty() && groups.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            users: Patterns::new(&users)?,
+            groups: Patterns::new(&groups)?,
+        }))
+    }
+
+    fn allows(&self, id: &Identity) -> bool {
+        self.users.is_match(&id.username) || id.groups.iter().any(|g| self.groups.is_match(g))
+    }
+}
+
 /// How HTTP callers prove who they are.
+#[allow(clippy::large_enum_variant)] // one value per process
 pub enum Auth {
     /// Validate bearer tokens with the TokenReview API, as the server's own identity.
     TokenReview {
         client: kube::Client,
-        cache: Mutex<HashMap<String, (Instant, String)>>,
+        /// Audiences the token must be minted for (`--auth-audience`); empty: the API server's.
+        audiences: Vec<String>,
+        callers: Option<Callers>,
+        cache: Mutex<HashMap<String, (Instant, Identity)>>,
     },
     /// One shared bearer token.
     Static(String),
@@ -41,19 +83,50 @@ pub enum Auth {
     None,
 }
 
+/// The outcome of authenticating one request.
+enum Verdict {
+    /// Authenticated and allowed, as this caller.
+    Allowed(String),
+    /// No token, or one that is not valid (401).
+    Unauthenticated,
+    /// Authenticated, but not in `--allowed-callers` (403).
+    Refused(String),
+}
+
 impl Auth {
-    /// Check the flags: `none` only on loopback, `static` needs a non-empty token file.
+    /// Check the flags: `none` only on loopback, `static` needs a non-empty token file, and
+    /// audiences and allowed callers only apply to `tokenreview`.
     pub fn new(
         mode: &str,
         token_file: Option<&std::path::Path>,
         listen: SocketAddr,
         client: kube::Client,
+        audiences: &[String],
+        allowed_callers: &[String],
     ) -> anyhow::Result<Self> {
+        let audiences: Vec<String> = audiences
+            .iter()
+            .map(|a| a.trim().to_owned())
+            .filter(|a| !a.is_empty())
+            .collect();
+        let callers = Callers::new(allowed_callers)?;
+        if mode != "tokenreview" && (!audiences.is_empty() || callers.is_some()) {
+            bail!("--auth-audience and --allowed-callers need --auth tokenreview, not {mode}");
+        }
         Ok(match mode {
-            "tokenreview" => Self::TokenReview {
-                client,
-                cache: Mutex::default(),
-            },
+            "tokenreview" => {
+                if audiences.is_empty() {
+                    tracing::warn!(
+                        "--auth tokenreview without --auth-audience accepts any token for the API server's audience, including the ServiceAccount token every pod gets by default; set --auth-audience (the Helm chart uses k8s-mcp)"
+                    );
+                }
+                Self::TokenReview {
+                    client,
+                    audiences,
+                    callers,
+                    cache: Mutex::default(),
+                }
+            }
             "static" => {
                 let path = token_file.context("--auth static needs --auth-token-file <path>")?;
                 let token = std::fs::read_to_string(path)
@@ -72,16 +145,30 @@ impl Auth {
         })
     }
 
-    /// The caller's identity, `None` when the token is missing or invalid.
-    async fn caller(&self, token: Option<&str>) -> anyhow::Result<Option<String>> {
-        match (self, token) {
-            (Self::None, _) => Ok(Some("anonymous".into())),
-            (_, None) => Ok(None),
-            (Self::Static(want), Some(t)) => {
-                Ok(same(want.as_bytes(), t.as_bytes()).then(|| "static-token".into()))
+    /// Who the caller is, and whether it is let in.
+    async fn verdict(&self, token: Option<&str>) -> anyhow::Result<Verdict> {
+        Ok(match (self, token) {
+            (Self::None, _) => Verdict::Allowed("anonymous".into()),
+            (Self::Static(want), Some(t)) if same(want.as_bytes(), t.as_bytes()) => {
+                Verdict::Allowed("static-token".into())
             }
-            (Self::TokenReview { client, cache }, Some(t)) => review(client, cache, t).await,
-        }
+            (_, None) | (Self::Static(_), Some(_)) => Verdict::Unauthenticated,
+            (
+                Self::TokenReview {
+                    client,
+                    audiences,
+                    callers,
+                    cache,
+                },
+                Some(t),
+            ) => match review(client, audiences, cache, t).await? {
+                None => Verdict::Unauthenticated,
+                Some(id) if callers.as_ref().is_some_and(|c| !c.allows(&id)) => {
+                    Verdict::Refused(id.username)
+                }
+                Some(id) => Verdict::Allowed(id.username),
+            },
+        })
     }
 }
 
@@ -92,19 +179,20 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 
 async fn review(
     client: &kube::Client,
-    cache: &Mutex<HashMap<String, (Instant, String)>>,
+    audiences: &[String],
+    cache: &Mutex<HashMap<String, (Instant, Identity)>>,
     token: &str,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<Identity>> {
     let cached = cache.lock().ok().and_then(|c| c.get(token).cloned());
-    if let Some((at, user)) = cached
+    if let Some((at, id)) = cached
         && at.elapsed() < REVIEW_TTL
     {
-        return Ok(Some(user));
+        return Ok(Some(id));
     }
     let request = TokenReview {
         spec: TokenReviewSpec {
             token: Some(token.to_owned()),
-            ..TokenReviewSpec::default()
+            audiences: (!audiences.is_empty()).then(|| audiences.to_vec()),
         },
         ..TokenReview::default()
     };
@@ -112,33 +200,57 @@ async fn review(
         .create(&PostParams::default(), &request)
         .await
         .context("create a TokenReview (the server's ServiceAccount needs `create` on tokenreviews.authentication.k8s.io)")?;
-    let user = reviewed
+    let id = reviewed
         .status
         .filter(|s| s.authenticated == Some(true))
+        // An authenticator that ignores audiences answers with none: the token was only
+        // checked against the API server's own audience.
+        .filter(|s| {
+            audiences.is_empty() || s.audiences.iter().flatten().any(|a| audiences.contains(a))
+        })
         .and_then(|s| s.user)
-        .and_then(|u| u.username);
-    if let (Some(user), Ok(mut c)) = (&user, cache.lock()) {
+        .and_then(|u| {
+            Some(Identity {
+                username: u.username?,
+                groups: u.groups.unwrap_or_default(),
+            })
+        });
+    if let (Some(id), Ok(mut c)) = (&id, cache.lock()) {
         if c.len() >= REVIEW_CACHE {
             c.clear();
         }
-        c.insert(token.to_owned(), (Instant::now(), user.clone()));
+        c.insert(token.to_owned(), (Instant::now(), id.clone()));
     }
-    Ok(user)
+    Ok(id)
 }
 
-async fn authenticate(State(auth): State<Arc<Auth>>, mut req: Request, next: Next) -> Response {
+/// The middleware's state: who may call, and where refusals are audited.
+struct Gate {
+    auth: Auth,
+    server: K8sMcp,
+}
+
+async fn authenticate(State(gate): State<Arc<Gate>>, mut req: Request, next: Next) -> Response {
     let token = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::trim);
-    match auth.caller(token).await {
-        Ok(Some(caller)) => {
+    match gate.auth.verdict(token).await {
+        Ok(Verdict::Allowed(caller)) => {
             req.extensions_mut().insert(Caller(caller));
             next.run(req).await
         }
-        Ok(None) => (
+        Ok(Verdict::Refused(caller)) => {
+            gate.server.audit_refused(&caller);
+            (
+                StatusCode::FORBIDDEN,
+                "this identity is not in the server's --allowed-callers\n",
+            )
+                .into_response()
+        }
+        Ok(Verdict::Unauthenticated) => (
             StatusCode::UNAUTHORIZED,
             [(header::WWW_AUTHENTICATE, "Bearer")],
             "missing or invalid bearer token\n",
@@ -178,6 +290,10 @@ pub fn router(
     if !allowed_hosts.is_empty() {
         config = config.with_allowed_hosts(allowed_hosts);
     }
+    let gate = Arc::new(Gate {
+        auth,
+        server: server.clone(),
+    });
     let mcp = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
@@ -186,7 +302,7 @@ pub fn router(
     let ct = mcp.config.cancellation_token.clone();
     let app = Router::new()
         .nest_service("/mcp", mcp)
-        .layer(middleware::from_fn_with_state(Arc::new(auth), authenticate))
+        .layer(middleware::from_fn_with_state(gate, authenticate))
         .route("/healthz", get(|| async { "ok\n" }))
         .route("/readyz", get(move || readyz(client.clone())));
     (app, move || ct.cancel())
@@ -406,6 +522,8 @@ mod tests {
         };
         let tokenreview = |client| Auth::TokenReview {
             client,
+            audiences: Vec::new(),
+            callers: None,
             cache: Mutex::default(),
         };
 
@@ -426,6 +544,107 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Issue #52: with --auth-audience, only tokens the API server confirms for that audience
+    /// pass. An answer without audiences means the token was only checked for the API server.
+    #[tokio::test]
+    async fn tokenreview_with_an_audience_needs_it_confirmed() {
+        let path = "/apis/authentication.k8s.io/v1/tokenreviews";
+        let review = |audiences: Value| {
+            json!({"apiVersion": "authentication.k8s.io/v1", "kind": "TokenReview", "spec": {},
+                "status": {"authenticated": true, "audiences": audiences, "user": {"username": "system:serviceaccount:shop:ai"}}})
+        };
+        let tokenreview = |client| {
+            Auth::new(
+                "tokenreview",
+                None,
+                "0.0.0.0:8080".parse().unwrap(),
+                client,
+                &["k8s-mcp".into()],
+                &[],
+            )
+            .unwrap()
+        };
+        for (audiences, want) in [
+            (json!(["k8s-mcp"]), StatusCode::OK),
+            (json!(null), StatusCode::UNAUTHORIZED),
+            (
+                json!(["https://kubernetes.default.svc"]),
+                StatusCode::UNAUTHORIZED,
+            ),
+        ] {
+            let mock = MockApi::new()
+                .route("POST", path, 201, review(audiences.clone()))
+                .start();
+            let resp = app(tokenreview, &mock, "off")
+                .oneshot(post(&initialize(), Some("sa-token"), None))
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), want, "{audiences}");
+        }
+    }
+
+    /// Issue #52: --allowed-callers matches the username or a group; others get 403, audited.
+    #[tokio::test]
+    async fn callers_outside_the_allow_list_get_403_and_an_audit_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let audit = dir.path().join("audit.jsonl");
+        let mock = MockApi::new()
+            .route("POST", "/apis/authentication.k8s.io/v1/tokenreviews", 201, json!({
+                "apiVersion": "authentication.k8s.io/v1", "kind": "TokenReview", "spec": {},
+                "status": {"authenticated": true, "user": {"username": "system:serviceaccount:shop:ai",
+                    "groups": ["system:serviceaccounts", "sre"]}}}))
+            .start();
+        let with = |callers: &[&str]| {
+            let callers: Vec<String> = callers.iter().map(|c| (*c).to_owned()).collect();
+            move |client| {
+                Auth::new(
+                    "tokenreview",
+                    None,
+                    "0.0.0.0:8080".parse().unwrap(),
+                    client,
+                    &[],
+                    &callers,
+                )
+                .unwrap()
+            }
+        };
+        for (callers, want) in [
+            (&["system:serviceaccount:shop:*"][..], StatusCode::OK),
+            (
+                &["system:serviceaccount:platform:*", "group:sre"],
+                StatusCode::OK,
+            ),
+            (
+                &["system:serviceaccount:platform:*", "group:admins"],
+                StatusCode::FORBIDDEN,
+            ),
+        ] {
+            let resp = app(with(callers), &mock, audit.to_str().unwrap())
+                .oneshot(post(&initialize(), Some("sa-token"), None))
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), want, "{callers:?}");
+        }
+        let mut log = String::new();
+        for _ in 0..50 {
+            log = std::fs::read_to_string(&audit).unwrap_or_default();
+            if log.contains("refused") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let rec: Value = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+        assert_eq!(
+            (&rec["result"], &rec["caller"], &rec["tool"]),
+            (
+                &json!("refused"),
+                &json!("system:serviceaccount:shop:ai"),
+                &json!("-")
+            )
+        );
+        assert!(!log.contains("sa-token"));
     }
 
     #[tokio::test]
@@ -457,14 +676,56 @@ mod tests {
             kube::Client::try_from(kube::Config::new("http://127.0.0.1:1".parse().unwrap()))
                 .unwrap()
         };
-        assert!(Auth::new("none", None, "127.0.0.1:8080".parse().unwrap(), client()).is_ok());
-        let err = Auth::new("none", None, "0.0.0.0:8080".parse().unwrap(), client())
-            .err()
-            .unwrap();
+        assert!(
+            Auth::new(
+                "none",
+                None,
+                "127.0.0.1:8080".parse().unwrap(),
+                client(),
+                &[],
+                &[]
+            )
+            .is_ok()
+        );
+        let err = Auth::new(
+            "none",
+            None,
+            "0.0.0.0:8080".parse().unwrap(),
+            client(),
+            &[],
+            &[],
+        )
+        .err()
+        .unwrap();
         assert!(
             err.to_string().contains("only allowed on a loopback"),
             "{err}"
         );
-        assert!(Auth::new("static", None, "0.0.0.0:8080".parse().unwrap(), client()).is_err());
+        assert!(
+            Auth::new(
+                "static",
+                None,
+                "0.0.0.0:8080".parse().unwrap(),
+                client(),
+                &[],
+                &[]
+            )
+            .is_err()
+        );
+        // Audiences and allowed callers only mean something to TokenReview.
+        let dir = tempfile::tempdir().unwrap();
+        let token = dir.path().join("token");
+        std::fs::write(&token, "t").unwrap();
+        let err = Auth::new(
+            "static",
+            Some(&token),
+            "0.0.0.0:8080".parse().unwrap(),
+            client(),
+            &["k8s-mcp".into()],
+            &[],
+        )
+        .err()
+        .unwrap();
+        assert!(err.to_string().contains("need --auth tokenreview"), "{err}");
     }
 }

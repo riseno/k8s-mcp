@@ -1,7 +1,8 @@
 //! DNS (PROPOSAL §9.2). Two entry points:
 //! - [`check`] (`diagnose_pod`, v0.1): resolution errors in the pod's own logs;
 //! - [`check_cluster`] (`diagnose_dns`, v0.2): the whole path, in the order a lookup takes it:
-//!   the pod's NetworkPolicies, CoreDNS, the kube-dns Service, then the app's logs and ndots.
+//!   the pod's NetworkPolicies, CoreDNS, the kube-dns Service, the pod's DNS settings, then the
+//!   app's logs and ndots.
 //!
 //! Log patterns are only medium-confidence evidence, so the log finding is `high`/`medium`: it
 //! never outranks a definitive root cause (always `critical`), such as the crash loop whose
@@ -48,6 +49,11 @@ pub const RULES: &[RuleMeta] = &[
         docs: docs::DNS,
     },
     RuleMeta {
+        id: "dns.pod_bypasses_cluster_dns",
+        title: "The pod's DNS settings bypass the cluster DNS",
+        docs: docs::POD_DNS,
+    },
+    RuleMeta {
         id: "dns.ndots_hint",
         title: "External names go through the cluster search domains first (ndots)",
         docs: docs::POD_DNS,
@@ -71,6 +77,8 @@ static UPSTREAM: LazyLock<Regex> = LazyLock::new(|| {
 static HOST: LazyLock<Regex> =
     LazyLock::new(|| re(r"\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62})\b"));
 
+/// The documented NodeLocal DNSCache address: a node-local cache in front of CoreDNS.
+const NODE_LOCAL_DNS: &str = "169.254.20.10";
 /// Default `ndots` for ClusterFirst pods.
 const DEFAULT_NDOTS: usize = 5;
 const SHOWN: usize = 3;
@@ -86,6 +94,7 @@ pub fn check_cluster(ev: &DnsEvidence, out: &mut Vec<Finding>) {
     let dns_ready = coredns(ev, out);
     endpoints(ev, dns_ready, out);
     if let Some(pod) = &ev.pod {
+        bypasses_cluster_dns(ev, pod, out);
         resolution_errors(pod, &ev.pod_logs, out);
         ndots(pod, &ev.pod_logs, out);
     }
@@ -324,6 +333,93 @@ fn endpoints(ev: &DnsEvidence, dns_ready: Option<usize>, out: &mut Vec<Finding>)
     out.push(f.docs(docs::DNS).fix("Restore the kube-dns Service so it selects the CoreDNS pods (k8s-app=kube-dns) on UDP and TCP port 53; managed clusters recreate it when the DNS add-on is repaired."));
 }
 
+/// A pod whose resolv.conf does not point at the cluster DNS: `dnsPolicy: None` or `Default`
+/// without the kube-dns ClusterIP among its nameservers, or `ClusterFirst` on the host network,
+/// which falls back to `Default`. `medium` when its logs show failed `.svc` lookups, else `info`.
+fn bypasses_cluster_dns(ev: &DnsEvidence, pod: &Pod, out: &mut Vec<Finding>) {
+    let Some(spec) = &pod.spec else {
+        return;
+    };
+    let policy = spec.dns_policy.as_deref().unwrap_or("ClusterFirst");
+    let host_network = spec.host_network == Some(true);
+    let (setting, confidence) = match policy {
+        // The nameservers are all in the spec.
+        "None" => ("dnsPolicy None", Confidence::High),
+        // The node's resolv.conf, which k8s-mcp cannot see, comes first.
+        "Default" => (
+            "dnsPolicy Default (the node's resolv.conf)",
+            Confidence::Medium,
+        ),
+        "ClusterFirst" if host_network => (
+            "dnsPolicy ClusterFirst with hostNetwork, which falls back to Default (the node's resolv.conf)",
+            Confidence::Medium,
+        ),
+        _ => return,
+    };
+    let nameservers: Vec<&str> = spec
+        .dns_config
+        .iter()
+        .flat_map(|c| c.nameservers.iter().flatten())
+        .map(String::as_str)
+        .collect();
+    let dns_ips: Option<Vec<&str>> = match &ev.dns_service {
+        Some(Some(svc)) => svc.spec.as_ref().map(|s| {
+            s.cluster_ips
+                .iter()
+                .flatten()
+                .chain(&s.cluster_ip)
+                .map(String::as_str)
+                .collect()
+        }),
+        _ => None,
+    };
+    let reaches_cluster_dns = match &dns_ips {
+        _ if nameservers.contains(&NODE_LOCAL_DNS) => true,
+        Some(ips) => nameservers.iter().any(|n| ips.contains(n)),
+        None if nameservers.is_empty() => false,
+        // Extra nameservers, and no kube-dns IP to compare them with.
+        None => return,
+    };
+    if reaches_cluster_dns {
+        return;
+    }
+    let failed: Vec<&String> = ev
+        .pod_logs
+        .iter()
+        .flat_map(|l| &l.lines)
+        .filter(|l| DNS_ERROR.is_match(l) && l.to_ascii_lowercase().contains(".svc"))
+        .collect();
+    let kube_dns = dns_ips.as_ref().and_then(|ips| ips.first()).map_or_else(
+        || "the kube-dns ClusterIP".to_owned(),
+        |ip| (*ip).to_owned(),
+    );
+    let (name, _) = pod_ref(pod);
+    let mut f = Finding::new(
+        "dns.pod_bypasses_cluster_dns",
+        if failed.is_empty() { Severity::Info } else { Severity::Medium },
+        confidence,
+        format!("pod {name} does not use the cluster DNS, so Service names do not resolve"),
+    )
+    .explain(format!("Its resolv.conf does not point at the kube-dns Service ({kube_dns}), so names such as <service>.<namespace>.svc.cluster.local fail to resolve; external names may still work."))
+    .docs(docs::POD_DNS)
+    .evidence(
+        Source::Spec,
+        format!(
+            "{setting}; dnsConfig nameservers: {}",
+            if nameservers.is_empty() { "none".into() } else { nameservers.join(", ") }
+        ),
+    )
+    .fix(if policy == "ClusterFirst" {
+        format!("Set `dnsPolicy: ClusterFirstWithHostNet` on the pod, or add {kube_dns} to dnsConfig.nameservers.")
+    } else {
+        format!("Use `dnsPolicy: ClusterFirst` (or `ClusterFirstWithHostNet` with hostNetwork), or add {kube_dns} to dnsConfig.nameservers.")
+    });
+    for line in failed.iter().rev().take(2) {
+        f = f.evidence(Source::Log, truncate(line, 300));
+    }
+    out.push(f);
+}
+
 /// External names (with a dot, fewer dots than ndots, not cluster names) in DNS-error lines.
 fn ndots(pod: &Pod, logs: &[ContainerLog], out: &mut Vec<Finding>) {
     let Some(spec) = &pod.spec else {
@@ -478,6 +574,64 @@ mod tests {
         assert_eq!(out[0].confidence, Confidence::Medium);
         assert_eq!(out[2].severity, Severity::Low);
         assert!(out[2].title.contains("api.example.com"), "{}", out[2].title);
+    }
+
+    fn spec(ev: &mut DnsEvidence) -> &mut k8s_openapi::api::core::v1::PodSpec {
+        ev.pod.as_mut().unwrap().spec.as_mut().unwrap()
+    }
+
+    /// Issue #53: nameservers that skip kube-dns, with and without failed `.svc` lookups.
+    #[test]
+    fn pod_dns_settings_that_bypass_the_cluster_dns() {
+        let out = cluster("dns/pod-bypasses.yaml");
+        let f = out
+            .iter()
+            .find(|f| f.id == "dns.pod_bypasses_cluster_dns")
+            .unwrap();
+        assert_eq!(
+            (f.severity, f.confidence),
+            (Severity::Medium, Confidence::High)
+        );
+        assert_eq!(
+            f.evidence[0].text,
+            "dnsPolicy None; dnsConfig nameservers: 10.255.255.1"
+        );
+        assert!(f.evidence[1].text.contains("db.shop.svc.cluster.local"));
+        assert!(f.fix.contains("add 10.96.0.10 to dnsConfig.nameservers"));
+
+        let mut ev = dns_fixture("dns/pod-bypasses.yaml");
+        ev.pod_logs.clear();
+        let bypass = |ev: &DnsEvidence| {
+            let mut out = Vec::new();
+            check_cluster(ev, &mut out);
+            out.into_iter()
+                .find(|f| f.id == "dns.pod_bypasses_cluster_dns")
+                .map(|f| (f.severity, f.confidence, f.fix))
+        };
+        assert_eq!(bypass(&ev).unwrap().0, Severity::Info, "no failed lookups");
+        // The kube-dns IP (or NodeLocal DNSCache) among the nameservers is the cluster DNS.
+        for ns in ["10.96.0.10", "169.254.20.10"] {
+            spec(&mut ev).dns_config.as_mut().unwrap().nameservers = Some(vec![ns.into()]);
+            assert_eq!(bypass(&ev), None, "{ns}");
+        }
+        // ClusterFirst on the host network falls back to the node's resolv.conf.
+        spec(&mut ev).dns_config = None;
+        spec(&mut ev).dns_policy = None;
+        spec(&mut ev).host_network = Some(true);
+        let (_, confidence, fix) = bypass(&ev).unwrap();
+        assert_eq!(confidence, Confidence::Medium);
+        assert!(
+            fix.starts_with("Set `dnsPolicy: ClusterFirstWithHostNet`"),
+            "{fix}"
+        );
+        spec(&mut ev).dns_policy = Some("ClusterFirstWithHostNet".into());
+        assert_eq!(bypass(&ev), None);
+        // Without the kube-dns Service, listed nameservers cannot be judged.
+        spec(&mut ev).dns_policy = Some("None".into());
+        spec(&mut ev).dns_config =
+            Some(serde_json::from_value(json!({"nameservers": ["10.0.0.2"]})).unwrap());
+        ev.dns_service = None;
+        assert_eq!(bypass(&ev), None);
     }
 
     #[test]

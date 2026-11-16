@@ -5,14 +5,14 @@ This page summarises the threat model: what is enforced and how it is tested.
 | Threat | Mitigation | Test |
 |---|---|---|
 | Prompt injection via cluster content | No write tools exist; untrusted text is delimited, neutralised and capped; server instructions and tool descriptions say it is data | `envelope`/`text` unit tests, `list_events` golden test |
-| Secret exfiltration | Secret values are never returned (keys and sizes only) in any mode, including `--redact off`; env/ConfigMap/annotation/log/audit redaction | `secrets_never_show_values_in_any_view`, redaction corpus (0 false negatives), kind canary test |
+| Secret exfiltration | Secret values are never returned (keys and sizes only) in any mode, including `--redact off`; in pod logs, values of the Secrets the pod uses are masked when k8s-mcp may read them (otherwise the summary warns); env/ConfigMap/annotation/log/audit redaction | `secrets_never_show_values_in_any_view`, redaction corpus (0 false negatives), kind canary test |
 | Excessive privilege | Tool surface is read-only; `check_permissions` and `doctor` warn about `*` on `*` | kind tests |
 | Context hopping | Only the default context unless `--contexts`; every response names its context | `cluster` unit tests, stdio test |
 | Namespace escape | `--namespaces`/`--deny-namespaces` checked before every call and applied to cluster-wide results | per-tool namespace policy test |
 | Resource exhaustion | List limits, log caps, output cap, 20 s API timeout, 30 s call timeout, 8 concurrent calls, client cancellation | envelope `fit` tests |
 | Credential leakage by the server | Kubeconfig never written or shown; exec plugin output never echoed; errors and audit args redacted; no telemetry | stdio tests |
 | Malicious arguments | Typed inputs with `deny_unknown_fields`; names validated; the kubeconfig path cannot be changed by the client; no shelling out | input tests |
-| Unauthorised HTTP access, DNS rebinding, CSRF (`--transport http`) | Bearer auth on `/mcp` (TokenReview, or a static token compared in constant time); `--auth none` refused unless the listen address is loopback; `Host` allow-list (loopback by default); any `Origin` not in `--allowed-origins` gets 403 (none by default, no CORS); 1 MiB request body cap; TLS terminates at an ingress or mesh | `http` unit tests (401, 403, TokenReview, loopback check), kind smoke test |
+| Unauthorised HTTP access, DNS rebinding, CSRF (`--transport http`) | Bearer auth on `/mcp` (TokenReview, or a static token compared in constant time); TokenReview checks `--auth-audience` (the chart requires `k8s-mcp`, so default pod tokens do not work) and `--allowed-callers` (403, audited); `--auth none` refused unless the listen address is loopback; `Host` allow-list (loopback by default); any `Origin` not in `--allowed-origins` gets 403 (none by default, no CORS); 1 MiB request body cap; TLS terminates at an ingress or mesh | `http` unit tests (401, 403, TokenReview, loopback check), kind smoke test |
 | stdin hijack by exec plugins | Exec plugins forced to `interactiveMode: Never` | `cluster` unit test |
 
 ## Redaction levels

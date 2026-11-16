@@ -105,7 +105,7 @@ jobs:
           helm lint "$CHART"
           for values in "" \
             "--set auth.mode=static --set auth.existingSecret=token" \
-            "--set networkPolicy.enabled=true --set networkPolicy.apiServerCIDRs={10.0.0.1/32} --set podDisruptionBudget.enabled=true --set rbac.secretsMetadata=true" \
+            "--set networkPolicy.enabled=true --set networkPolicy.apiServerCIDRs={10.0.0.1/32} --set podDisruptionBudget.enabled=true --set rbac.secretsMetadata=false" \
             "--set auth.audience= --set auth.allowedCallers={system:serviceaccount:platform:*,group:sre}"; do
             # shellcheck disable=SC2086 # $values holds several flags
             helm template t "$CHART" $values | ./kubeconform -strict -summary -kubernetes-version 1.33.0

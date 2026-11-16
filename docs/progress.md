@@ -90,12 +90,12 @@ row ends with the v0.2 acceptance criterion it serves.
 - `aws-smithy-mocks` 0.3 as a dev-dependency for EKS tests (approved).
 - Local HTTP, Helm and eval tests need Docker running (kind and k3s).
 
-## v0.2 follow-ups (issues #45–#53, for 0.2.1)
+## v0.2 follow-ups (issues #45–#53, released in 0.2.1)
 
 | Issue | Fix |
 |---|---|
 | #45 | Chart default image `v<appVersion>`; publish-container checks the packaged chart's image resolves before pushing the chart |
-| #46 | Summary warns when Secret values cannot be masked in logs; policy `secret_values`, instructions and docs say so. Chart default `rbac.secretsMetadata` unchanged (maintainer decision) |
+| #46 | Summary warns when Secret values cannot be masked in logs; policy `secret_values`, instructions and docs say so. Chart default `rbac.secretsMetadata: true` from 0.2.1 (maintainer decision) |
 | #47 | One-line no-credentials error for EKS tools; SDK debug dump only at `--log-level debug` |
 | #48 | `eks_identity_check`: `not configured` is not a failure; summary tallies results |
 | #49 | `prompts/get`: distinct errors for an unknown prompt and a missing required argument |
@@ -103,6 +103,8 @@ row ends with the v0.2 acceptance criterion it serves.
 | #51 | Unknown contexts: "not in the kubeconfig", no `--contexts` advice; overview template percent-decodes the context |
 | #52 | `--auth-audience` (chart default `k8s-mcp`) and `--allowed-callers` (403, audited). Verified on kind: audience token 200, default token 401, other caller 403 |
 | #53 | Rule `dns.pod_bypasses_cluster_dns` |
+
+Evals for 0.2.1 on kind 1.37: top-1 18/18, top-3 18/18, forbidden 0/18 (`evals/results/0.2.1.md`).
 
 ## Releasing
 

@@ -1,6 +1,6 @@
 {{- if .Values.rbac.create }}
-# Read-only access for every k8s-mcp tool (PROPOSAL Appendix C). No Secrets unless
-# rbac.secretsMetadata is set.
+# Read-only access for every k8s-mcp tool (PROPOSAL Appendix C). Secrets: `get` only while
+# rbac.secretsMetadata is true (the default), to mask their values in logs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

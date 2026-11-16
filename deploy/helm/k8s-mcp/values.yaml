@@ -56,13 +56,13 @@ serviceAccount:
   labels: {}
 
 rbac:
-  # Read-only ClusterRole (no Secrets) bound to the ServiceAccount.
+  # Read-only ClusterRole bound to the ServiceAccount.
   create: true
-  # Adds `get` on Secrets so the server can check that referenced Secrets exist and mask their
-  # values in logs. Without it, a pod that prints a value from a Secret it uses returns it in
-  # clear (pattern redaction only; the summary warns). Values are never returned, but the
-  # grant itself allows reading them.
-  secretsMetadata: false
+  # `get` on Secrets, so the server can check that referenced Secrets exist and mask their
+  # values in logs. Values are never returned, but the grant itself allows reading every
+  # Secret. With false, a pod that prints a value from a Secret it uses returns it in clear
+  # (pattern redaction only; the summary warns).
+  secretsMetadata: true
   # Extra ClusterRole rules, for example read access to more CRDs.
   extraRules: []
 

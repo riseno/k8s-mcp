@@ -2,8 +2,8 @@ apiVersion: v2
 name: k8s-mcp
 description: Read-only, audited MCP endpoint for troubleshooting this Kubernetes cluster with AI assistants
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.2.1
+appVersion: "0.2.1"
 kubeVersion: ">=1.33.0-0"
 home: https://github.com/riseno/k8s-mcp
 sources:

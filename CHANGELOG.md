@@ -5,6 +5,17 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-16
+
+### Changed
+- The Helm chart grants `get` on Secrets by default (`rbac.secretsMetadata: true`), so Secret
+  values that pods print are masked in their logs. Values are still never returned, but the
+  server's ServiceAccount can now read every Secret; set `rbac.secretsMetadata: false` to
+  withhold it (logs may then contain those values, and the summary says so) (#46).
+- The Helm chart requires caller tokens for the audience `k8s-mcp` (`auth.audience`): create
+  them with `kubectl create token <sa> --audience k8s-mcp`. `auth.audience: ""` accepts any
+  token the cluster authenticates, as in 0.2.0 (#52).
+
 ### Added
 - `diagnose_dns` rule `dns.pod_bypasses_cluster_dns`: a pod whose nameservers skip the kube-dns
   Service (`dnsPolicy: None` or `Default` without its ClusterIP, or `ClusterFirst` with

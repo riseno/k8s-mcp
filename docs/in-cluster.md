@@ -12,15 +12,16 @@ helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-nam
 
 The chart creates:
 - a Deployment (1 replica, stateless) and a `ClusterIP` Service on port 8080, path `/mcp`;
-- a ServiceAccount bound to a read-only ClusterRole (no Secrets; `templates/rbac.yaml`);
+- a ServiceAccount bound to a read-only ClusterRole (`templates/rbac.yaml`), with `get` on
+  Secrets so their values can be masked in logs (`rbac.secretsMetadata`);
 - a binding to `system:auth-delegator`, so the server can validate callers' tokens.
 
-**Secret values in logs.** Without access to Secrets the server cannot mask the values of the
-Secrets a pod uses in that pod's logs: a pod that prints such a value returns it in clear, with
-only pattern redaction (tokens, keys, passwords) applied. Responses say so in the summary
-(`Secret values could not be masked ...`). `rbac.secretsMetadata: true` adds `get` on Secrets
-so the values can be masked; the server still never returns them, but its ServiceAccount can
-then read every Secret.
+**Secret values in logs.** The ClusterRole includes `get` on Secrets (`rbac.secretsMetadata:
+true`, the default) so the server can mask the values of the Secrets a pod uses in that pod's
+logs. It never returns them, but its ServiceAccount can read every Secret. With
+`rbac.secretsMetadata: false` it cannot mask them: a pod that prints such a value returns it in
+clear, with only pattern redaction (tokens, keys, passwords) applied, and responses say so in
+the summary (`Secret values could not be masked ...`).
 
 The pod runs as non-root (UID 65532) with a read-only root filesystem, all capabilities
 dropped and the `RuntimeDefault` seccomp profile. `/healthz` is the liveness probe, and
@@ -105,7 +106,7 @@ kubernetes.io/service-name=kubernetes`). Provider tools also need egress to the 
 | `clusterDomain` | `cluster.local` | For the accepted Service DNS names |
 | `serviceAccount.create`, `.name`, `.annotations`, `.labels` | `true`, release name, `{}`, `{}` | ServiceAccount and cloud identity |
 | `rbac.create` | `true` | Read-only ClusterRole and bindings |
-| `rbac.secretsMetadata` | `false` | Adds `get` on Secrets, for existence checks and masking Secret values in logs. Without it, logs may contain the values of Secrets a pod uses (see Install). Values are never returned, but the grant allows reading them |
+| `rbac.secretsMetadata` | `true` | `get` on Secrets, for existence checks and masking Secret values in logs. Values are never returned, but the grant allows reading them. With `false`, logs may contain the values of Secrets a pod uses (see Install) |
 | `rbac.extraRules` | `[]` | Extra ClusterRole rules |
 | `service.type`, `service.port` | `ClusterIP`, `8080` | Service |
 | `podLabels`, `podAnnotations` | `{}` | Pod metadata |

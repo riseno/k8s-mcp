@@ -341,24 +341,6 @@ pub fn node_pool(n: &Node) -> String {
         .unwrap_or_else(|| "-".into())
 }
 
-/// Provider from node `spec.providerID` (PROPOSAL §10.2).
-pub fn provider_from_nodes(nodes: &[Node]) -> Option<&'static str> {
-    nodes.iter().find_map(|n| {
-        let id = n.spec.as_ref()?.provider_id.as_deref()?;
-        if id.starts_with("aws://") {
-            Some("eks")
-        } else if id.starts_with("gce://") {
-            Some("gke")
-        } else if id.starts_with("azure://") {
-            Some("aks")
-        } else if id.starts_with("kind://") {
-            Some("kind")
-        } else {
-            None
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

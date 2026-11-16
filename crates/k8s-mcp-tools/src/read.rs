@@ -26,7 +26,7 @@ use crate::common::{
     list_scoped, retain_recent, scope, soft,
 };
 use crate::discovery::{Resolved, api_resource, resolve, resources};
-use crate::rows::{self, node_pool, pod_row, provider_from_nodes, unhealthy};
+use crate::rows::{self, node_pool, pod_row, unhealthy};
 use crate::{Ctx, Envelope};
 
 const DEFAULT_LIMIT: u32 = 50;
@@ -190,13 +190,19 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
     let mut findings = group_same_cause(findings);
     findings.truncate(10);
 
-    let provider = nodes.as_deref().and_then(provider_from_nodes).or_else(|| {
-        ctx.clusters
-            .contexts(&ctx.policy)
-            .into_iter()
-            .find(|c| c.name == sc.target.context)
-            .and_then(|c| c.provider)
-    });
+    let node_list = nodes.as_deref().unwrap_or_default();
+    let provider = ctx
+        .clusters
+        .detect_provider(&sc.target.context, node_list)
+        .map(|d| d.describe())
+        .or_else(|| {
+            // Not a cloud provider, but worth naming.
+            node_list
+                .iter()
+                .filter_map(|n| n.spec.as_ref()?.provider_id.as_deref())
+                .any(|id| id.starts_with("kind://"))
+                .then(|| "kind".to_owned())
+        });
     let (ready, not_ready) = pools.values().fold((0, 0), |(a, b), (r, n)| (a + r, b + n));
     let phase_text = phases
         .iter()
@@ -206,9 +212,12 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
     let mut e = envelope(
         &sc,
         format!(
-            "Kubernetes {} ({}): {}; {} pods ({phase_text}) in {} namespaces; {} unhealthy pods; {} warning events in the last hour; metrics-server {}.",
+            "Kubernetes {} {}: {}; {} pods ({phase_text}) in {} namespaces; {} unhealthy pods; {} warning events in the last hour; metrics-server {}.",
             version.git_version,
-            provider.unwrap_or("provider not detected"),
+            provider.map_or_else(
+                || "(provider not detected)".to_owned(),
+                |p| format!("on {p}")
+            ),
             if nodes.is_some() {
                 format!("{ready}/{} nodes Ready", ready + not_ready)
             } else {

@@ -106,6 +106,69 @@ row ends with the v0.2 acceptance criterion it serves.
 
 Evals for 0.2.1 on kind 1.37: top-1 18/18, top-3 18/18, forbidden 0/18 (`evals/results/0.2.1.md`).
 
+## v0.3: GKE and AKS parity, upgrade readiness (plan)
+
+Order follows PROPOSAL §5/§16 and Appendix A: the shared trait change first, then the core
+tool, then GKE and AKS against the same trait so the parity test applies. Each row ends with
+the v0.3 acceptance criterion it serves.
+
+| # | Task | Status | Notes / criterion |
+|---|---|---|---|
+| 1 | Provider trait: `upgrade_checks(target)` with a cloud-neutral upgrade report; `access` gets a default "not available yet" body (GKE/AKS access mapping is v1.0 per §8.4); EKS implements upgrade checks with `ListInsights`/`DescribeInsight`; a parity test that renders every provider's envelopes and compares columns and input schemas | ⬜ | AC 1, 3 |
+| 2 | Core `upgrade_readiness` (`target_version?`, default: next minor) with `upgrade.*` rules: deprecated and removed API usage, version skew, PDBs that block drains, single-replica workloads; provider section when a provider toolset is registered | ⬜ | Signals for removed APIs: the API server's `apiserver_requested_deprecated_apis` metric (has `removed_release`; needs `get` on `/metrics`), objects' `managedFields`/last-applied apiVersions for kinds with deprecated versions, CRD versions marked `deprecated`, and the static removals table (≤ 1.32; the deprecation guide lists none later). Skew: kubelets more than 3 minors behind the target; a target that skips a control-plane minor. PDBs: `disruptionsAllowed` 0 with healthy pods, `maxUnavailable: 0`, `minAvailable` = expected pods. Verified on kind 1.37: the metric records requests to a CRD version marked `deprecated` (`removed_release=""`) and the object's `managedFields` keep that apiVersion; core `v1 endpoints` also shows up (deprecated since 1.33, no removal), so severity follows `removed_release` relative to the target (removed by the target: high; deprecated only: info). Fixtures first. ADR for the signal choice. AC 3 |
+| 3 | Prompt `upgrade-readiness` (`target_version`); `cluster-health-check` gains an upgrade step | ⬜ | Required-argument test from #49 covers it |
+| 4 | GKE provider `k8s-mcp-provider-gke` (feature `provider-gke`): `gke_cluster_info`, `gke_node_pools`, `gke_addons` (+ `getServerConfig` versions for upgrade checks), `gke_identity_check` (WI pool, `GKE_METADATA` node pools, GSA exists, `roles/iam.workloadIdentityUser` for `<project>.svc.id.goog[<ns>/<ksa>]`, or a direct principal binding), `gke_logs` (Cloud Logging); `--gke-cluster project/location/name`; `--providers gke` | ⬜ | Mocked HTTP goldens; AC 2 cases: missing `workloadIdentityUser` binding, node pool not `GKE_METADATA`, cluster without a WI pool. AC 1, 2 |
+| 5 | AKS provider `k8s-mcp-provider-aks` (feature `provider-aks`): `aks_cluster_info`, `aks_node_pools`, `aks_addons` (+ upgrade profile), `aks_identity_check` (OIDC issuer and workload identity enabled, SA `azure.workload.identity/client-id`, pod label `azure.workload.identity/use`, injected env, federated credential issuer and subject), `aks_logs` (Log Analytics KQL on `ContainerLogV2`/`KubeEvents`); `--aks-cluster subscription/resourceGroup/name`; `--providers aks` | ⬜ | ARM and Log Analytics REST with pinned GA api-versions; mocked HTTP goldens; AC 2 cases: missing federated credential, wrong subject, pod label missing, OIDC issuer disabled. AC 1, 2 |
+| 6 | Chart and docs: `docs/providers/gke.md`, `docs/providers/aks.md` (least-privilege roles, §10.3 and Appendix C), an upgrade-readiness page, regenerated tool and rule references, chart RBAC for `/metrics` | ⬜ | |
+| 7 | Eval scenarios 19–27: deprecated API in use (a CRD version marked deprecated), PDB blocking drains, init container failing, Job backoff limit, Service without ready endpoints, invalid image name, missing Secret, untolerated taint, HPA not scaling | ⬜ | 27 scenarios; results in `evals/results/0.3.0.md`. AC 4 |
+| 8 | Features and size: `provider-gke` and `provider-aks` in the default build if the size allows; report full and lite sizes; publish a `lite` artifact only if the full build exceeds 50 MB stripped | ⬜ | AC 4 |
+| 9 | Provider hints in findings (§8.4 last row: EKS VPC CNI/ECR, GKE Autopilot/quota/Artifact Registry, AKS CNI subnet/ACR/SKU quota) | ⬜ | Deferred from v0.2; in v0.3 (decided) |
+
+## v0.3 acceptance criteria (PROPOSAL §16)
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | GKE and AKS implement every `Provider` method; their outputs follow the EKS structure (automated schema-parity test) | ⬜ | |
+| 2 | Mocked identity-check failure cases (GKE: no `workloadIdentityUser` binding, node pool not `GKE_METADATA`, no WI pool; AKS: no federated credential, wrong subject, pod label missing, OIDC issuer disabled) | ⬜ | |
+| 3 | `upgrade_readiness` flags removed-API usage and blocking PDBs on kind fixtures, with provider sections from mocks | ⬜ | |
+| 4 | 25+ scenarios, all gates met; binary size reported (`lite` artifact if the full build exceeds 50 MB stripped) | ⬜ | |
+
+**Decisions (resolved 2026-11-16)**
+- The chart ClusterRole gets `get` on the `/metrics` non-resource URL, for `apiserver_requested_deprecated_apis` (task 2, 6).
+- Provider hints (task 9) stay in v0.3, for EKS, GKE and AKS.
+- Crates outside §7.2 that the GCP and Azure providers need are approved (recorded per crate in an ADR, with licence and TLS checks).
+- No subprocess credentials: the Azure chain is environment, workload identity and managed identity, without the Azure CLI (as `credential_process` for AWS); laptop users provide environment credentials. The same rule applies to GCP (no executable-sourced credentials).
+
+**SDK research (2026-11-16; scratch projects in `/Volumes/T9/tmp/k8s-mcp-v03-research/`)**
+- Both stacks run on rustls + ring with every Azure and Google crate at `default-features = false`;
+  their defaults pull aws-lc-rs (and `azure_identity/client_certificate` pulls OpenSSL), which the
+  existing `deny.toml` bans already catch in CI. reqwest 0.13 has no ring feature: use
+  `rustls-no-provider`, add `rustls` (`ring`) directly, and install the ring provider in `main`
+  before any client is built (otherwise reqwest panics).
+- GKE: `google-cloud-container-v1` 1.15, `google-cloud-iam-admin-v1` 1.14 (GSA and
+  `getIamPolicy`), `google-cloud-auth` 1.19, all HTTP/JSON, MSRV 1.91, Apache-2.0; clients take
+  `with_endpoint` + anonymous credentials, verified against wiremock. `google-cloud-logging-v2`
+  1.16 always builds a tonic gRPC client (10 extra crates): choose it or a direct `entries:list`
+  call by binary size. Direct principal bindings need `google-cloud-resourcemanager-v3` 1.14.
+  ADC never runs gcloud; refuse to connect when `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1`
+  (executable-sourced credentials), and set the universe domain so off-GCP clients skip the
+  metadata-server lookup.
+- AKS: `azure_core` 1.1 (`reqwest`, `tokio`) and `azure_identity` 1.0, MIT, with our own reqwest
+  client as the transport, and ARM/Log Analytics REST calls of our own. azure_identity 1.0 has no
+  `DefaultAzureCredential`; the chain is chosen from the environment: workload identity
+  (`AZURE_FEDERATED_TOKEN_FILE`), then a client secret (`AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/
+  `AZURE_CLIENT_SECRET`), then managed identity only when `IDENTITY_ENDPOINT` is set or a flag opts
+  in (IMDS retries for up to 72 s). `AzureCliCredential`, `AzureDeveloperCliCredential` and
+  `DeveloperToolsCredential` spawn processes: never constructed (clippy `disallowed-types`).
+  Pinned api-versions: managedClusters/agentPools/upgradeProfiles `2026-09-01`, extensions
+  `2025-03-01`, userAssignedIdentities/federatedIdentityCredentials `2024-11-30`, workspaces
+  `2026-03-01`; logs through `POST https://api.loganalytics.azure.com/v1/workspaces/{customerId}/query`.
+  The identity for a client id is found by listing the subscription's user-assigned identities.
+  Tests use a static `TokenCredential` and wiremock.
+- New direct crates (approved): `rustls`, `reqwest`, the Google crates above, `azure_core`,
+  `azure_identity`; dev: `wiremock`, `async-trait`. To verify when built: the musl cross-build and
+  the binary size (AC 4).
+
 ## Releasing
 
 `riseno/k8s-mcp` and `riseno/homebrew-tap` are public from v0.1.0. To release: bump the

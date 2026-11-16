@@ -10,6 +10,9 @@ All notable changes are documented here. The format follows
   0.2.0 pointed at `ghcr.io/riseno/k8s-mcp:0.2.0`, which does not exist (#45). The release
   workflow now checks that the packaged chart's default image resolves before pushing the
   chart.
+- `prompts/get` tells an unknown prompt (`unknown prompt "x"`) apart from a missing required
+  argument (`prompt "explain-workload" needs argument "kind" (...)`); `investigate-incident`
+  now requires its `symptom` as declared (#49).
 
 ## [0.2.0] - 2026-11-16
 

@@ -20,6 +20,8 @@ use crate::cloud::{
 };
 use crate::common::{Scope, scope};
 
+/// The EKS identity override flags.
+const EKS_FLAGS: &str = "--eks-cluster <name> and --eks-region <region>";
 /// EKS control-plane log types.
 const COMPONENTS: &[&str] = &[
     "api",
@@ -31,10 +33,12 @@ const COMPONENTS: &[&str] = &[
 
 /// The EKS cluster behind a context: detection, then the flags.
 async fn identity(ctx: &Ctx, sc: &Scope) -> Result<ClusterIdentity> {
-    let found = detected_identity(ctx, sc, ProviderId::Eks, |i| {
-        i.name.is_some() && i.region.is_some()
-    })
-    .await;
+    // An explicit --eks-cluster says it is EKS, whatever the nodes say.
+    let found = match detected_identity(ctx, sc, ProviderId::Eks, EKS_FLAGS).await {
+        Ok(found) => found,
+        Err(_) if ctx.cloud.cluster.is_some() => None,
+        Err(e) => return Err(e),
+    };
     let mut id = match found {
         Some(id) => id,
         None if ctx.cloud.cluster.is_some() => ClusterIdentity::default(),

@@ -42,8 +42,8 @@ async fn identity(ctx: &Ctx, sc: &Scope) -> Result<ClusterIdentity> {
     if let Some(flag) = &ctx.cloud.aks {
         return flag_identity(flag);
     }
-    detected_identity(ctx, sc, ProviderId::Aks, |i| i.name.is_some() && i.resource_group.is_some() && i.account.is_some())
-        .await
+    detected_identity(ctx, sc, ProviderId::Aks, "--aks-cluster <subscription>/<resourceGroup>/<name>")
+        .await?
         .ok_or_else(|| Error::NotFound(format!(
             "context {:?} does not look like an AKS cluster; AKS tools need one, or pass --aks-cluster <subscription>/<resourceGroup>/<name>",
             sc.target.context

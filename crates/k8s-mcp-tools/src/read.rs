@@ -196,12 +196,19 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
         .detect_provider(&sc.target.context, node_list)
         .map(|d| d.describe())
         .or_else(|| {
-            // Not a cloud provider, but worth naming.
-            node_list
-                .iter()
-                .filter_map(|n| n.spec.as_ref()?.provider_id.as_deref())
-                .any(|id| id.starts_with("kind://"))
-                .then(|| "kind".to_owned())
+            // Not a cloud provider (kind, k3s, ...), but worth naming.
+            let platforms = k8s_mcp_core::provider::node_platforms(node_list);
+            (!platforms.is_empty()).then(|| platforms.join(", "))
+        })
+        .map(|p| {
+            match ctx
+                .clusters
+                .detection_conflict(&sc.target.context, node_list)
+            {
+                // Issue #64: say why the kubeconfig's cloud was not believed.
+                Some(why) => format!("{p} (the context {why})"),
+                None => p,
+            }
         });
     let (ready, not_ready) = pools.values().fold((0, 0), |(a, b), (r, n)| (a + r, b + n));
     let phase_text = phases

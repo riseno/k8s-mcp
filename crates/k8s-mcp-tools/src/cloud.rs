@@ -63,28 +63,36 @@ pub struct LogsInput {
 /// Nodes read when the kubeconfig alone does not identify the cluster.
 const DETECT_NODES: u32 = 20;
 
-/// The identity detection gives for `provider`'s cluster: kubeconfig signals first, then a few
-/// nodes (labels, providerIDs) when `complete` says something is still missing.
+/// The identity detection gives for `provider`'s cluster, from the kubeconfig and a few nodes
+/// (which outrank it). An error when the kubeconfig looks like `provider` but the nodes run
+/// elsewhere: a cloud call would use the user's credentials against another cluster (#64).
+/// `flag` is the provider's override, named in that error.
 pub(crate) async fn detected_identity(
     ctx: &Ctx,
     sc: &Scope,
     provider: ProviderId,
-    complete: impl Fn(&ClusterIdentity) -> bool,
-) -> Option<ClusterIdentity> {
+    flag: &str,
+) -> Result<Option<ClusterIdentity>> {
     let context = &sc.target.context;
-    let of = |d: Option<k8s_mcp_core::provider::Detection>| {
-        d.filter(|d| d.provider == provider).map(|d| d.identity)
-    };
-    let found = of(ctx.clusters.detect_provider(context, &[]));
-    if found.as_ref().is_some_and(&complete) {
-        return found;
-    }
     let nodes: Vec<Node> = Api::<Node>::all(sc.target.client.clone())
         .list(&ListParams::default().limit(DETECT_NODES))
         .await
         .map(|l| l.items)
         .unwrap_or_default();
-    of(ctx.clusters.detect_provider(context, &nodes)).or(found)
+    let kubeconfig = ctx.clusters.detect_provider(context, &[]);
+    if kubeconfig.is_some_and(|d| d.provider == provider)
+        && let Some(why) = ctx.clusters.detection_conflict(context, &nodes)
+    {
+        let name = provider.as_str().to_uppercase();
+        return Err(Error::NotFound(format!(
+            "context {context:?} {why}, so the {name} tools would query a cluster that is not this one; if it really is {name}, pass {flag}"
+        )));
+    }
+    Ok(ctx
+        .clusters
+        .detect_provider(context, &nodes)
+        .filter(|d| d.provider == provider)
+        .map(|d| d.identity))
 }
 
 /// Stamp the envelope with the context it describes.

@@ -42,8 +42,8 @@ async fn identity(ctx: &Ctx, sc: &Scope) -> Result<ClusterIdentity> {
     if let Some(flag) = &ctx.cloud.gke {
         return flag_identity(flag);
     }
-    detected_identity(ctx, sc, ProviderId::Gke, |i| i.name.is_some() && i.region.is_some() && i.account.is_some())
-        .await
+    detected_identity(ctx, sc, ProviderId::Gke, "--gke-cluster <project>/<location>/<name>")
+        .await?
         .ok_or_else(|| Error::NotFound(format!(
             "context {:?} does not look like a GKE cluster; GKE tools need one, or pass --gke-cluster <project>/<location>/<name>",
             sc.target.context

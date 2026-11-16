@@ -5,6 +5,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Provider detection treats listed nodes as authoritative: a kubeconfig that looks like one
+  cloud (a `gke_...` context name, an EKS ARN, an exec plugin) no longer wins over nodes whose
+  providerIDs name another platform (`kind://`, `k3s://`, another cloud). Such a cluster gets no
+  provider toolset with `--providers auto`, `cluster_overview` and `doctor` name the conflict,
+  and provider tools refuse before any cloud call unless the provider's `--<cloud>-cluster` flag
+  is given, so credentials are never used against a cluster that is not this one (#64).
+
 ## [0.3.0] - 2026-11-16
 
 ### Added

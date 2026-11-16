@@ -139,12 +139,25 @@ pub async fn run(opts: &Opts) -> anyhow::Result<ExitCode> {
             }
         ),
     );
-    let provider = cm.detect_provider(cm.default_context(), &[]);
+    // A few nodes, which outrank the kubeconfig (#64); unreadable ones are skipped.
+    let nodes = match &target {
+        Ok(t) => kube::Api::<k8s_openapi::api::core::v1::Node>::all(t.client.clone())
+            .list(&kube::api::ListParams::default().limit(20))
+            .await
+            .map(|l| l.items)
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    let provider = cm.detect_provider(cm.default_context(), &nodes);
+    let conflict = cm.detection_conflict(cm.default_context(), &nodes);
     line(
-        true,
+        conflict.is_none(),
         &format!(
-            "provider: {} (from the kubeconfig, no cloud calls)",
-            provider.map_or_else(|| "none detected".into(), |d| d.describe())
+            "provider: {} (from the kubeconfig and nodes, no cloud calls){}",
+            provider.map_or_else(|| "none detected".into(), |d| d.describe()),
+            conflict.map_or_else(String::new, |why| format!(
+                "; the context {why}, so no provider tools are registered"
+            ))
         ),
     );
     line(

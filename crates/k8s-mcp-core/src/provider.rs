@@ -361,8 +361,57 @@ fn aks(s: &Signals) -> Candidate {
     c
 }
 
+/// The platform a providerID names: its scheme (`aws`, `gce`, `azure`, `kind`, `k3s`, ...).
+fn scheme(id: &str) -> Option<&str> {
+    id.split_once("://")
+        .map(|(s, _)| s)
+        .filter(|s| !s.is_empty())
+}
+
+/// The cloud a providerID scheme belongs to.
+fn cloud_of(scheme: &str) -> Option<ProviderId> {
+    match scheme {
+        "aws" | "eks-hybrid" => Some(ProviderId::Eks),
+        "gce" => Some(ProviderId::Gke),
+        "azure" => Some(ProviderId::Aks),
+        _ => None,
+    }
+}
+
+/// The platforms the nodes run on, when none of them is `provider`'s cloud: listed nodes are
+/// authoritative over kubeconfig signals (a context renamed `gke_...` on a kind cluster).
+/// `None` when the nodes agree, or say nothing (no providerIDs).
+pub fn nodes_contradict(provider: ProviderId, nodes: &[Node]) -> Option<String> {
+    let platforms = node_platforms(nodes);
+    if platforms.is_empty() || platforms.iter().any(|s| cloud_of(s) == Some(provider)) {
+        return None;
+    }
+    Some(platforms.join(", "))
+}
+
+/// The platforms the nodes' providerIDs name (`kind`, `k3s`, `aws`, ...), sorted and unique.
+pub fn node_platforms(nodes: &[Node]) -> Vec<&str> {
+    let mut schemes: Vec<&str> = provider_ids(nodes).filter_map(scheme).collect();
+    schemes.sort_unstable();
+    schemes.dedup();
+    schemes
+}
+
+/// Why the kubeconfig's provider does not hold: it looks like one cloud, but the nodes run
+/// elsewhere. `None` when there is no such conflict.
+pub fn conflict(s: &Signals) -> Option<String> {
+    let kubeconfig = detect(&Signals { nodes: &[], ..*s })?;
+    let elsewhere = nodes_contradict(kubeconfig.provider, s.nodes)?;
+    Some(format!(
+        "looks like {} from its kubeconfig ({}), but its nodes run on {elsewhere}",
+        kubeconfig.provider.as_str(),
+        kubeconfig.signals.join(", ")
+    ))
+}
+
 /// Detect the provider. Strong signals beat weak ones; between equals the first of EKS, GKE,
-/// AKS wins (signals of two clouds at once do not occur on real clusters).
+/// AKS wins (signals of two clouds at once do not occur on real clusters). A provider the
+/// listed nodes contradict is dropped (see [`conflict`]).
 pub fn detect(s: &Signals) -> Option<Detection> {
     let mut found: Vec<Detection> = [
         (ProviderId::Eks, eks(s)),
@@ -371,6 +420,7 @@ pub fn detect(s: &Signals) -> Option<Detection> {
     ]
     .into_iter()
     .filter_map(|(p, c)| c.into_detection(p))
+    .filter(|d| nodes_contradict(d.provider, s.nodes).is_none())
     .collect();
     found.sort_by_key(|d| d.confidence != Confidence::High);
     found.into_iter().next()
@@ -389,6 +439,74 @@ mod tests {
 
     fn args(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    /// Issue #64: nodes that run elsewhere outrank a cloud-shaped context name.
+    #[test]
+    fn nodes_outrank_the_context_name() {
+        let kind = nodes(
+            json!([{"metadata": {"name": "dev-control-plane"}, "spec": {"providerID": "kind://docker/dev/dev-control-plane"}}]),
+        );
+        let k3s =
+            nodes(json!([{"metadata": {"name": "k3s-1"}, "spec": {"providerID": "k3s://k3s-1"}}]));
+        let gce = nodes(
+            json!([{"metadata": {"name": "gke-1"}, "spec": {"providerID": "gce://acme/us-central1-a/gke-1"}}]),
+        );
+        let aws = nodes(
+            json!([{"metadata": {"name": "ip-1"}, "spec": {"providerID": "aws:///us-east-1a/i-1"}}]),
+        );
+        for (context, provider) in [
+            ("gke_fake-project_us-central1_fake-cluster", ProviderId::Gke),
+            (
+                "arn:aws:eks:us-east-1:123456789012:cluster/fake-eks",
+                ProviderId::Eks,
+            ),
+        ] {
+            let sig = |n| Signals {
+                context,
+                nodes: n,
+                ..Signals::default()
+            };
+            assert_eq!(
+                detect(&sig(&[])).unwrap().provider,
+                provider,
+                "kubeconfig alone"
+            );
+            for other in [&kind, &k3s] {
+                assert!(detect(&sig(other)).is_none(), "{context}");
+                let why = conflict(&sig(other)).unwrap();
+                assert!(
+                    why.starts_with(&format!(
+                        "looks like {} from its kubeconfig",
+                        provider.as_str()
+                    )),
+                    "{why}"
+                );
+            }
+        }
+        let gke = |n| Signals {
+            context: "gke_acme_us-central1_shop",
+            nodes: n,
+            ..Signals::default()
+        };
+        assert_eq!(
+            detect(&gke(&gce)).unwrap().provider,
+            ProviderId::Gke,
+            "nodes agree"
+        );
+        assert!(conflict(&gke(&gce)).is_none());
+        assert_eq!(
+            detect(&gke(&aws)).map(|d| d.provider),
+            Some(ProviderId::Eks),
+            "another cloud's nodes win"
+        );
+        assert!(conflict(&gke(&aws)).unwrap().ends_with("run on aws"));
+        let bare = nodes(json!([{"metadata": {"name": "n"}}]));
+        assert_eq!(
+            detect(&gke(&bare)).unwrap().provider,
+            ProviderId::Gke,
+            "nodes without providerIDs say nothing"
+        );
     }
 
     /// v0.2 acceptance criterion 3: EKS from node providerIDs and labels, exec args, the API
@@ -547,7 +665,19 @@ mod tests {
     }
 
     #[test]
-    fn strong_signals_beat_weak_ones() {
+    fn strong_signals_beat_weak_ones_unless_nodes_disagree() {
+        let bare = nodes(json!([{"metadata": {"name": "n1"}}]));
+        let d = detect(&Signals {
+            exec_command: "kubelogin",
+            nodes: &bare,
+            ..Signals::default()
+        })
+        .unwrap();
+        assert_eq!(
+            (d.provider, d.confidence),
+            (ProviderId::Aks, Confidence::High)
+        );
+        // kubelogin also serves Azure Arc clusters that run anywhere: EC2 nodes win.
         let ec2 = nodes(
             json!([{"metadata": {"name": "n1"}, "spec": {"providerID": "aws:///us-west-2b/i-1"}}]),
         );
@@ -557,6 +687,9 @@ mod tests {
             ..Signals::default()
         })
         .unwrap();
-        assert_eq!(d.provider, ProviderId::Aks);
+        assert_eq!(
+            (d.provider, d.confidence),
+            (ProviderId::Eks, Confidence::Low)
+        );
     }
 }

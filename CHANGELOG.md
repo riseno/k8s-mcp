@@ -57,6 +57,17 @@ All notable changes are documented here. The format follows
   from them), `autoscaling.ca.unhealthy` (the CA 1.30+ status ConfigMap: unhealthy groups,
   scale-up backoff), `autoscaling.hpa.not_scaling` and `autoscaling.hpa.at_max`. Rows for
   NodePools, CA node groups and HPAs.
+- `rollout_history`: a Deployment's, StatefulSet's or DaemonSet's revisions (images, replicas,
+  redacted change-cause) with a field diff of the newest two or `compare: [a, b]`.
+- `recent_changes`: rollouts with diffs, objects created or updated (and by which field
+  manager) and Helm release revisions in a window (`since`, default 2h). Diffs show env names,
+  never values; object changes come from metadata-only lists, so Secret and ConfigMap bodies are
+  never read.
+- Prompts `explain-workload` and `access-review`; `investigate-incident` now checks
+  `recent_changes` and `cluster-health-check` checks `autoscaling_status`.
+- Resource template `k8s-mcp://cluster/{context}/overview` (cluster_overview through the tool
+  path: context policy, cap, redaction and audit apply).
+- The kind Secret-canary test covers every tool, the v0.2 ones included.
 - `find_problems` scans Services and PVCs (`kinds: services, pvcs`, on by default; ADR 0008).
 - Eval scenarios 15 (Service selector mismatch), 16 (targetPort mismatch) and 17 (DNS blocked
   by a NetworkPolicy) and 18 (the autoscaler cannot scale up).

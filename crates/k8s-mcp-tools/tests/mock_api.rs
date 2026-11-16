@@ -11,7 +11,7 @@ use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
     AutoscalingStatusInput, Ctx, DiagnoseDnsInput, DiagnosePodInput, DiagnosePvcInput,
     DiagnoseServiceInput, DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput, GetResourceInput,
-    ListEventsInput, ListResourcesInput,
+    ListEventsInput, ListResourcesInput, RecentChangesInput, RolloutHistoryInput,
 };
 use serde_json::{Value, json};
 
@@ -1334,6 +1334,135 @@ async fn cluster_overview_names_the_detected_provider() {
         env.summary.starts_with(
             "Kubernetes v1.33.5-eks-3025e55 on eks (cluster shop, eu-west-1): 1/1 nodes Ready"
         ),
+        "{}",
+        env.summary
+    );
+}
+
+fn web_rs(revision: u32, image: &str, created: &str, cause: Option<&str>) -> Value {
+    let mut ann = json!({"deployment.kubernetes.io/revision": revision.to_string()});
+    if let Some(c) = cause {
+        ann["kubernetes.io/change-cause"] = json!(c);
+    }
+    json!({"apiVersion": "apps/v1", "kind": "ReplicaSet",
+        "metadata": {"name": format!("web-{revision}"), "namespace": "shop", "creationTimestamp": created, "annotations": ann,
+            "ownerReferences": [{"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "uid": "u1"}]},
+        "spec": {"replicas": 2, "selector": {"matchLabels": {"app": "web"}},
+            "template": {"metadata": {"labels": {"app": "web"}}, "spec": {"containers": [{"name": "app", "image": image}]}}},
+        "status": {"replicas": 2, "readyReplicas": 2}})
+}
+
+#[tokio::test]
+async fn rollout_history_lists_revisions_and_diffs_the_newest_two() {
+    let mock = MockApi::new()
+        .get(
+            "/apis/apps/v1/namespaces/shop/deployments/web",
+            json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "web", "namespace": "shop"}}),
+        )
+        .list(
+            "/apis/apps/v1/namespaces/shop/replicasets",
+            vec![
+                web_rs(1, "nginx:1.30", "2026-11-13T10:00:00Z", None),
+                web_rs(2, "nginx:1.31", "2026-11-14T11:48:00Z", Some("kubectl set image deploy/web app=nginx:1.31 --token=ghp_abcdefghijklmnopqrstuvwxyz0123456789")),
+            ],
+        )
+        .start();
+    let input = RolloutHistoryInput {
+        kind: "deploy".into(),
+        name: "web".into(),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::rollout_history(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert_eq!(
+        env.summary,
+        "Deployment web (shop): 2 revisions, current 2 (nginx:1.31), created 12m ago. Revision 1 -> 2: container app: image nginx:1.30 -> nginx:1.31."
+    );
+    assert_eq!(env.items[0]["revision"], 2);
+    assert_eq!(env.items[0]["replicas"], "2/2");
+    let cause = env.items[0]["change_cause"].as_str().unwrap();
+    assert!(
+        !cause.contains("ghp_abcdefghij"),
+        "change-cause is redacted: {cause}"
+    );
+    assert_eq!(env.sections[0].title, "DIFF revision 1 -> 2");
+
+    let bad = RolloutHistoryInput {
+        kind: "deploy".into(),
+        name: "web".into(),
+        compare: Some(vec![1, 7]),
+        ..Default::default()
+    };
+    let err = k8s_mcp_tools::rollout_history(&ctx(&mock, Policy::permissive()), bad)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("no revision 7; available: 2, 1"),
+        "{err}"
+    );
+
+    let missing = RolloutHistoryInput {
+        kind: "deploy".into(),
+        name: "nope".into(),
+        ..Default::default()
+    };
+    let err = k8s_mcp_tools::rollout_history(&ctx(&mock, Policy::permissive()), missing)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, k8s_mcp_core::Error::NotFound(_)), "{err}");
+}
+
+/// recent_changes: one rollout row (not also an "updated" row for the Deployment), and Helm
+/// releases from their record Secrets' metadata.
+#[tokio::test]
+async fn recent_changes_reports_rollouts_and_helm_releases() {
+    let deploy = json!({"apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": {"name": "web", "namespace": "shop", "creationTimestamp": "2026-11-01T00:00:00Z",
+            "managedFields": [{"manager": "kubectl", "operation": "Update", "time": "2026-11-14T11:48:00Z"}]}});
+    let release = json!({"apiVersion": "v1", "kind": "Secret",
+        "metadata": {"name": "sh.helm.release.v1.shop.v7", "namespace": "shop", "creationTimestamp": "2026-11-14T11:30:00Z",
+            "labels": {"owner": "helm", "name": "shop", "version": "7", "status": "deployed"}}});
+    let mock = MockApi::new()
+        .list(
+            "/apis/apps/v1/namespaces/shop/replicasets",
+            vec![
+                web_rs(1, "nginx:1.30", "2026-11-13T10:00:00Z", None),
+                web_rs(2, "nginx:1.31", "2026-11-14T11:48:00Z", None),
+            ],
+        )
+        .list("/apis/apps/v1/namespaces/shop/deployments", vec![deploy])
+        .list("/api/v1/namespaces/shop/secrets", vec![release])
+        .start();
+    let input = RecentChangesInput {
+        namespace: Some("shop".into()),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::recent_changes(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    let rows: Vec<String> = env
+        .items
+        .iter()
+        .map(|i| {
+            format!(
+                "{} | {} | {}",
+                i["kind"].as_str().unwrap(),
+                i["name"].as_str().unwrap(),
+                i["change"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "Deployment | shop/web | rolled out revision 2: container app: image nginx:1.30 -> nginx:1.31",
+            "HelmRelease | shop/shop | revision 7 (deployed)",
+        ]
+    );
+    assert!(
+        env.summary
+            .starts_with("2 changes in the last 2h (1 rollouts, 1 Helm releases, 0 objects"),
         "{}",
         env.summary
     );

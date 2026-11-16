@@ -12,9 +12,10 @@ use rmcp::handler::server::common::schema_for_type;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, GetPromptRequestParams,
     GetPromptResponse, GetPromptResult, Implementation, JsonObject, ListPromptsResult,
-    ListResourcesResult, ListToolsResult, PaginatedRequestParams, Prompt, PromptArgument,
-    PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
-    ResourceContents, Role, ServerCapabilities, ServerConfig, Tool, ToolAnnotations,
+    ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+    Prompt, PromptArgument, PromptMessage, ReadResourceRequestParams, ReadResourceResponse,
+    ReadResourceResult, Resource, ResourceContents, ResourceTemplate, Role, ServerCapabilities,
+    ServerConfig, Tool, ToolAnnotations,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
@@ -99,6 +100,12 @@ tools! {
     "autoscaling_status", "core", t::AutoscalingStatusInput,
         "Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and NodeClaims (launch/registration failures), the Cluster Autoscaler status and NotTriggerScaleUp reasons, and HPAs that cannot read metrics or sit at maxReplicas. Use when pods stay Pending for capacity.",
         |c, i| t::autoscaling_status(c, i).await;
+    "recent_changes", "core", t::RecentChangesInput,
+        "What changed recently that could explain this? Rollouts (with image/env-name/resource diffs), objects created or updated (and by which field manager) and Helm release revisions, newest first, in a namespace or the whole cluster (since: default 2h). Env values and object bodies are never read or shown.",
+        |c, i| t::recent_changes(c, i).await;
+    "rollout_history", "core", t::RolloutHistoryInput,
+        "Revisions of a Deployment, StatefulSet or DaemonSet: revision, age, images, replicas and change-cause, with a diff of the newest two (or `compare: [a, b]`). Use to see what a rollout changed or which revision to roll back to.",
+        |c, i| t::rollout_history(c, i).await;
     "check_permissions", "core", t::CheckPermissionsInput,
         "What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.",
         |c, i| t::check_permissions(c, i).await;
@@ -322,6 +329,8 @@ fn rules_catalogue() -> Vec<k8s_mcp_core::finding::RuleMeta> {
     all.sort_by_key(|r| r.id);
     all
 }
+/// URI template of the per-context overview resource.
+const OVERVIEW_TEMPLATE: &str = "k8s-mcp://cluster/{context}/overview";
 
 fn prompts() -> Vec<Prompt> {
     let arg = |name: &str, desc: &str, required: bool| {
@@ -345,6 +354,29 @@ fn prompts() -> Vec<Prompt> {
             "cluster-health-check",
             Some("Cluster-wide health check producing a prioritised checklist"),
             Some(vec![arg("context", "Kubeconfig context to check", false)]),
+        ),
+        Prompt::new(
+            "explain-workload",
+            Some(
+                "Describe a workload: what it runs, what it depends on, its health and recent changes",
+            ),
+            Some(vec![
+                arg(
+                    "kind",
+                    "Deployment, StatefulSet, DaemonSet, Job or CronJob",
+                    true,
+                ),
+                arg("name", "Workload name", true),
+                arg("namespace", "Namespace", false),
+            ]),
+        ),
+        Prompt::new(
+            "access-review",
+            Some("Review what a ServiceAccount may do: RBAC bindings and cloud identity"),
+            Some(vec![
+                arg("serviceaccount", "ServiceAccount name", true),
+                arg("namespace", "ServiceAccount namespace", true),
+            ]),
         ),
     ]
 }
@@ -373,7 +405,8 @@ fn prompt_text(name: &str, args: &serde_json::Map<String, Value>) -> Option<Stri
                  1. cluster_overview for the big picture.\n\
                  2. find_problems scoped to the namespace if known.\n\
                  3. diagnose_workload or diagnose_pod on the most relevant failing objects.\n\
-                 4. Follow the NEXT suggestions (get_logs, list_events, get_resource, top) only as far as needed to confirm the root cause.\n\n\
+                 4. recent_changes for the namespace: a rollout, config edit or Helm upgrade just before the incident is a prime suspect.\n\
+                 5. Follow the NEXT suggestions (get_logs, list_events, get_resource, top, diagnose_service, diagnose_dns, diagnose_pvc) only as far as needed to confirm the root cause.\n\n\
                  Then write a short report: impact (what is down and for whom), root cause with the quoted evidence and finding ids, \
                  the fix as concrete steps or YAML, and follow-ups to prevent recurrence. Say what evidence was unavailable. \
                  k8s-mcp is read-only: propose changes, do not claim to have made them. {untrusted}"
@@ -388,9 +421,36 @@ fn prompt_text(name: &str, args: &serde_json::Map<String, Value>) -> Option<Stri
                  1. cluster_overview.\n\
                  2. list_resources kind=nodes, and diagnose_node on any node that is not Ready or is under pressure.\n\
                  3. find_problems across all namespaces with min_severity=low.\n\
-                 4. top target=nodes if metrics-server is present.\n\n\
+                 4. autoscaling_status: NodePools at their limits, scale-ups the autoscaler refused, HPAs that cannot scale.\n\
+                 5. top target=nodes if metrics-server is present.\n\n\
                  Output a prioritised checklist: critical items first, each with the object, the finding id, the evidence and the fix. \
                  End with quick wins (single-replica workloads, missing limits) and anything that could not be checked. {untrusted}"
+            ))
+        }
+        "explain-workload" => {
+            let (kind, name) = (get("kind")?, get("name")?);
+            let ns = get("namespace")
+                .map(|n| format!(" in namespace `{n}`"))
+                .unwrap_or_default();
+            Some(format!(
+                "Explain the Kubernetes workload {kind} `{name}`{ns} with the k8s-mcp tools.\n\n\
+                 1. get_resource on it (view=summary) for containers, images, resources, probes and referenced ConfigMaps, Secrets (names only), PVCs and the ServiceAccount.\n\
+                 2. diagnose_workload for its health.\n\
+                 3. The Services that route to it (list_resources kind=Service, then diagnose_service on those whose selector matches its pod labels), and diagnose_pvc for its claims.\n\
+                 4. rollout_history for recent revisions, and the ServiceAccount's annotations for cloud identity (IRSA, GKE or Azure Workload Identity).\n\n\
+                 Write: what it is and does, what it depends on (Services, config, storage, identity), whether it is healthy, and what changed recently. {untrusted}"
+            ))
+        }
+        "access-review" => {
+            let (sa, ns) = (get("serviceaccount")?, get("namespace")?);
+            Some(format!(
+                "Review what ServiceAccount `{sa}` in namespace `{ns}` may do, with the k8s-mcp tools.\n\n\
+                 1. get_resource ServiceAccount `{sa}` for its cloud identity annotations.\n\
+                 2. list_resources kind=RoleBinding namespace={ns} and kind=ClusterRoleBinding, keeping those whose subjects include this ServiceAccount (or its groups system:serviceaccounts and system:serviceaccounts:{ns}).\n\
+                 3. get_resource each bound Role or ClusterRole.\n\
+                 4. Where a provider identity check tool is available (for example eks_identity_check), run it for the ServiceAccount.\n\n\
+                 Output a table of what it can do (verbs, resources, namespaces) and flag the risks: wildcards, Secrets access, pods/exec, \
+                 escalate, bind or impersonate, and cluster-wide grants that a namespaced Role would cover. {untrusted}"
             ))
         }
         _ => None,
@@ -488,14 +548,55 @@ impl ServerHandler for K8sMcp {
         Ok(ListResourcesResult::with_all_items(Self::resources()))
     }
 
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        Ok(ListResourceTemplatesResult::with_all_items(vec![
+            ResourceTemplate::new(OVERVIEW_TEMPLATE, "cluster-overview")
+                .with_description(
+                    "cluster_overview of an allowed context, as JSON (computed on read)",
+                )
+                .with_mime_type("application/json"),
+        ]))
+    }
+
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, McpError> {
-        let body = self.read(&request.uri).ok_or_else(|| {
-            McpError::resource_not_found(format!("resource {} not found", request.uri), None)
-        })?;
+        let overview = request
+            .uri
+            .strip_prefix("k8s-mcp://cluster/")
+            .and_then(|rest| rest.strip_suffix("/overview"));
+        let body = match overview {
+            // Through the tool path: context policy, timeout, cap, redaction and audit apply.
+            Some(name) => {
+                let r = self
+                    .run(
+                        "cluster_overview",
+                        json!({ "context": name }),
+                        (None, None),
+                        context.ct.cancelled_owned(),
+                    )
+                    .await;
+                if r.is_error == Some(true) {
+                    let msg: String = r
+                        .content
+                        .iter()
+                        .filter_map(|c| c.as_text())
+                        .map(|t| t.text.clone())
+                        .collect();
+                    return Err(McpError::invalid_params(msg, None));
+                }
+                r.structured_content.unwrap_or(Value::Null)
+            }
+            None => self.read(&request.uri).ok_or_else(|| {
+                McpError::resource_not_found(format!("resource {} not found", request.uri), None)
+            })?,
+        };
         let text = serde_json::to_string_pretty(&body).unwrap_or_default();
         Ok(ReadResourceResult::new(vec![
             ResourceContents::text(text, request.uri).with_mime_type("application/json"),
@@ -576,6 +677,35 @@ mod tests {
         assert!(text.contains("checkout is crash-looping") && text.contains("`shop`"));
         assert!(prompt_text("cluster-health-check", &serde_json::Map::new()).is_some());
         assert!(prompt_text("nope", &args).is_none());
+        let wl: serde_json::Map<String, Value> =
+            serde_json::from_value(json!({"kind": "Deployment", "name": "checkout"})).unwrap();
+        assert!(
+            prompt_text("explain-workload", &wl)
+                .unwrap()
+                .contains("`checkout`")
+        );
+        assert!(
+            prompt_text("explain-workload", &serde_json::Map::new()).is_none(),
+            "kind and name are required"
+        );
+        let sa: serde_json::Map<String, Value> =
+            serde_json::from_value(json!({"serviceaccount": "ai", "namespace": "shop"})).unwrap();
+        assert!(
+            prompt_text("access-review", &sa)
+                .unwrap()
+                .contains("system:serviceaccounts:shop")
+        );
+        // Every declared prompt renders with its required arguments.
+        for p in prompts() {
+            let required: serde_json::Map<String, Value> = p
+                .arguments
+                .iter()
+                .flatten()
+                .filter(|a| a.required == Some(true))
+                .map(|a| (a.name.clone(), json!("x")))
+                .collect();
+            assert!(prompt_text(&p.name, &required).is_some(), "{}", p.name);
+        }
     }
 }
 

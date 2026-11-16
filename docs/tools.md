@@ -119,6 +119,29 @@ Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and 
 | `context` | string | Kubeconfig context. |
 | `namespace` | string | Limit HPAs and scale-up events to one namespace (Karpenter and the Cluster Autoscaler are cluster-wide). Default: all allowed namespaces. |
 
+### `recent_changes`
+
+What changed recently that could explain this? Rollouts (with image/env-name/resource diffs), objects created or updated (and by which field manager) and Helm release revisions, newest first, in a namespace or the whole cluster (since: default 2h). Env values and object bodies are never read or shown.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `namespace` | string | Limit to one namespace (default: all allowed namespaces). |
+| `since` | string | Time window, e.g. `30m`, `2h`, `1d` (default `2h`, at most 7d). |
+| `workload` | string | Only this workload, as `kind/name` (needs `namespace` or the context's namespace). |
+
+### `rollout_history`
+
+Revisions of a Deployment, StatefulSet or DaemonSet: revision, age, images, replicas and change-cause, with a diff of the newest two (or `compare: [a, b]`). Use to see what a rollout changed or which revision to roll back to.
+
+| Input | Type | Description |
+|---|---|---|
+| `compare` | array | Two revision numbers to diff (default: the newest two). |
+| `context` | string | Kubeconfig context. |
+| `kind` **(required)** | string | Deployment, StatefulSet or DaemonSet. |
+| `name` **(required)** | string | Workload name. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+
 ### `check_permissions`
 
 What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.

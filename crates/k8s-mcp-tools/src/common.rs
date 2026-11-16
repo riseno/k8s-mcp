@@ -12,7 +12,7 @@ use k8s_mcp_diagnose::rules::last_seen;
 use k8s_openapi::api::core::v1::Event;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Resource;
-use kube::api::{Api, ListParams};
+use kube::api::{Api, ListParams, PartialObjectMeta};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -147,19 +147,56 @@ where
     K: Resource<Scope = k8s_openapi::NamespaceResourceScope> + Clone + DeserializeOwned + Debug,
     <K as Resource>::DynamicType: Default,
 {
+    list_scoped_with(ctx, scope, what, notes, |api: Api<K>| {
+        let lp = lp.clone();
+        async move { api.list(&lp).await.map(|l| l.items) }
+    })
+    .await
+}
+
+/// [`list_scoped`], metadata only: no object bodies (Secret data, ConfigMap values) are read.
+pub async fn list_meta_scoped<K>(
+    ctx: &Ctx,
+    scope: &Scope,
+    lp: &ListParams,
+    what: &str,
+    notes: &mut Vec<Unavailable>,
+) -> Result<Vec<PartialObjectMeta<K>>>
+where
+    K: Resource<Scope = k8s_openapi::NamespaceResourceScope> + Clone + DeserializeOwned + Debug,
+    <K as Resource>::DynamicType: Default,
+{
+    list_scoped_with(ctx, scope, what, notes, |api: Api<K>| {
+        let lp = lp.clone();
+        async move { api.list_metadata(&lp).await.map(|l| l.items) }
+    })
+    .await
+}
+
+/// The policy filtering and RBAC fallback shared by the list helpers. (A plain closure
+/// returning a `Send` future: `AsyncFn` futures cannot be proven `Send` for rmcp handlers.)
+async fn list_scoped_with<K, T, F, Fut>(
+    ctx: &Ctx,
+    scope: &Scope,
+    what: &str,
+    notes: &mut Vec<Unavailable>,
+    list: F,
+) -> Result<Vec<T>>
+where
+    T: Resource,
+    F: Fn(Api<K>) -> Fut,
+    Fut: std::future::Future<Output = kube::Result<Vec<T>>> + Send,
+    K: Resource<Scope = k8s_openapi::NamespaceResourceScope> + Clone + DeserializeOwned + Debug,
+    <K as Resource>::DynamicType: Default,
+{
     let client = scope.target.client.clone();
     if let Some(ns) = &scope.namespace {
-        let api: Api<K> = Api::namespaced(client, ns);
-        return api
-            .list(lp)
+        return list(Api::namespaced(client, ns))
             .await
-            .map(|l| l.items)
             .map_err(|e| Error::kube(format!("list {what} in namespace {ns}"), &e));
     }
-    let api: Api<K> = Api::all(client.clone());
-    match api.list(lp).await {
-        Ok(list) => Ok(list
-            .items
+    match list(Api::all(client.clone())).await {
+        Ok(items) => Ok(items
             .into_iter()
             .filter(|o| ctx.policy.namespace_allowed(ns_of(o)))
             .collect()),
@@ -171,9 +208,8 @@ where
             let namespaces = fallback_namespaces(ctx, scope, what, notes);
             let mut out = Vec::new();
             for ns in namespaces {
-                let api: Api<K> = Api::namespaced(client.clone(), &ns);
-                match api.list(lp).await {
-                    Ok(l) => out.extend(l.items),
+                match list(Api::namespaced(client.clone(), &ns)).await {
+                    Ok(items) => out.extend(items),
                     Err(e) => notes.push(Unavailable {
                         what: format!("{what} in namespace {ns}"),
                         reason: Error::kube(format!("list {what} in namespace {ns}"), &e)

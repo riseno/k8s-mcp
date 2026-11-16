@@ -12,7 +12,7 @@ helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-nam
 
 The chart creates:
 - a Deployment (1 replica, stateless) and a `ClusterIP` Service on port 8080, path `/mcp`;
-- a ServiceAccount bound to a read-only ClusterRole (no Secrets; PROPOSAL Appendix C);
+- a ServiceAccount bound to a read-only ClusterRole (no Secrets; `templates/rbac.yaml`);
 - a binding to `system:auth-delegator`, so the server can validate callers' tokens.
 
 The pod runs as non-root (UID 65532) with a read-only root filesystem, all capabilities

@@ -14,7 +14,7 @@ credited in the advisory unless you ask otherwise.
 In scope: anything that lets tool output include Secret values or unredacted credentials,
 bypasses the context or namespace policy, writes to the cluster, writes to stdout outside
 MCP frames, or leaks kubeconfig or cloud credentials. The threat model is in
-[docs/security.md](docs/security.md) and PROPOSAL.md §12.
+[docs/security.md](docs/security.md).
 
 Out of scope: what the kubeconfig identity itself may do through RBAC (k8s-mcp cannot
 reduce those rights), and prompt-injection content that the model follows despite the

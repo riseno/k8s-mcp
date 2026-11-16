@@ -6,3 +6,5 @@ grok-build.log
 *.pending-snap
 *.snap.new
 .claude/worktrees/
+# The maintainer's specification: kept locally, not published.
+/PROPOSAL.md

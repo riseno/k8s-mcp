@@ -2,6 +2,9 @@
 
 Status key: ✅ done · 🚧 in progress · ⏳ not started · ⛔ blocked (needs the maintainer)
 
+Section references (§, Appendix) here and in the ADRs point to PROPOSAL.md, the maintainer's
+specification, which is not published.
+
 ## M0: Spike and skeleton
 
 | Task | Status | Notes |

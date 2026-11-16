@@ -141,7 +141,7 @@ Subcommands: `serve` (default), `doctor`, `version`, `completions <shell>`.
 
 ## How it compares
 
-k8s-mcp is deterministic first: tested rules turn container states, events, logs and node state into ranked findings with evidence, and the assistant explains and plans on top. See [PROPOSAL.md §3](PROPOSAL.md#3-landscape-and-differentiation) for a comparison with other Kubernetes MCP servers, k8sgpt and HolmesGPT.
+k8s-mcp is deterministic first: tested rules turn container states, events, logs and node state into ranked findings with evidence, and the assistant explains and plans on top. Compared with general-purpose Kubernetes MCP servers, it is read-only by default, needs no kubectl and redacts what it returns; compared with k8sgpt and HolmesGPT, the server itself never calls an LLM.
 
 ## Development
 

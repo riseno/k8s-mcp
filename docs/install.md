@@ -34,5 +34,5 @@ plugin is not on `PATH` ("install it, or pass --path-prepend <dir>").
 ## A dedicated read-only identity
 
 k8s-mcp is read-only, but it acts with your kubeconfig's rights. For AI tools, create a
-ServiceAccount bound to the read-only ClusterRole in PROPOSAL.md Appendix C (no Secrets
-access) and give k8s-mcp a kubeconfig for it with `--kubeconfig`.
+ServiceAccount bound to the read-only ClusterRole the Helm chart installs
+(`deploy/helm/k8s-mcp/templates/rbac.yaml`, no Secrets access) and give k8s-mcp a kubeconfig for it with `--kubeconfig`.

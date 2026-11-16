@@ -67,7 +67,7 @@ association; see [in-cluster.md](../in-cluster.md).
 
 ## Permissions
 
-A read-only policy for the identity k8s-mcp uses (PROPOSAL Appendix C). Scope `Resource` to
+A read-only policy for the identity k8s-mcp uses. Scope `Resource` to
 your clusters, roles and log groups in production.
 
 ```json

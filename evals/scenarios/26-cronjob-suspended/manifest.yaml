@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-cronjob-suspended}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: nightly-backup, namespace: eval-cronjob-suspended}
+spec:
+  schedule: "*/1 * * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers: [{name: backup, image: busybox:1.37, command: [sh, -c, "echo backup"]}]

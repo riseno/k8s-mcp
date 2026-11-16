@@ -1,0 +1,9 @@
+id: upgrade-blocking-pdb
+symptom: Node upgrades keep hanging when they drain nodes. Is something in eval-upgrade-blocking-pdb blocking them?
+tool: upgrade_readiness
+args: {namespace: eval-upgrade-blocking-pdb}
+settle_seconds: 20
+expected:
+  primary: upgrade.pdb_blocks_drain
+  acceptable: [upgrade.single_replica_workloads, upgrade.deprecated_api_in_use]
+forbidden: [upgrade.removed_api_in_use, upgrade.target_skips_minor]

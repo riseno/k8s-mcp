@@ -1,0 +1,9 @@
+id: missing-secret
+symptom: The billing pod in eval-missing-secret never starts. What is missing?
+tool: diagnose_pod
+args: {name: billing, namespace: eval-missing-secret}
+settle_seconds: 20
+expected:
+  primary: pod.config.missing_secret
+  acceptable: []
+forbidden: [pod.config.missing_key, pod.config.missing_configmap]

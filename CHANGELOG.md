@@ -35,6 +35,12 @@ All notable changes are documented here. The format follows
   grants `get` on `/metrics`.
 - Prompt `upgrade-readiness` (`target_version`); `cluster-health-check` includes upgrade
   readiness.
+- `upgrade_readiness` takes an optional `namespace` for its namespaced checks (PDBs, workloads,
+  objects written with deprecated APIs).
+- Eval scenarios 19–27 (27 in total): deprecated CRD version in use, PodDisruptionBudget
+  blocking drains, init container failing, Job backoff limit, Service without ready endpoints,
+  invalid image name, missing Secret, suspended CronJob, HPA that cannot compute its metric.
+  A scenario may ship CRDs in `crds.yaml`, applied (and removed) around the run.
 - Provider trait `upgrade_checks(target)` with a cloud-neutral `UpgradeInfo` (versions on offer,
   end of standard support, the cloud's own checks), and a default `access` for providers
   without access mapping before v1.0. EKS implements it with upgrade insights

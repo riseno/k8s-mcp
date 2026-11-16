@@ -1,0 +1,19 @@
+# A CRD whose v1beta1 is still served but marked deprecated.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: widgets.eval.k8s-mcp.dev}
+spec:
+  group: eval.k8s-mcp.dev
+  scope: Namespaced
+  names: {plural: widgets, singular: widget, kind: Widget}
+  versions:
+    - name: v1beta1
+      served: true
+      storage: false
+      deprecated: true
+      deprecationWarning: "eval.k8s-mcp.dev/v1beta1 Widget is deprecated; use eval.k8s-mcp.dev/v1"
+      schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}
+    - name: v1
+      served: true
+      storage: true
+      schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}

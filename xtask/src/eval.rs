@@ -132,6 +132,28 @@ pub fn main(args: &[String]) -> Result<()> {
     let scenarios = load_scenarios(only.as_deref())?;
     verify_context()?;
 
+    // CRDs first (a scenario's optional crds.yaml): its objects need them established.
+    let crds: Vec<PathBuf> = scenarios
+        .iter()
+        .map(|(dir, _)| scenarios_dir().join(dir).join("crds.yaml"))
+        .filter(|p| p.is_file())
+        .collect();
+    let with_crds = |args: &[&str]| {
+        let mut cmd = kubectl();
+        cmd.args(args);
+        for c in &crds {
+            cmd.arg("-f").arg(c);
+        }
+        cmd
+    };
+    if !crds.is_empty() {
+        run(&mut with_crds(&["apply"]))?;
+        run(&mut with_crds(&[
+            "wait",
+            "--for=condition=established",
+            "--timeout=60s",
+        ]))?;
+    }
     // Apply first, then build while the scenarios settle: the wait overlaps the compile.
     let mut apply = kubectl();
     apply.arg("apply");
@@ -188,6 +210,13 @@ pub fn main(args: &[String]) -> Result<()> {
         delete.args(["delete", "namespace", "--wait=false", "--ignore-not-found"]);
         delete.args(scenarios.iter().map(|(_, s)| s.namespace()));
         run(&mut delete)?;
+        if !crds.is_empty() {
+            run(&mut with_crds(&[
+                "delete",
+                "--ignore-not-found",
+                "--wait=false",
+            ]))?;
+        }
     }
 
     let summary = Summary::new(&outcomes);
@@ -552,7 +581,7 @@ mod tests {
     #[test]
     fn scenarios_are_valid() {
         let all = load_scenarios(None).unwrap();
-        assert!(all.len() >= 12, "v0.1 needs at least 12 scenarios");
+        assert!(all.len() >= 25, "v0.3 needs at least 25 scenarios");
         for (dir, s) in &all {
             assert!(
                 [
@@ -560,7 +589,8 @@ mod tests {
                     "diagnose_workload",
                     "diagnose_service",
                     "diagnose_dns",
-                    "autoscaling_status"
+                    "autoscaling_status",
+                    "upgrade_readiness"
                 ]
                 .contains(&s.tool.as_str()),
                 "{dir}: tool"

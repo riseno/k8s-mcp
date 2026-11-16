@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-upgrade-deprecated-api}
+---
+# Written with the deprecated version: the API server counts the request, and the object's
+# managedFields keep that apiVersion.
+apiVersion: eval.k8s-mcp.dev/v1beta1
+kind: Widget
+metadata: {name: legacy, namespace: eval-upgrade-deprecated-api}
+spec: {size: small}

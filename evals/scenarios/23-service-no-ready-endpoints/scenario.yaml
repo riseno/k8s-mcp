@@ -1,0 +1,9 @@
+id: service-no-ready-endpoints
+symptom: Requests to the search Service in eval-service-no-ready-endpoints get connection refused. Why?
+tool: diagnose_service
+args: {name: search, namespace: eval-service-no-ready-endpoints}
+settle_seconds: 30
+expected:
+  primary: svc.no_ready_endpoints
+  acceptable: [pod.probe.readiness_failing]
+forbidden: [svc.no_matching_pods, svc.target_port_mismatch]

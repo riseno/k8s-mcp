@@ -1,0 +1,9 @@
+id: invalid-image-name
+symptom: The web pod in eval-invalid-image-name is stuck before pulling its image. What is wrong?
+tool: diagnose_pod
+args: {name: web, namespace: eval-invalid-image-name}
+settle_seconds: 15
+expected:
+  primary: pod.image.invalid_name
+  acceptable: []
+forbidden: [pod.image.not_found, pod.image.auth]

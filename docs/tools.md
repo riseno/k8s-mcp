@@ -126,6 +126,7 @@ Is the cluster ready for the next control-plane minor (or `target_version`)? A c
 | Input | Type | Description |
 |---|---|---|
 | `context` | string | Kubeconfig context. |
+| `namespace` | string | Only check this namespace's PodDisruptionBudgets, workloads and objects (the control plane, nodes and the API server's deprecated-API metric are cluster-wide). Default: all allowed namespaces. |
 | `target_version` | string | Kubernetes version to upgrade the control plane to, such as `1.35` (default: the next minor after the current one). |
 
 ### `recent_changes`

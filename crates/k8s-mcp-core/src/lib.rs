@@ -8,6 +8,7 @@ pub mod envelope;
 pub mod error;
 pub mod finding;
 pub mod policy;
+pub mod provider;
 pub mod quantity;
 pub mod redact;
 pub mod text;

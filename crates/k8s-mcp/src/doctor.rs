@@ -139,16 +139,12 @@ pub async fn run(opts: &Opts) -> anyhow::Result<ExitCode> {
             }
         ),
     );
-    let provider = cm
-        .contexts(&ctx.policy)
-        .into_iter()
-        .find(|c| c.is_default)
-        .and_then(|c| c.provider);
+    let provider = cm.detect_provider(cm.default_context(), &[]);
     line(
         true,
         &format!(
-            "provider: {} (cloud provider modules arrive in v0.2)",
-            provider.unwrap_or("none detected")
+            "provider: {} (from the kubeconfig, no cloud calls)",
+            provider.map_or_else(|| "none detected".into(), |d| d.describe())
         ),
     );
     line(

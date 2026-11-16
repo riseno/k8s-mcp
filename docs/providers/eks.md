@@ -78,7 +78,8 @@ your clusters, roles and log groups in production.
         "eks:DescribeCluster", "eks:ListNodegroups", "eks:DescribeNodegroup", "eks:ListFargateProfiles",
         "eks:DescribeFargateProfile", "eks:ListAddons", "eks:DescribeAddon", "eks:DescribeAddonVersions",
         "eks:ListAccessEntries", "eks:DescribeAccessEntry", "eks:ListAssociatedAccessPolicies",
-        "eks:ListPodIdentityAssociations", "eks:DescribePodIdentityAssociation"
+        "eks:ListPodIdentityAssociations", "eks:DescribePodIdentityAssociation",
+        "eks:ListInsights", "eks:DescribeInsight", "eks:DescribeClusterVersions"
       ], "Resource": "*" },
     { "Effect": "Allow", "Action": [ "iam:GetRole", "iam:ListOpenIDConnectProviders", "iam:GetOpenIDConnectProvider" ], "Resource": "*" },
     { "Effect": "Allow", "Action": [ "logs:DescribeLogGroups", "logs:FilterLogEvents", "logs:StartQuery", "logs:GetQueryResults" ], "Resource": "*" },
@@ -87,6 +88,8 @@ your clusters, roles and log groups in production.
 }
 ```
 
-The `iam:` actions are for `eks_identity_check` and the `logs:` actions for `eks_logs`.
+The `iam:` actions are for `eks_identity_check`, the `logs:` actions for `eks_logs`, and
+`eks:ListInsights`, `eks:DescribeInsight` and `eks:DescribeClusterVersions` for the EKS section
+of `upgrade_readiness` (upgrade insights, the versions on offer and the end of standard support).
 `eks_access` also reads the `aws-auth` ConfigMap through Kubernetes, when the namespace policy
 allows kube-system.

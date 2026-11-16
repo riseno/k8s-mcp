@@ -35,6 +35,7 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 | `eks.pod_identity.agent_missing` | The EKS Pod Identity agent is not running | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `eks.pod_identity.association_missing` | The ServiceAccount has no AWS identity (no IRSA role, no Pod Identity association) | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `eks.pod_identity.trust_mismatch` | The Pod Identity role's trust policy does not allow EKS Pod Identity | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
+| `eks.upgrade.insight_failing` | An EKS upgrade insight reports a problem for the next version | [link](https://docs.aws.amazon.com/eks/latest/userguide/cluster-insights.html) |
 | `job.backoff_limit` | Job failed: its pods failed more often than backoffLimit allows | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `job.deadline_exceeded` | Job failed: it ran longer than activeDeadlineSeconds | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `node.cordoned` | Node is cordoned: no new pods are scheduled there | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |

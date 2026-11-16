@@ -3,12 +3,15 @@
 use std::collections::BTreeMap;
 
 use aws_sdk_eks::types::{
-    AccessEntry, Addon as EksAddon, AddonInfo, AssociatedAccessPolicy, Cluster, FargateProfile,
+    AccessEntry, Addon as EksAddon, AddonInfo, AssociatedAccessPolicy, Cluster,
+    ClusterVersionInformation, FargateProfile, Insight, InsightStatusValue, InsightSummary,
     Nodegroup,
 };
 use k8s_mcp_core::finding::{Confidence, Finding, RuleMeta, Severity, Source};
 use k8s_mcp_core::text::truncate;
-use k8s_mcp_provider::{AccessMapping, Addon, ClusterInfo, NodePool, Report};
+use k8s_mcp_provider::{
+    AccessMapping, Addon, ClusterInfo, NodePool, Report, UpgradeCheck, UpgradeInfo,
+};
 use k8s_openapi::api::core::v1::ConfigMap;
 use serde::Deserialize;
 use serde_json::json;
@@ -22,6 +25,8 @@ const DOCS_LOGGING: &str =
     "https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html";
 const DOCS_ENDPOINT: &str =
     "https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html";
+const DOCS_INSIGHTS: &str =
+    "https://docs.aws.amazon.com/eks/latest/userguide/cluster-insights.html";
 
 /// Rules emitted by the EKS provider.
 pub const RULES: &[RuleMeta] = &[
@@ -69,6 +74,11 @@ pub const RULES: &[RuleMeta] = &[
         id: "eks.access.aws_auth_invalid",
         title: "The aws-auth ConfigMap cannot be parsed",
         docs: DOCS_ACCESS,
+    },
+    RuleMeta {
+        id: "eks.upgrade.insight_failing",
+        title: "An EKS upgrade insight reports a problem for the next version",
+        docs: DOCS_INSIGHTS,
     },
 ];
 
@@ -361,6 +371,125 @@ pub fn addons(
         }
     }
     (rows, findings)
+}
+
+/// Most failing insights described in findings.
+pub const DESCRIBED_INSIGHTS: usize = 5;
+
+fn insight_status(s: Option<&InsightStatusValue>) -> &'static str {
+    match s {
+        Some(InsightStatusValue::Passing) => "passing",
+        Some(InsightStatusValue::Warning) => "warning",
+        Some(InsightStatusValue::Error) => "error",
+        _ => "unknown",
+    }
+}
+
+/// Upgrade data for `upgrade_readiness`: versions after `current`, its end of standard
+/// support, and the upgrade-readiness insights (`described` holds the failing ones in full).
+pub fn upgrade(
+    current: &str,
+    versions: &[ClusterVersionInformation],
+    insights: &[InsightSummary],
+    described: &[Insight],
+) -> Report<UpgradeInfo> {
+    let mut available: Vec<(u32, String)> = versions
+        .iter()
+        .filter_map(|v| {
+            let version = v.cluster_version()?;
+            let m = minor(version)?;
+            (m > minor(current)?).then(|| (m, version.to_owned()))
+        })
+        .collect();
+    available.sort();
+    available.dedup();
+    let support_ends = versions
+        .iter()
+        .find(|v| v.cluster_version() == Some(current))
+        .and_then(|v| v.end_of_standard_support_date())
+        .map(aws_sdk_eks::primitives::DateTime::secs);
+    let mut checks: Vec<UpgradeCheck> = insights
+        .iter()
+        .map(|i| {
+            let status = i.insight_status();
+            UpgradeCheck {
+                name: i.name().unwrap_or("").to_owned(),
+                status: insight_status(status.and_then(|s| s.status())).to_owned(),
+                detail: truncate(status.and_then(|s| s.reason()).unwrap_or(""), 200),
+            }
+        })
+        .collect();
+    checks.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut findings = Vec::new();
+    for i in described {
+        let status = insight_status(i.insight_status().and_then(|s| s.status()));
+        if !matches!(status, "error" | "warning") {
+            continue;
+        }
+        let name = i.name().unwrap_or("");
+        let version = i.kubernetes_version().unwrap_or("the next version");
+        let mut f = Finding::new(
+            "eks.upgrade.insight_failing",
+            if status == "error" { Severity::High } else { Severity::Medium },
+            Confidence::High,
+            format!(
+                "EKS upgrade insight {name:?} {} for Kubernetes {version}",
+                if status == "error" { "fails" } else { "warns" }
+            ),
+        )
+        .explain(truncate(i.description().unwrap_or("EKS checks the cluster against what changes in the next Kubernetes version."), 300))
+        .docs(DOCS_INSIGHTS)
+        .fix(truncate(i.recommendation().unwrap_or("Resolve what the insight reports before upgrading; EKS refreshes insights about once a day."), 300));
+        if let Some(reason) = i.insight_status().and_then(|s| s.reason()) {
+            f = f.evidence(Source::Status, truncate(reason, 300));
+        }
+        for d in i
+            .category_specific_summary()
+            .map(aws_sdk_eks::types::InsightCategorySpecificSummary::deprecation_details)
+            .unwrap_or_default()
+            .iter()
+            .take(3)
+        {
+            let agents: Vec<&str> = d
+                .client_stats()
+                .iter()
+                .filter_map(|c| c.user_agent())
+                .take(3)
+                .collect();
+            f = f.evidence(
+                Source::Related,
+                truncate(
+                    &format!(
+                        "{} stops being served in {}; use {}{}",
+                        d.usage().unwrap_or("?"),
+                        d.stop_serving_version().unwrap_or("?"),
+                        d.replaced_with().unwrap_or("?"),
+                        if agents.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" (recent callers: {})", agents.join(", "))
+                        }
+                    ),
+                    300,
+                ),
+            );
+        }
+        for r in i.resources().iter().take(3) {
+            if let Some(uri) = r.kubernetes_resource_uri().or_else(|| r.arn()) {
+                f = f.evidence(Source::Related, format!("affected: {}", truncate(uri, 200)));
+            }
+        }
+        findings.push(f);
+    }
+    (
+        UpgradeInfo {
+            current: current.to_owned(),
+            available: available.into_iter().map(|(_, v)| v).collect(),
+            support_ends,
+            checks,
+        },
+        findings,
+    )
 }
 
 #[derive(Deserialize)]

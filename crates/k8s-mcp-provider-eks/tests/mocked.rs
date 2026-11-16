@@ -426,3 +426,118 @@ async fn eks_logs() {
     );
     insta::assert_snapshot!(e.render());
 }
+
+/// v0.3 #1: upgrade insights and versions for `upgrade_readiness`; only failing insights are
+/// described, and only they become findings.
+#[tokio::test]
+async fn eks_upgrade_checks() {
+    use aws_sdk_eks::operation::describe_cluster_versions::DescribeClusterVersionsOutput;
+    use aws_sdk_eks::operation::describe_insight::DescribeInsightOutput;
+    use aws_sdk_eks::operation::list_insights::ListInsightsOutput;
+    use aws_sdk_eks::types::{
+        Category, ClientStat, ClusterVersionInformation, DeprecationDetail, Insight,
+        InsightCategorySpecificSummary, InsightResourceDetail, InsightStatus, InsightStatusValue,
+        InsightSummary,
+    };
+    use aws_smithy_types::DateTime;
+    let status = |s: InsightStatusValue, reason: &str| {
+        InsightStatus::builder().status(s).reason(reason).build()
+    };
+    let describe = mock!(Client::describe_cluster)
+        .then_output(|| DescribeClusterOutput::builder().cluster(cluster()).build());
+    let versions = mock!(Client::describe_cluster_versions).then_output(|| {
+        let v = |version: &str, end: i64| {
+            ClusterVersionInformation::builder()
+                .cluster_version(version)
+                .end_of_standard_support_date(DateTime::from_secs(end))
+                .build()
+        };
+        DescribeClusterVersionsOutput::builder()
+            .cluster_versions(v("1.35", 1_830_000_000))
+            .cluster_versions(v("1.34", 1_810_000_000))
+            .cluster_versions(v("1.33", 1_790_000_000))
+            .cluster_versions(v("1.32", 1_770_000_000))
+            .build()
+    });
+    let list = mock!(Client::list_insights).then_output(move || {
+        ListInsightsOutput::builder()
+            .insights(
+                InsightSummary::builder()
+                    .id("ins-ok")
+                    .name("Kubelet version skew")
+                    .category(Category::UpgradeReadiness)
+                    .kubernetes_version("1.34")
+                    .insight_status(status(
+                        InsightStatusValue::Passing,
+                        "No kubelet version skew.",
+                    ))
+                    .build(),
+            )
+            .insights(
+                InsightSummary::builder()
+                    .id("ins-api")
+                    .name("Deprecated APIs removed in Kubernetes v1.34")
+                    .category(Category::UpgradeReadiness)
+                    .kubernetes_version("1.34")
+                    .insight_status(status(
+                        InsightStatusValue::Error,
+                        "Deprecated API usage detected within the last 30 days.",
+                    ))
+                    .build(),
+            )
+            .build()
+    });
+    let describe_insight = mock!(Client::describe_insight)
+        .match_requests(|r| r.id() == Some("ins-api"))
+        .then_output(move || {
+            DescribeInsightOutput::builder()
+                .insight(
+                    Insight::builder()
+                        .id("ins-api")
+                        .name("Deprecated APIs removed in Kubernetes v1.34")
+                        .category(Category::UpgradeReadiness)
+                        .kubernetes_version("1.34")
+                        .description("Checks for usage of deprecated APIs that are scheduled for removal in Kubernetes v1.34.")
+                        .recommendation("Update manifests and API clients to use newer Kubernetes APIs if applicable before upgrading to Kubernetes v1.34.")
+                        .insight_status(status(InsightStatusValue::Error, "Deprecated API usage detected within the last 30 days."))
+                        .category_specific_summary(
+                            InsightCategorySpecificSummary::builder()
+                                .deprecation_details(
+                                    DeprecationDetail::builder()
+                                        .usage("/apis/example.k8s.io/v1beta1/widgets")
+                                        .replaced_with("/apis/example.k8s.io/v1/widgets")
+                                        .stop_serving_version("1.34")
+                                        .client_stats(ClientStat::builder().user_agent("widget-controller/v0.9").number_of_requests_last30_days(4120).build())
+                                        .build(),
+                                )
+                                .build(),
+                        )
+                        .resources(InsightResourceDetail::builder().kubernetes_resource_uri("/apis/example.k8s.io/v1beta1/namespaces/shop/widgets/w1").build())
+                        .build(),
+                )
+                .build()
+        });
+    let eks_client = mock_client!(
+        aws_sdk_eks,
+        RuleMode::MatchAny,
+        &[&describe, &versions, &list, &describe_insight]
+    );
+    let p = Eks::with_clients(
+        eks_client,
+        no_iam(),
+        no_logs(),
+        "shop".into(),
+        "eu-west-1".into(),
+    );
+    let (info, findings) = p.upgrade_checks(None).await.unwrap();
+    assert_eq!(info.available, ["1.34", "1.35"]);
+    assert_eq!(info.support_ends, Some(1_790_000_000));
+    let mut e = k8s_mcp_core::envelope::Envelope::new("EKS upgrade checks");
+    e.sections.push(k8s_mcp_core::envelope::Section {
+        title: "PROVIDER".into(),
+        lines: k8s_mcp_provider::upgrade_lines(k8s_mcp_core::provider::ProviderId::Eks, &info),
+        untrusted: None,
+    });
+    e.findings = findings;
+    insta::assert_snapshot!(e.render());
+}

@@ -5,6 +5,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Provider trait `upgrade_checks(target)` with a cloud-neutral `UpgradeInfo` (versions on offer,
+  end of standard support, the cloud's own checks), and a default `access` for providers
+  without access mapping before v1.0. EKS implements it with upgrade insights
+  (`ListInsights`/`DescribeInsight`) and `DescribeClusterVersions`; rule
+  `eks.upgrade.insight_failing` quotes the deprecated API usage, its callers and the affected
+  resources. The IAM policy in `docs/providers/eks.md` adds the three actions.
+
 ## [0.2.1] - 2026-11-16
 
 ### Changed

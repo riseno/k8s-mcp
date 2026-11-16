@@ -17,13 +17,15 @@ use aws_config::BehaviorVersion;
 use aws_config::timeout::TimeoutConfig;
 use aws_sdk_eks::Client;
 use aws_sdk_eks::error::DisplayErrorContext;
-use aws_sdk_eks::types::{AssociatedAccessPolicy, FargateProfile, Nodegroup};
+use aws_sdk_eks::types::{
+    AssociatedAccessPolicy, Category, FargateProfile, InsightStatusValue, InsightsFilter, Nodegroup,
+};
 use aws_smithy_http_client::tls::{self, rustls_provider::CryptoMode};
 use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
     AccessMapping, Addon, CloudLogs, ClusterInfo, IdentityReport, LogQuery, NodePool, Provider,
-    Report, WorkloadIdentity,
+    Report, UpgradeInfo, WorkloadIdentity,
 };
 use k8s_openapi::api::core::v1::ConfigMap;
 
@@ -414,6 +416,58 @@ impl Provider for Eks {
             Ok(facts) => identity::evaluate(k8s, Ok(&facts)),
             Err(e) => identity::evaluate(k8s, Err(&skip_reason(&e))),
         }
+    }
+
+    async fn upgrade_checks(&self, target: Option<&str>) -> Result<Report<UpgradeInfo>> {
+        let current = self.version().await?;
+        let versions = self
+            .client
+            .describe_cluster_versions()
+            .cluster_type("eks")
+            .into_paginator()
+            .items()
+            .send()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .await
+            .map_err(|e| self.err("list Kubernetes versions", &e))?;
+        let mut filter = InsightsFilter::builder().categories(Category::UpgradeReadiness);
+        if let Some(t) = target {
+            filter = filter.kubernetes_versions(t);
+        }
+        let insights = self
+            .client
+            .list_insights()
+            .cluster_name(&self.cluster)
+            .filter(filter.build())
+            .into_paginator()
+            .items()
+            .send()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .await
+            .map_err(|e| self.err("list upgrade insights", &e))?;
+        let mut described = Vec::new();
+        for summary in insights
+            .iter()
+            .filter(|i| {
+                matches!(
+                    i.insight_status().and_then(|s| s.status()),
+                    Some(InsightStatusValue::Error | InsightStatusValue::Warning)
+                )
+            })
+            .take(rules::DESCRIBED_INSIGHTS)
+        {
+            let Some(id) = summary.id() else { continue };
+            let out = self
+                .client
+                .describe_insight()
+                .cluster_name(&self.cluster)
+                .id(id)
+                .send()
+                .await
+                .map_err(|e| self.err(&format!("describe upgrade insight {id}"), &e))?;
+            described.extend(out.insight);
+        }
+        Ok(rules::upgrade(&current, &versions, &insights, &described))
     }
 
     async fn logs(&self, q: &LogQuery) -> Result<CloudLogs> {

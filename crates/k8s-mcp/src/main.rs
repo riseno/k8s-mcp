@@ -376,8 +376,10 @@ async fn toolsets(opts: &Opts, ctx: &Ctx) -> anyhow::Result<Vec<String>> {
     Ok(out)
 }
 
-/// The default context's provider when detected with high confidence: from the kubeconfig,
-/// or in-cluster (where the kubeconfig says nothing) from a few nodes.
+/// The default context's provider when detected with high confidence. Nodes outrank the
+/// kubeconfig (#64): when the kubeconfig suggests a cloud, a few nodes are read first, and a
+/// provider they contradict is not registered. In-cluster, where the kubeconfig says nothing,
+/// the nodes decide.
 async fn detected_provider(ctx: &Ctx) -> Option<ProviderId> {
     use k8s_mcp_core::provider::{Confidence, Detection};
     let sure = |d: Option<Detection>| {
@@ -385,21 +387,29 @@ async fn detected_provider(ctx: &Ctx) -> Option<ProviderId> {
             .map(|d| d.provider)
     };
     let default = ctx.clusters.default_context().to_owned();
-    if let Some(id) = sure(ctx.clusters.detect_provider(&default, &[])) {
-        return Some(id);
-    }
-    if default != k8s_mcp_core::cluster::IN_CLUSTER {
+    let kubeconfig = sure(ctx.clusters.detect_provider(&default, &[]));
+    if kubeconfig.is_none() && default != k8s_mcp_core::cluster::IN_CLUSTER {
         return None;
     }
-    let target = ctx.clusters.target(None, &ctx.policy).await.ok()?;
-    let lp = kube::api::ListParams::default().limit(20);
-    let nodes = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        kube::Api::<k8s_openapi::api::core::v1::Node>::all(target.client).list(&lp),
-    )
-    .await
-    .ok()?
-    .ok()?;
+    let read = async {
+        let target = ctx.clusters.target(None, &ctx.policy).await.ok()?;
+        let lp = kube::api::ListParams::default().limit(20);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            kube::Api::<k8s_openapi::api::core::v1::Node>::all(target.client).list(&lp),
+        )
+        .await
+        .ok()?
+        .ok()
+    };
+    // Unreadable nodes cannot contradict the kubeconfig.
+    let Some(nodes) = read.await else {
+        return kubeconfig;
+    };
+    if let Some(why) = ctx.clusters.detection_conflict(&default, &nodes.items) {
+        tracing::warn!("no provider toolset registered: context {default:?} {why}");
+        return None;
+    }
     sure(ctx.clusters.detect_provider(&default, &nodes.items))
 }
 

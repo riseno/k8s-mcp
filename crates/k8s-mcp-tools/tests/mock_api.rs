@@ -1486,6 +1486,10 @@ async fn recent_changes_reports_rollouts_and_helm_releases() {
         "metadata": {"name": "sh.helm.release.v1.shop.v7", "namespace": "shop", "creationTimestamp": "2026-11-14T11:30:00Z",
             "labels": {"owner": "helm", "name": "shop", "version": "7", "status": "deployed"}}});
     let mock = MockApi::new()
+        .get(
+            "/api/v1/namespaces/shop",
+            json!({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "shop"}}),
+        )
         .list(
             "/apis/apps/v1/namespaces/shop/replicasets",
             vec![
@@ -1644,7 +1648,7 @@ async fn upgrade_readiness_flags_removed_apis_and_blocking_pdbs() {
     .await
     .unwrap();
     assert!(
-        env.summary.starts_with("Upgrade 1.31 → 1.32: 2 blocked, 0 to review. Top finding: flowcontrol.apiserver.k8s.io/v1beta3 flowschemas is removed in 1.32"),
+        env.summary.starts_with("Upgrade 1.31 → 1.32: blocked by 1 removed API in use and 1 PodDisruptionBudget. Top finding: flowcontrol.apiserver.k8s.io/v1beta3 flowschemas is removed in 1.32"),
         "{}",
         env.summary
     );
@@ -1767,5 +1771,116 @@ fn provider_hints_use_the_registered_provider() {
         env.findings[0].fix.contains("--attach-acr"),
         "{}",
         env.findings[0].fix
+    );
+}
+
+/// Issue #67: an explicit namespace that does not exist is an error, not "nothing found", in
+/// the tools that list across it.
+#[tokio::test]
+async fn unknown_namespaces_are_rejected() {
+    let mock = MockApi::new().start();
+    let ctx = ctx(&mock, Policy::permissive());
+    let ns = || Some("no-such-ns".to_owned());
+    let errors = [
+        k8s_mcp_tools::upgrade_readiness(
+            &ctx,
+            k8s_mcp_tools::UpgradeReadinessInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+        k8s_mcp_tools::autoscaling_status(
+            &ctx,
+            AutoscalingStatusInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+        k8s_mcp_tools::recent_changes(
+            &ctx,
+            k8s_mcp_tools::RecentChangesInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+        k8s_mcp_tools::diagnose_dns(
+            &ctx,
+            DiagnoseDnsInput {
+                namespace: ns(),
+                ..Default::default()
+            },
+        )
+        .await
+        .err(),
+    ];
+    for e in errors {
+        let e = e.expect("an unknown namespace must fail").to_string();
+        assert!(e.contains("namespace \"no-such-ns\" does not exist"), "{e}");
+    }
+}
+
+/// Issue #68: in-cluster, a forbidden scan of objects written through a deprecated CRD version
+/// names the rbac.extraRules entry that grants it; core v1 Endpoints carry their attribution.
+#[tokio::test]
+async fn upgrade_readiness_in_cluster_hints() {
+    let version = json!({"major": "1", "minor": "37", "gitVersion": "v1.37.0", "gitCommit": "", "gitTreeState": "", "buildDate": "", "goVersion": "", "compiler": "", "platform": ""});
+    let metrics = "apiserver_requested_deprecated_apis{group=\"v3.example.com\",removed_release=\"\",resource=\"gadgets\",subresource=\"\",version=\"v1beta1\"} 1\n\
+        apiserver_requested_deprecated_apis{group=\"\",removed_release=\"\",resource=\"endpoints\",subresource=\"\",version=\"v1\"} 1\n";
+    let crd = json!({"apiVersion": "apiextensions.k8s.io/v1", "kind": "CustomResourceDefinition", "metadata": {"name": "gadgets.v3.example.com"},
+        "spec": {"group": "v3.example.com", "scope": "Namespaced", "names": {"plural": "gadgets", "kind": "Gadget"},
+            "versions": [{"name": "v1beta1", "served": true, "storage": false, "deprecated": true}, {"name": "v1", "served": true, "storage": true}]}});
+    let res = json!({"name": "gadgets", "singularName": "", "kind": "Gadget", "namespaced": true, "verbs": ["get", "list"]});
+    let mock = MockApi::new()
+        .get("/version", version)
+        .get("/metrics", json!(metrics))
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": []}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [{"name": "v3.example.com",
+            "versions": [{"groupVersion": "v3.example.com/v1", "version": "v1"}, {"groupVersion": "v3.example.com/v1beta1", "version": "v1beta1"}],
+            "preferredVersion": {"groupVersion": "v3.example.com/v1", "version": "v1"}}]}))
+        .get("/apis/v3.example.com/v1", json!({"kind": "APIResourceList", "groupVersion": "v3.example.com/v1", "resources": [res]}))
+        .forbid("/apis/v3.example.com/v1/gadgets")
+        .list("/apis/apiextensions.k8s.io/v1/customresourcedefinitions", vec![crd])
+        .list("/api/v1/nodes", vec![])
+        .list("/apis/policy/v1/poddisruptionbudgets", vec![])
+        .list("/apis/apps/v1/deployments", vec![])
+        .list("/apis/apps/v1/statefulsets", vec![])
+        .start();
+    let ctx = Ctx::new(
+        Arc::new(ClusterManager::fixed(
+            mock.client.clone(),
+            k8s_mcp_core::cluster::IN_CLUSTER,
+            "k8s-mcp",
+        )),
+        Arc::new(Policy::permissive()),
+    );
+    let env =
+        k8s_mcp_tools::upgrade_readiness(&ctx, k8s_mcp_tools::UpgradeReadinessInput::default())
+            .await
+            .unwrap();
+    let notes = env
+        .sections
+        .iter()
+        .find(|s| s.title == "UNAVAILABLE EVIDENCE")
+        .unwrap();
+    assert!(
+        notes.lines.iter().any(|l| l.contains("add `{apiGroups: [v3.example.com], resources: [gadgets], verbs: [list]}` to the chart's rbac.extraRules")),
+        "{:?}",
+        notes.lines
+    );
+    let deprecated = env
+        .findings
+        .iter()
+        .find(|f| f.id == "upgrade.deprecated_api_in_use")
+        .unwrap();
+    assert!(
+        deprecated.evidence.iter().any(|e| e.text.starts_with("v1 endpoints, use discovery.k8s.io/v1 EndpointSlices: the control plane's endpoints controller writes them")),
+        "{:?}",
+        deprecated.evidence
     );
 }

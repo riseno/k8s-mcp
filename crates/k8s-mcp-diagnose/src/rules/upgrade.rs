@@ -164,6 +164,16 @@ const SHOWN: usize = 5;
 const SUPPORT_WARNING_DAYS: i64 = 90;
 const METRIC: &str = "apiserver_requested_deprecated_apis";
 
+/// Built-in APIs deprecated without a planned removal, with what replaces them and who uses
+/// them on most clusters: group, version, resource, replacement, note.
+const DEPRECATED: &[(&str, &str, &str, &str, &str)] = &[(
+    "",
+    "v1",
+    "endpoints",
+    "discovery.k8s.io/v1 EndpointSlices",
+    "the control plane's endpoints controller writes them and kube-proxy or older clients read them; act only if your own tools use v1 Endpoints (the API server audit log names the callers)",
+)];
+
 fn removal(group: &str, version: &str, resource: &str) -> Option<(u32, &'static str)> {
     REMOVED
         .iter()
@@ -195,8 +205,13 @@ pub fn requested_deprecated_apis(metrics: &str) -> Vec<DeprecatedApi> {
             let removed_in = parse_version(&get("removed_release"))
                 .map(|(_, m)| m)
                 .or(table.map(|(m, _)| m));
+            let kept = DEPRECATED
+                .iter()
+                .find(|(g, v, r, ..)| *g == group && *v == version && *r == resource);
             DeprecatedApi {
-                replacement: table.map(|(_, r)| r.to_owned()),
+                replacement: table
+                    .map(|(_, r)| r.to_owned())
+                    .or_else(|| kept.map(|(_, _, _, r, _)| (*r).to_owned())),
                 group,
                 version,
                 resource,
@@ -208,6 +223,17 @@ pub fn requested_deprecated_apis(metrics: &str) -> Vec<DeprecatedApi> {
     out.sort();
     out.dedup();
     out
+}
+
+/// Split metric entries into those the cluster still serves and those it does not (the gauge
+/// keeps an entry until the API server restarts, also after its CRD is deleted). `served` holds
+/// `group/version` strings, with `v1` for the core group.
+pub fn split_served(
+    apis: Vec<DeprecatedApi>,
+    served: &[String],
+) -> (Vec<DeprecatedApi>, Vec<DeprecatedApi>) {
+    apis.into_iter()
+        .partition(|a| served.contains(&a.group_version()))
 }
 
 /// Served CRD versions marked `deprecated`, with the CRD's storage version as replacement.
@@ -386,13 +412,16 @@ fn in_use(ev: &UpgradeEvidence) -> InUse<'_> {
     apis
 }
 
+/// Whether the upgrade to the target removes this API.
+fn removed_by_target(ev: &UpgradeEvidence, api: &DeprecatedApi) -> bool {
+    api.removed_in
+        .is_some_and(|m| m > ev.current && m <= ev.target)
+}
+
 fn apis(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
     let mut deprecated = Vec::new();
     for (api, requested, writes) in in_use(ev).into_values() {
-        let removed = api
-            .removed_in
-            .is_some_and(|m| m > ev.current && m <= ev.target);
-        if !removed {
+        if !removed_by_target(ev, &api) {
             deprecated.push((api, requested, writes));
             continue;
         }
@@ -443,12 +472,25 @@ fn apis(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
         f = f.evidence(
             Source::Status,
             format!(
-                "{}{}{}",
+                "{}{}{}{}",
                 describe(api),
                 if api.crd { " (CRD version)" } else { "" },
                 api.replacement
                     .as_ref()
                     .map(|r| format!(", use {r}"))
+                    .unwrap_or_default(),
+                // Issue #68: on most clusters this one is the control plane itself.
+                DEPRECATED
+                    .iter()
+                    .find(|(g, v, r, ..)| {
+                        (*g, *v, *r)
+                            == (
+                                api.group.as_str(),
+                                api.version.as_str(),
+                                api.resource.as_str(),
+                            )
+                    })
+                    .map(|(.., note)| format!(": {note}"))
                     .unwrap_or_default()
             ),
         );
@@ -459,11 +501,13 @@ fn apis(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
     out.push(f);
 }
 
-fn kubelets(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
-    let Some(nodes) = &ev.nodes else { return };
+/// Nodes (name, kubelet version) more than the supported skew behind the target, sorted.
+fn old_kubelets(ev: &UpgradeEvidence) -> Vec<(String, String)> {
     let oldest_allowed = ev.target.saturating_sub(MAX_KUBELET_SKEW);
-    let mut behind: Vec<(String, String)> = nodes
+    let mut behind: Vec<(String, String)> = ev
+        .nodes
         .iter()
+        .flatten()
         .filter_map(|n| {
             let v = &n.status.as_ref()?.node_info.as_ref()?.kubelet_version;
             let (_, minor) = parse_version(v)?;
@@ -471,10 +515,16 @@ fn kubelets(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
                 .then(|| (n.metadata.name.clone().unwrap_or_default(), v.clone()))
         })
         .collect();
+    behind.sort();
+    behind
+}
+
+fn kubelets(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
+    let oldest_allowed = ev.target.saturating_sub(MAX_KUBELET_SKEW);
+    let behind = old_kubelets(ev);
     if behind.is_empty() {
         return;
     }
-    behind.sort();
     let mut f = Finding::new(
         "upgrade.kubelet_skew",
         Severity::High,
@@ -498,14 +548,21 @@ fn is_zero(v: Option<&IntOrString>) -> bool {
     }
 }
 
+/// PodDisruptionBudgets that allow no disruption while they cover pods.
+fn blocking_pdbs(
+    ev: &UpgradeEvidence,
+) -> impl Iterator<Item = &k8s_openapi::api::policy::v1::PodDisruptionBudget> {
+    ev.pdbs.iter().flatten().filter(|p| {
+        p.status
+            .as_ref()
+            .is_some_and(|s| s.disruptions_allowed == 0 && s.expected_pods > 0)
+    })
+}
+
 fn pdbs(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
-    let Some(pdbs) = &ev.pdbs else { return };
     let mut blocking: Vec<Finding> = Vec::new();
-    for pdb in pdbs {
+    for pdb in blocking_pdbs(ev) {
         let Some(status) = &pdb.status else { continue };
-        if status.disruptions_allowed > 0 || status.expected_pods == 0 {
-            continue;
-        }
         let name = pdb.metadata.name.as_deref().unwrap_or("");
         let ns = pdb.metadata.namespace.as_deref().unwrap_or("");
         let spec = pdb.spec.as_ref();
@@ -559,7 +616,8 @@ fn int_or_string(v: &IntOrString) -> String {
     }
 }
 
-fn single_replicas(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
+/// `Kind namespace/name` of the Deployments and StatefulSets that run one replica, sorted.
+fn single_replica_names(ev: &UpgradeEvidence) -> Vec<String> {
     let one = |r: Option<i32>| r == Some(1);
     let mut names: Vec<String> = ev
         .deployments
@@ -587,10 +645,15 @@ fn single_replicas(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
                 }),
         )
         .collect();
+    names.sort();
+    names
+}
+
+fn single_replicas(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
+    let names = single_replica_names(ev);
     if names.is_empty() {
         return;
     }
-    names.sort();
     let mut f = Finding::new(
         "upgrade.single_replica_workloads",
         Severity::Low,
@@ -642,6 +705,61 @@ fn support(ev: &UpgradeEvidence, out: &mut Vec<Finding>) {
     );
 }
 
+/// What blocks the upgrade and what to review, counted in objects (not checklist rows), for
+/// the summary (#66): `(blocked, review)` phrases such as `4 PodDisruptionBudgets`.
+pub fn tally(ev: &UpgradeEvidence) -> (Vec<String>, Vec<String>) {
+    let (mut blocked, mut review) = (Vec::new(), Vec::new());
+    if ev.target > ev.current + 1 {
+        blocked.push(format!("a target {} minors ahead", ev.target - ev.current));
+    }
+    let (removed, deprecated): (Vec<_>, Vec<_>) = in_use(ev)
+        .into_values()
+        .partition(|(a, ..)| removed_by_target(ev, a));
+    let add = |into: &mut Vec<String>, n: usize, one: &str, many: &str| {
+        if n > 0 {
+            into.push(format!("{n} {}", if n == 1 { one } else { many }));
+        }
+    };
+    add(
+        &mut blocked,
+        removed.len(),
+        "removed API in use",
+        "removed APIs in use",
+    );
+    add(
+        &mut blocked,
+        old_kubelets(ev).len(),
+        "node too old for the target",
+        "nodes too old for the target",
+    );
+    add(
+        &mut blocked,
+        blocking_pdbs(ev).count(),
+        "PodDisruptionBudget",
+        "PodDisruptionBudgets",
+    );
+    add(
+        &mut review,
+        deprecated.len(),
+        "deprecated API",
+        "deprecated APIs",
+    );
+    add(
+        &mut review,
+        single_replica_names(ev).len(),
+        "single-replica workload",
+        "single-replica workloads",
+    );
+    if ev
+        .support_ends
+        .as_ref()
+        .is_some_and(|(_, ends)| (ends - ev.now.as_second()) / 86_400 <= SUPPORT_WARNING_DAYS)
+    {
+        review.push("the end of standard support".into());
+    }
+    (blocked, review)
+}
+
 /// One checklist row of `upgrade_readiness`: what was checked, `ok`/`warn`/`blocked`/
 /// `not checked`, and a short detail.
 pub type Check = (&'static str, &'static str, String);
@@ -680,16 +798,22 @@ pub fn checklist(ev: &UpgradeEvidence, findings: &[Finding]) -> Vec<Check> {
             format!("none removed by {} in use", version(ev.target)),
         ),
     });
+    let unserved = match ev.unserved.len() {
+        0 => String::new(),
+        n => format!(
+            "; {n} more requested earlier but no longer served (the metric keeps them until the API server restarts)"
+        ),
+    };
     rows.push(
         match findings
             .iter()
             .find(|f| f.id == "upgrade.deprecated_api_in_use")
         {
-            Some(f) => ("deprecated APIs", "warn", f.title.clone()),
+            Some(f) => ("deprecated APIs", "warn", format!("{}{unserved}", f.title)),
             None if ev.requested.is_none() => {
                 ("deprecated APIs", "not checked", "metric unreadable".into())
             }
-            None => ("deprecated APIs", "ok", "none in use".into()),
+            None => ("deprecated APIs", "ok", format!("none in use{unserved}")),
         },
     );
     rows.push(match (&ev.nodes, count("upgrade.kubelet_skew")) {
@@ -776,6 +900,10 @@ mod tests {
             (apis[0].resource.as_str(), apis[0].removed_in),
             ("endpoints", None)
         );
+        assert_eq!(
+            apis[0].replacement.as_deref(),
+            Some("discovery.k8s.io/v1 EndpointSlices")
+        );
         assert_eq!(apis[1].removed_in, Some(32));
         assert_eq!(
             apis[1].replacement.as_deref(),
@@ -822,6 +950,20 @@ mod tests {
             rows.contains(&("removed APIs", "blocked", "1 still in use".into())),
             "{rows:?}"
         );
+        // Issue #66: the summary counts objects, not checklist rows.
+        assert_eq!(
+            tally(&ev),
+            (
+                vec![
+                    "1 removed API in use".to_owned(),
+                    "2 PodDisruptionBudgets".to_owned()
+                ],
+                vec![
+                    "1 deprecated API".to_owned(),
+                    "1 single-replica workload".to_owned()
+                ]
+            )
+        );
         assert!(rows.contains(&(
             "PodDisruptionBudgets",
             "blocked",
@@ -847,6 +989,22 @@ mod tests {
             f.evidence
         );
         assert!(f.evidence.iter().any(|e| e.text == "Widget default/w1 last written with probe.k8s-mcp.dev/v1beta1 by kubectl-client-side-apply"));
+        // Issue #65: the deleted CRD's metric entry is neither evidence nor counted.
+        assert!(
+            !f.evidence
+                .iter()
+                .any(|e| e.text.contains("gone.example.com")),
+            "{:?}",
+            f.evidence
+        );
+        assert!(
+            f.title.starts_with("Clients use 1 deprecated API"),
+            "{}",
+            f.title
+        );
+        let rows = checklist(&ev, &out);
+        let row = rows.iter().find(|r| r.0 == "deprecated APIs").unwrap();
+        assert!(row.2.ends_with("1 more requested earlier but no longer served (the metric keeps them until the API server restarts)"), "{}", row.2);
     }
 
     #[test]

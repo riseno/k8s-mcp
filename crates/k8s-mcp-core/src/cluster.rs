@@ -206,11 +206,21 @@ impl ClusterManager {
     /// Detect the cloud provider of a context from its kubeconfig and, when given, its nodes.
     /// No cloud calls.
     pub fn detect_provider(&self, context: &str, nodes: &[Node]) -> Option<Detection> {
+        self.with_signals(context, nodes, detect)
+    }
+
+    /// When the context's kubeconfig looks like one cloud but its nodes run elsewhere, why
+    /// (see [`crate::provider::conflict`]).
+    pub fn detection_conflict(&self, context: &str, nodes: &[Node]) -> Option<String> {
+        self.with_signals(context, nodes, crate::provider::conflict)
+    }
+
+    fn with_signals<T>(&self, context: &str, nodes: &[Node], f: impl Fn(&Signals) -> T) -> T {
         let (host, exec_command, exec_args, exec_env) = match &self.source {
             Source::Kubeconfig(kc) => kubeconfig_signals(kc, context),
             _ => Default::default(),
         };
-        detect(&Signals {
+        f(&Signals {
             context,
             server_host: &host,
             exec_command: &exec_command,

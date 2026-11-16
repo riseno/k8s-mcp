@@ -23,6 +23,12 @@ feeds it a context's kubeconfig signals plus any listed nodes.
 `k8s-mcp-provider` (the `Provider` trait and shared types, ADR 0006) is created with the EKS
 provider, its first implementation (ADR 0004), and uses core's detection.
 
+Listed nodes are authoritative (issue #64): a provider whose kubeconfig signals the nodes'
+providerIDs contradict (every node on another platform or cloud) is dropped, and
+`provider::conflict` says why. Startup with `--providers auto` reads a few nodes before
+registering a toolset the kubeconfig suggests, and provider tools read them before any cloud
+call.
+
 ## Consequences
 Core has no dependency on provider crates, so there is no cycle, and detection works in
 `--no-default-features` builds. Explicit identity flags (`--eks-cluster` and friends,

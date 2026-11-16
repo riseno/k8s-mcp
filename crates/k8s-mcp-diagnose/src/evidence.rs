@@ -287,9 +287,12 @@ pub struct UpgradeEvidence {
     pub current: u32,
     /// Minor version to upgrade to.
     pub target: u32,
-    /// Deprecated APIs clients requested since the API server started; `None` if the metric
-    /// could not be read.
+    /// Deprecated APIs clients requested since the API server started that are still served;
+    /// `None` if the metric could not be read.
     pub requested: Option<Vec<DeprecatedApi>>,
+    /// Metric entries for group/versions no longer served (a deleted CRD): the gauge keeps them
+    /// until the API server restarts. Not counted as in use.
+    pub unserved: Vec<DeprecatedApi>,
     /// Served CRD versions marked deprecated.
     pub deprecated_crd_versions: Vec<DeprecatedApi>,
     /// Objects last written with a deprecated API version.

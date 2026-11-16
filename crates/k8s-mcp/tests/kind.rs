@@ -379,3 +379,52 @@ async fn namespace_scoped_rbac_still_diagnoses() {
     mcp.cancel().await.unwrap();
     cleanup(&client, &ns).await;
 }
+
+/// Issue #64: the kind cluster under a context renamed like GKE. Detection believes the nodes
+/// (kind://), so `cluster_overview` says kind and names the conflict, and the GKE tools, even
+/// forced with `--providers gke`, refuse before any cloud call. The server has no credentials
+/// and no metadata server, so a regression could not reach Google Cloud either.
+#[tokio::test]
+#[ignore = "needs the local kind cluster (cargo xtask kind-up)"]
+async fn renamed_context_never_reaches_a_cloud() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut kc = Kubeconfig::read_from(kubeconfig_path()).unwrap();
+    let name = "gke_fake-project_us-central1_fake-cluster";
+    for c in &mut kc.contexts {
+        if c.name == CONTEXT {
+            c.name = name.into();
+        }
+    }
+    kc.current_context = Some(name.into());
+    let path = dir.path().join("kubeconfig");
+    std::fs::write(&path, serde_json::to_string(&kc).unwrap()).unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir(&home).unwrap();
+    let args = [
+        "--kubeconfig".to_owned(),
+        path.display().to_string(),
+        "--audit-log".into(),
+        "off".into(),
+        "--providers".into(),
+        "gke".into(),
+    ];
+    let transport = TokioChildProcess::new(
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_k8s-mcp")).configure(|c| {
+            c.args(&args).env_clear().env("HOME", &home);
+        }),
+    )
+    .unwrap();
+    let client = ().serve(transport).await.unwrap();
+    let (text, r) = call(&client, "gke_cluster_info", json!({})).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(
+        text.contains("its nodes run on kind") && text.contains("--gke-cluster"),
+        "{text}"
+    );
+    let (text, _) = call(&client, "cluster_overview", json!({})).await;
+    assert!(
+        text.contains("on kind (the context looks like gke"),
+        "{text}"
+    );
+    client.cancel().await.unwrap();
+}

@@ -28,7 +28,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::common::{check_name, envelope, list_meta_scoped, list_scoped, scope, soft};
+use crate::common::{
+    check_name, ensure_namespace, envelope, list_meta_scoped, list_scoped, scope, soft,
+};
 use crate::diagnose::{owned, workload_kind};
 use crate::read::add_notes;
 use crate::{Ctx, Envelope};
@@ -557,6 +559,10 @@ pub async fn recent_changes(ctx: &Ctx, input: RecentChangesInput) -> Result<Enve
         all_ns,
     )
     .await?;
+    // A mistyped namespace must not read as "nothing found" (#67).
+    if input.namespace.is_some() {
+        ensure_namespace(&sc).await?;
+    }
     let now = ctx.now();
     let cutoff = now.checked_sub(since).unwrap_or(now);
     let client = sc.target.client.clone();

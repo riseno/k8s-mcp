@@ -7,7 +7,8 @@ use k8s_mcp_core::finding::rank;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::rules::parse_version;
 use k8s_mcp_diagnose::rules::upgrade::{
-    checklist, deprecated_crd_versions, requested_deprecated_apis, scan_targets, stale_writes,
+    checklist, deprecated_crd_versions, requested_deprecated_apis, scan_targets, split_served,
+    stale_writes, tally,
 };
 use k8s_mcp_diagnose::{DeprecatedApi, StaleWrite, Unavailable, UpgradeEvidence};
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
@@ -19,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::common::{Scope, envelope, list_scoped, scope, soft};
+use crate::common::{Scope, ensure_namespace, envelope, list_scoped, scope, soft};
 use crate::read::add_notes;
 use crate::{Ctx, Envelope};
 
@@ -113,10 +114,26 @@ async fn scan(
                     out.extend(stale_writes(t, &info.kind, &o.metadata));
                 }
             }
-            Err(e) => un.push(Unavailable {
-                what,
-                reason: Error::kube(format!("list {}", info.plural), &e).to_string(),
-            }),
+            Err(e) => {
+                let err = Error::kube(format!("list {}", info.plural), &e);
+                // Issue #68: in-cluster, name the chart value that grants it.
+                let reason = if err.is_forbidden()
+                    && sc.target.context == k8s_mcp_core::cluster::IN_CLUSTER
+                {
+                    format!(
+                        "the server's ClusterRole cannot list {plural}; add `{{apiGroups: [{group}], resources: [{plural}], verbs: [list]}}` to the chart's rbac.extraRules",
+                        plural = info.plural,
+                        group = if info.group.is_empty() {
+                            "\"\""
+                        } else {
+                            info.group.as_str()
+                        }
+                    )
+                } else {
+                    err.to_string()
+                };
+                un.push(Unavailable { what, reason });
+            }
         }
     }
     out.sort();
@@ -206,6 +223,10 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         input.namespace.is_none(),
     )
     .await?;
+    // A mistyped namespace must not read as "nothing found" (#67).
+    if input.namespace.is_some() {
+        ensure_namespace(&sc).await?;
+    }
     let client = sc.target.client.clone();
     let info = client
         .apiserver_version()
@@ -247,6 +268,23 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
             });
             None
         }
+    };
+    // Issue #65: the gauge keeps entries for group/versions no longer served (a deleted CRD)
+    // until the API server restarts. Without discovery, nothing is dropped.
+    let (requested, unserved) = match (requested, client.list_api_groups().await) {
+        (Some(r), Ok(groups)) => {
+            let served: Vec<String> = std::iter::once("v1".to_owned())
+                .chain(
+                    groups
+                        .groups
+                        .into_iter()
+                        .flat_map(|g| g.versions.into_iter().map(|v| v.group_version)),
+                )
+                .collect();
+            let (r, u) = split_served(r, &served);
+            (Some(r), u)
+        }
+        (r, _) => (r, Vec::new()),
     };
     let crds = soft(
         Api::<CustomResourceDefinition>::all(client.clone())
@@ -297,6 +335,7 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         current,
         target,
         requested,
+        unserved,
         deprecated_crd_versions: crd_versions,
         stale_writes: stale,
         nodes,
@@ -314,10 +353,14 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         .into_iter()
         .map(|(c, s, d)| (c.to_owned(), s, d))
         .collect();
+    let (blocked, mut review) = tally(&ev);
     let mut sections = Vec::new();
     if let Some((name, _, lines, provider_findings, row)) = cloud {
         findings.extend(provider_findings);
         rank(&mut findings);
+        if row.1 == "warn" {
+            review.push(format!("{} ({})", row.0, row.2));
+        }
         rows.push(row);
         sections.push(Section {
             title: format!("PROVIDER ({name})"),
@@ -325,9 +368,25 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
             untrusted: None,
         });
     }
-    let blocked = rows.iter().filter(|(_, s, _)| *s == "blocked").count();
-    let review = rows.iter().filter(|(_, s, _)| *s == "warn").count();
-    let head = format!("Upgrade 1.{current} → 1.{target}: {blocked} blocked, {review} to review");
+    // Objects, not checklist rows (#66): "blocked by 4 PodDisruptionBudgets".
+    let list = |items: &[String]| match items.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    };
+    let head = format!(
+        "Upgrade 1.{current} → 1.{target}: {}{}",
+        if blocked.is_empty() {
+            "nothing blocks it".to_owned()
+        } else {
+            format!("blocked by {}", list(&blocked))
+        },
+        if review.is_empty() {
+            String::new()
+        } else {
+            format!("; review {}", list(&review))
+        }
+    );
     let mut e = envelope(
         &sc,
         match findings.first() {

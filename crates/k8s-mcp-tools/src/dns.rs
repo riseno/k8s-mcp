@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::common::{check_name, envelope, scope, soft};
+use crate::common::{check_name, ensure_namespace, envelope, scope, soft};
 use crate::diagnose::{container_logs, pod_secret_values};
 use crate::read::add_notes;
 use crate::rows::pod_row;
@@ -50,6 +50,10 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
         false,
     )
     .await?;
+    // A mistyped namespace must not read as "nothing found" (#67).
+    if input.namespace.is_some() {
+        ensure_namespace(&sc).await?;
+    }
     let ns = sc.namespace.clone().unwrap_or_default();
     let now = ctx.now();
     let client = sc.target.client.clone();

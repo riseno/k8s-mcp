@@ -5,6 +5,29 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Provider detection treats listed nodes as authoritative: a kubeconfig that looks like one
+  cloud (a `gke_...` context name, an EKS ARN, an exec plugin) no longer wins over nodes whose
+  providerIDs name another platform (`kind://`, `k3s://`, another cloud). Such a cluster gets no
+  provider toolset with `--providers auto`, `cluster_overview` and `doctor` name the conflict,
+  and provider tools refuse before any cloud call unless the provider's `--<cloud>-cluster` flag
+  is given, so credentials are never used against a cluster that is not this one (#64).
+- `upgrade_readiness` checks the deprecated-API metric against the group/versions the cluster
+  serves: entries for deleted CRDs, which the gauge keeps until the API server restarts, are no
+  longer counted as in use and are noted as "requested earlier but no longer served" (#65).
+- The `upgrade_readiness` summary counts the objects behind each check instead of checklist
+  rows: `blocked by 4 PodDisruptionBudgets; review 4 deprecated APIs and 17 single-replica
+  workloads` rather than `1 blocked, 2 to review` (#66).
+- `upgrade_readiness`, `autoscaling_status`, `recent_changes` and `diagnose_dns` reject a
+  `namespace` that does not exist, like the other namespaced tools, instead of reporting nothing
+  found there (#67).
+- `upgrade_readiness` explains core `v1 endpoints` (replaced by EndpointSlices; on most
+  clusters the control plane's endpoints controller writes them and kube-proxy reads them, so
+  act only if your own tools use them) instead of a bare "plan the move", and in-cluster, a
+  forbidden scan of objects written through a deprecated CRD version names the
+  `rbac.extraRules` entry to add (#68). Endpoints objects are not read for their writers:
+  listing them would itself be a deprecated-API request.
+
 ## [0.3.0] - 2026-11-16
 
 ### Added

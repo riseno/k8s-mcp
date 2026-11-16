@@ -325,6 +325,20 @@ pub fn upgrade_fixture(name: &str) -> UpgradeEvidence {
     let requested = pseudo(&fx, "Metrics")
         .next()
         .map(|m| requested_deprecated_apis(m["text"].as_str().unwrap()));
+    // `ServedGroupVersions` lists what discovery serves; without it, everything is served.
+    let (requested, unserved) = match (requested, pseudo(&fx, "ServedGroupVersions").next()) {
+        (Some(r), Some(s)) => {
+            let served: Vec<String> = s["groupVersions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_owned())
+                .collect();
+            let (r, u) = crate::rules::upgrade::split_served(r, &served);
+            (Some(r), u)
+        }
+        (r, _) => (r, Vec::new()),
+    };
     let crd_versions = deprecated_crd_versions(&fx.all("CustomResourceDefinition"));
     let targets = scan_targets(
         current,
@@ -347,6 +361,7 @@ pub fn upgrade_fixture(name: &str) -> UpgradeEvidence {
         current,
         target,
         requested,
+        unserved,
         deprecated_crd_versions: crd_versions,
         stale_writes: stale,
         nodes: some(fx.all("Node")),

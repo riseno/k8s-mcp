@@ -267,7 +267,7 @@ pub fn evaluate(
         None => check(
             "kubernetes",
             "IRSA role annotation",
-            "missing",
+            "not configured",
             format!("no {ROLE_ANNOTATION} annotation"),
         ),
     });
@@ -343,7 +343,7 @@ pub fn evaluate(
         checks.push(check(
             "aws",
             "IAM OIDC provider for the cluster issuer",
-            if provider.is_some() { "ok" } else { "missing" },
+            if provider.is_some() { "ok" } else { "fail" },
             provider.cloned().unwrap_or_else(|| issuer_host.to_owned()),
         ));
         if provider.is_none() {
@@ -357,7 +357,7 @@ pub fn evaluate(
         }
         match facts.irsa_role.as_ref().and_then(|r| r.trust.as_ref()) {
             None => {
-                checks.push(check("aws", "IRSA role exists", "missing", arn.clone()));
+                checks.push(check("aws", "IRSA role exists", "fail", arn.clone()));
                 findings.push(
                     Finding::new("eks.irsa.role_missing", Severity::Critical, Confidence::High, format!("IAM role {arn} in the IRSA annotation of {subject} does not exist"))
                         .explain("The pod identity webhook injects this role, and STS cannot assume a role that does not exist, so the pods' AWS calls fail.")
@@ -399,11 +399,10 @@ pub fn evaluate(
     checks.push(check(
         "aws",
         "Pod Identity associations",
-        // Without associations, IRSA (when annotated) is the identity: not a failure.
-        match (associations.is_empty(), role_arn.is_some()) {
-            (false, _) => "ok",
-            (true, true) => "none",
-            (true, false) => "missing",
+        if associations.is_empty() {
+            "not configured"
+        } else {
+            "ok"
         },
         if associations.is_empty() {
             "none for this ServiceAccount".to_owned()
@@ -472,6 +471,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    use k8s_mcp_core::provider::ProviderId;
 
     const ISSUER: &str = "https://oidc.eks.eu-west-1.amazonaws.com/id/ABC123";
     const HOST: &str = "oidc.eks.eu-west-1.amazonaws.com/id/ABC123";
@@ -572,6 +572,35 @@ mod tests {
         assert_eq!(r.0.cloud_checks, "skipped: no AWS credentials resolved");
         assert!(r.0.checks.iter().all(|c| c.side == "kubernetes"));
         assert_eq!(r.0.checks.len(), 2, "annotation and injection");
+    }
+
+    /// Issue #48: an absent annotation is not a failed check, and the summary says the
+    /// ServiceAccount has no visible cloud identity instead of "1 failed".
+    #[test]
+    fn unconfigured_identity_is_not_a_failure() {
+        let summary = |r| {
+            k8s_mcp_provider::identity_envelope(ProviderId::Eks, "ServiceAccount shop/api", r)
+                .summary
+        };
+        assert_eq!(
+            summary(evaluate(&sa(false), Err("no AWS credentials"))),
+            "EKS identity of ServiceAccount shop/api: 2 checks (1 not configured, 1 skipped): no cloud identity that k8s-mcp can see; cloud checks skipped: no AWS credentials; no problems found by the provider rules."
+        );
+        let r = evaluate(&sa(true), Ok(&facts(None)));
+        let results: Vec<_> =
+            r.0.checks
+                .iter()
+                .map(|c| (c.check.as_str(), c.result))
+                .collect();
+        assert!(
+            results.contains(&("IRSA role exists", "fail")),
+            "{results:?}"
+        );
+        assert!(
+            results.contains(&("Pod Identity associations", "not configured")),
+            "{results:?}"
+        );
+        assert!(summary(r).contains("(3 passed, 1 failed, 1 not configured)"));
     }
 
     #[test]

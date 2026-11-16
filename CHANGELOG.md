@@ -13,6 +13,10 @@ All notable changes are documented here. The format follows
 - `prompts/get` tells an unknown prompt (`unknown prompt "x"`) apart from a missing required
   argument (`prompt "explain-workload" needs argument "kind" (...)`); `investigate-incident`
   now requires its `symptom` as declared (#49).
+- `eks_identity_check` reports an absent IRSA annotation or Pod Identity association as
+  `not configured` instead of a failure, a missing OIDC provider or role as `fail`, and
+  tallies the results in the summary (`2 checks (1 not configured, 1 skipped): no cloud
+  identity that k8s-mcp can see`) instead of "1 failed ... no problems found" (#48).
 
 ## [0.2.0] - 2026-11-16
 

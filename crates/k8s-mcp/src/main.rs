@@ -356,8 +356,11 @@ async fn detected_eks(ctx: &Ctx) -> bool {
 }
 
 async fn serve(opts: &Opts) -> anyhow::Result<()> {
-    let ctx = opts.ctx()?;
+    let mut ctx = opts.ctx()?;
     let toolsets = toolsets(opts, &ctx).await?;
+    if toolsets.iter().any(|t| t == "eks") {
+        ctx.providers.push(k8s_mcp_core::provider::ProviderId::Eks);
+    }
     if ctx.policy.redact == RedactLevel::Off {
         tracing::warn!(
             "redaction is off (--redact off): credentials in logs and env vars may reach the model"

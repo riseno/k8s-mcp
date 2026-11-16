@@ -102,6 +102,13 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 | `svc.no_matching_pods` | The Service selector matches no pods | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
 | `svc.no_ready_endpoints` | None of the Service's pods are Ready, so it has no endpoints | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
 | `svc.target_port_mismatch` | The Service targetPort is not a port its pods expose | [link](https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/) |
+| `upgrade.deprecated_api_in_use` | Clients use deprecated API versions | [link](https://kubernetes.io/docs/reference/using-api/deprecation-guide/) |
+| `upgrade.kubelet_skew` | Nodes would be too old for the target control plane | [link](https://kubernetes.io/releases/version-skew-policy/) |
+| `upgrade.pdb_blocks_drain` | A PodDisruptionBudget allows no disruptions, so node drains stall | [link](https://kubernetes.io/docs/tasks/run-application/configure-pdb/) |
+| `upgrade.removed_api_in_use` | Clients use an API version that the target version removes | [link](https://kubernetes.io/docs/reference/using-api/deprecation-guide/) |
+| `upgrade.single_replica_workloads` | Single-replica workloads go down while their node is drained | [link](https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/) |
+| `upgrade.target_skips_minor` | The target version skips a control-plane minor | [link](https://kubernetes.io/releases/version-skew-policy/) |
+| `upgrade.version_support_ending` | Standard support of the current version ends soon or has ended | [link](https://kubernetes.io/releases/) |
 | `workload.create_failed` | The controller cannot create pods (admission webhook, Pod Security, LimitRange) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.replicas.unavailable` | Fewer replicas are available than desired | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.rollout.stuck` | Deployment rollout exceeded its progress deadline | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |

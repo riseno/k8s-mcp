@@ -1,0 +1,30 @@
+# 1.37 → 1.38: a CRD version marked deprecated is requested and was last applied with
+# kubectl; nothing is removed by the target.
+kind: UpgradeContext
+current: 37
+target: 38
+---
+kind: Metrics
+text: |
+  apiserver_requested_deprecated_apis{group="probe.k8s-mcp.dev",removed_release="",resource="widgets",subresource="",version="v1beta1"} 1
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: widgets.probe.k8s-mcp.dev}
+spec:
+  group: probe.k8s-mcp.dev
+  scope: Namespaced
+  names: {plural: widgets, singular: widget, kind: Widget}
+  versions:
+  - {name: v1beta1, served: true, storage: false, deprecated: true}
+  - {name: v1, served: true, storage: true}
+---
+kind: ScannedObject
+resourceKind: Widget
+group: probe.k8s-mcp.dev
+resource: widgets
+metadata:
+  name: w1
+  namespace: default
+  managedFields:
+  - {manager: kubectl-client-side-apply, operation: Update, apiVersion: probe.k8s-mcp.dev/v1beta1}

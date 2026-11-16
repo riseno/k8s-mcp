@@ -13,8 +13,8 @@ use k8s_openapi::api::core::v1::NodeCondition;
 use serde_json::json;
 
 use super::{
-    allocatable, count, docs, events_with, fmt_quantity, latest, node_name, phase, pod_requests,
-    quote_event,
+    allocatable, count, docs, events_with, fmt_quantity, latest, node_name, parse_version, phase,
+    pod_requests, quote_event,
 };
 use crate::evidence::NodeEvidence;
 
@@ -348,17 +348,6 @@ fn version_skew(ev: &NodeEvidence, name: &str, out: &mut Vec<Finding>) {
 }
 
 /// `v1.29.4-eks-1234` -> (1, 29).
-fn parse_version(v: &str) -> Option<(u32, u32)> {
-    let mut parts = v.trim_start_matches('v').split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor: String = parts
-        .next()?
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect();
-    Some((major, minor.parse().ok()?))
-}
-
 /// Sum of requests of the node's live pods vs allocatable, for CPU and memory.
 fn overcommitted(ev: &NodeEvidence, name: &str, out: &mut Vec<Finding>) {
     let Some(pods) = &ev.pods else { return };

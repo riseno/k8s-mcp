@@ -100,6 +100,9 @@ tools! {
     "autoscaling_status", "core", t::AutoscalingStatusInput,
         "Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and NodeClaims (launch/registration failures), the Cluster Autoscaler status and NotTriggerScaleUp reasons, and HPAs that cannot read metrics or sit at maxReplicas. Use when pods stay Pending for capacity.",
         |c, i| t::autoscaling_status(c, i).await;
+    "upgrade_readiness", "core", t::UpgradeReadinessInput,
+        "Is the cluster ready for the next control-plane minor (or `target_version`)? A checklist: removed and deprecated API versions still in use (the API server's deprecated-API metric, CRD versions marked deprecated, objects last written with them and by whom), kubelets the target leaves beyond the supported skew, PodDisruptionBudgets that block node drains, single-replica workloads, end of standard support, plus the provider's upgrade checks (EKS upgrade insights) when a provider toolset is registered.",
+        |c, i| t::upgrade_readiness(c, i).await;
     "recent_changes", "core", t::RecentChangesInput,
         "What changed recently that could explain this? Rollouts (with image/env-name/resource diffs), objects created or updated (and by which field manager) and Helm release revisions, newest first, in a namespace or the whole cluster (since: default 2h). Env values and object bodies are never read or shown.",
         |c, i| t::recent_changes(c, i).await;
@@ -421,6 +424,20 @@ fn prompts() -> Vec<Prompt> {
             ]),
         ),
         Prompt::new(
+            "upgrade-readiness",
+            Some(
+                "Plan a control-plane upgrade: blockers, provider add-on compatibility, drain risks, then a step-by-step plan",
+            ),
+            Some(vec![
+                arg(
+                    "target_version",
+                    "Kubernetes version to upgrade to, such as 1.35",
+                    true,
+                ),
+                arg("context", "Kubeconfig context", false),
+            ]),
+        ),
+        Prompt::new(
             "access-review",
             Some("Review what a ServiceAccount may do: RBAC bindings and cloud identity"),
             Some(vec![
@@ -496,7 +513,8 @@ fn render_prompt<'a>(name: &str, get: impl Fn(&str) -> Option<&'a str>) -> Optio
                  2. list_resources kind=nodes, and diagnose_node on any node that is not Ready or is under pressure.\n\
                  3. find_problems across all namespaces with min_severity=low.\n\
                  4. autoscaling_status: NodePools at their limits, scale-ups the autoscaler refused, HPAs that cannot scale.\n\
-                 5. top target=nodes if metrics-server is present.\n\n\
+                 5. upgrade_readiness: what blocks the next control-plane minor (removed APIs in use, kubelet skew, PDBs that block drains) and when standard support ends.\n\
+                 6. top target=nodes if metrics-server is present.\n\n\
                  Output a prioritised checklist: critical items first, each with the object, the finding id, the evidence and the fix. \
                  End with quick wins (single-replica workloads, missing limits) and anything that could not be checked. {untrusted}"
             ))
@@ -513,6 +531,24 @@ fn render_prompt<'a>(name: &str, get: impl Fn(&str) -> Option<&'a str>) -> Optio
                  3. The Services that route to it (list_resources kind=Service, then diagnose_service on those whose selector matches its pod labels), and diagnose_pvc for its claims.\n\
                  4. rollout_history for recent revisions, and the ServiceAccount's annotations for cloud identity (IRSA, GKE or Azure Workload Identity).\n\n\
                  Write: what it is and does, what it depends on (Services, config, storage, identity), whether it is healthy, and what changed recently. {untrusted}"
+            ))
+        }
+        "upgrade-readiness" => {
+            let target = get("target_version")?;
+            let ctx = get("context")
+                .map(|c| format!(" Use context `{c}` in every call."))
+                .unwrap_or_default();
+            Some(format!(
+                "Plan the upgrade of this Kubernetes cluster's control plane to {target} with the k8s-mcp tools.{ctx}\n\n\
+                 1. cluster_overview for the current version and the provider.\n\
+                 2. upgrade_readiness target_version={target}: removed and deprecated APIs still in use, kubelet skew, PodDisruptionBudgets that block drains, single-replica workloads, end of standard support, and the provider's upgrade checks.\n\
+                 3. Where a provider toolset is available, its add-ons tool (for example eks_addons) for add-on versions compatible with {target}, and its node pools tool for the versions node groups run.\n\
+                 4. For each removed API in use, get_resource on the objects named, to see what manages them (Helm release, operator, CI).\n\
+                 5. For each blocking PodDisruptionBudget, diagnose_workload on the workload it covers.\n\n\
+                 Write an upgrade plan: blockers first (each with the object, finding id, evidence and fix), then the order of steps \
+                 (fix blockers, upgrade add-ons that need it, control plane one minor at a time, then node groups), the expected \
+                 disruption (single-replica workloads, drains), checks to run after each step, and what could not be checked. \
+                 k8s-mcp is read-only: propose the changes, do not claim to have made them. {untrusted}"
             ))
         }
         "access-review" => {

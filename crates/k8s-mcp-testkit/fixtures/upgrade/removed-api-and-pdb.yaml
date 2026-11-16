@@ -1,0 +1,59 @@
+# 1.31 → 1.32: flowcontrol v1beta3 (removed in 1.32) is still requested and was last written
+# by Helm; one PDB allows no disruptions by design, another because a pod is unhealthy.
+kind: UpgradeContext
+current: 31
+target: 32
+---
+kind: Metrics
+text: |
+  # HELP apiserver_requested_deprecated_apis [STABLE] Gauge of deprecated APIs that have been requested.
+  apiserver_requested_deprecated_apis{group="",removed_release="",resource="endpoints",subresource="",version="v1"} 1
+  apiserver_requested_deprecated_apis{group="flowcontrol.apiserver.k8s.io",removed_release="1.32",resource="flowschemas",subresource="",version="v1beta3"} 1
+---
+kind: ScannedObject
+resourceKind: FlowSchema
+group: flowcontrol.apiserver.k8s.io
+resource: flowschemas
+metadata:
+  name: team-a
+  managedFields:
+  - {manager: helm, operation: Update, apiVersion: flowcontrol.apiserver.k8s.io/v1beta3}
+  - {manager: kube-apiserver, operation: Update, apiVersion: flowcontrol.apiserver.k8s.io/v1, subresource: status}
+---
+apiVersion: v1
+kind: Node
+metadata: {name: worker-1}
+status: {nodeInfo: {kubeletVersion: v1.31.4, kubeProxyVersion: "", osImage: "", kernelVersion: "", containerRuntimeVersion: "", architecture: amd64, operatingSystem: linux, machineID: "", systemUUID: "", bootID: ""}}
+---
+apiVersion: v1
+kind: Node
+metadata: {name: worker-2}
+status: {nodeInfo: {kubeletVersion: v1.29.10, kubeProxyVersion: "", osImage: "", kernelVersion: "", containerRuntimeVersion: "", architecture: amd64, operatingSystem: linux, machineID: "", systemUUID: "", bootID: ""}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: api, namespace: shop}
+spec: {maxUnavailable: 0, selector: {matchLabels: {app: api}}}
+status: {expectedPods: 2, currentHealthy: 2, desiredHealthy: 2, disruptionsAllowed: 0}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: db, namespace: shop}
+spec: {minAvailable: 2, selector: {matchLabels: {app: db}}}
+status: {expectedPods: 2, currentHealthy: 1, desiredHealthy: 2, disruptionsAllowed: 0}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: web, namespace: shop}
+spec: {maxUnavailable: 1, selector: {matchLabels: {app: web}}}
+status: {expectedPods: 3, currentHealthy: 3, desiredHealthy: 2, disruptionsAllowed: 1}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: worker, namespace: shop}
+spec: {replicas: 1, selector: {matchLabels: {app: worker}}, template: {spec: {containers: [{name: w, image: busybox}]}}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: shop}
+spec: {replicas: 3, selector: {matchLabels: {app: web}}, template: {spec: {containers: [{name: w, image: nginx}]}}}

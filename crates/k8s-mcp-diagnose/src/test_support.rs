@@ -57,7 +57,7 @@ use serde_json::Value;
 
 use crate::evidence::{
     AutoscalingEvidence, ContainerLog, DnsEvidence, NodeEvidence, PodEvidence, PvcEvidence,
-    RefCheck, RefKind, ServiceEvidence, Unavailable, Workload, WorkloadEvidence,
+    RefCheck, RefKind, ServiceEvidence, Unavailable, UpgradeEvidence, Workload, WorkloadEvidence,
 };
 
 /// Load a pod fixture into a [`PodEvidence`].
@@ -302,6 +302,58 @@ pub fn autoscaling_fixture(name: &str) -> AutoscalingEvidence {
         ca_status: pseudo(&fx, "ClusterAutoscalerStatus").next().cloned(),
         hpas: Some(fx.all("HorizontalPodAutoscaler")),
         events: fx.all("Event"),
+        unavailable: unavailable(&fx),
+        now: now(),
+    }
+}
+
+fn some<T>(v: Vec<T>) -> Option<Vec<T>> {
+    (!v.is_empty()).then_some(v)
+}
+
+/// An upgrade fixture: `UpgradeContext` (current/target minors), `Metrics` (Prometheus text),
+/// CRDs, nodes, PDBs, Deployments, StatefulSets, and `ScannedObject`s (metadata scanned for
+/// stale writes, matched to the scan targets like the tool does).
+pub fn upgrade_fixture(name: &str) -> UpgradeEvidence {
+    use crate::rules::upgrade::{
+        deprecated_crd_versions, requested_deprecated_apis, scan_targets, stale_writes,
+    };
+    let fx = load(name);
+    let context = pseudo(&fx, "UpgradeContext").next().unwrap();
+    let minor = |k: &str| u32::try_from(context[k].as_u64().unwrap()).unwrap();
+    let (current, target) = (minor("current"), minor("target"));
+    let requested = pseudo(&fx, "Metrics")
+        .next()
+        .map(|m| requested_deprecated_apis(m["text"].as_str().unwrap()));
+    let crd_versions = deprecated_crd_versions(&fx.all("CustomResourceDefinition"));
+    let targets = scan_targets(
+        current,
+        target,
+        requested.as_deref().unwrap_or_default(),
+        &crd_versions,
+    );
+    let mut stale = Vec::new();
+    for o in pseudo(&fx, "ScannedObject") {
+        let meta: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta =
+            serde_json::from_value(o["metadata"].clone()).unwrap();
+        for t in targets
+            .iter()
+            .filter(|t| o["group"] == t.group.as_str() && o["resource"] == t.resource.as_str())
+        {
+            stale.extend(stale_writes(t, o["resourceKind"].as_str().unwrap(), &meta));
+        }
+    }
+    UpgradeEvidence {
+        current,
+        target,
+        requested,
+        deprecated_crd_versions: crd_versions,
+        stale_writes: stale,
+        nodes: some(fx.all("Node")),
+        pdbs: some(fx.all("PodDisruptionBudget")),
+        deployments: some(fx.all("Deployment")),
+        statefulsets: some(fx.all("StatefulSet")),
+        support_ends: None,
         unavailable: unavailable(&fx),
         now: now(),
     }

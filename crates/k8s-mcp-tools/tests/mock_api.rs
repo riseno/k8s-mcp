@@ -1606,3 +1606,129 @@ async fn eks_logs_respect_the_namespace_policy() {
     assert!(err.to_string().contains("not allowed"), "{err}");
     assert!(mock.requests.lock().unwrap().is_empty());
 }
+
+/// v0.3 AC 3 through the tool: a removed API still requested (metric) and last written by Helm
+/// (found through the group's preferred version, never the deprecated one), a PDB that blocks
+/// drains, and the checklist rows.
+#[tokio::test]
+async fn upgrade_readiness_flags_removed_apis_and_blocking_pdbs() {
+    let version = json!({"major": "1", "minor": "31", "gitVersion": "v1.31.4", "gitCommit": "", "gitTreeState": "", "buildDate": "", "goVersion": "", "compiler": "", "platform": ""});
+    let metrics = "apiserver_requested_deprecated_apis{group=\"flowcontrol.apiserver.k8s.io\",removed_release=\"1.32\",resource=\"flowschemas\",subresource=\"\",version=\"v1beta3\"} 1\n";
+    let res = |name: &str, kind: &str, namespaced: bool| json!({"name": name, "singularName": "", "kind": kind, "namespaced": namespaced, "verbs": ["get", "list"]});
+    let flowschema = json!({"apiVersion": "flowcontrol.apiserver.k8s.io/v1", "kind": "FlowSchema", "metadata": {"name": "team-a",
+        "managedFields": [{"manager": "helm", "operation": "Update", "apiVersion": "flowcontrol.apiserver.k8s.io/v1beta3"}]}});
+    let node = json!({"apiVersion": "v1", "kind": "Node", "metadata": {"name": "worker-1"}, "status": {"nodeInfo": {"kubeletVersion": "v1.31.4",
+        "kubeProxyVersion": "", "osImage": "", "kernelVersion": "", "containerRuntimeVersion": "", "architecture": "amd64", "operatingSystem": "linux", "machineID": "", "systemUUID": "", "bootID": ""}}});
+    let pdb = json!({"apiVersion": "policy/v1", "kind": "PodDisruptionBudget", "metadata": {"name": "api", "namespace": "shop"},
+        "spec": {"maxUnavailable": 0}, "status": {"expectedPods": 2, "currentHealthy": 2, "desiredHealthy": 2, "disruptionsAllowed": 0}});
+    let mock = MockApi::new()
+        .get("/version", version)
+        .get("/metrics", json!(metrics))
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [res("nodes", "Node", false)]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [{"name": "flowcontrol.apiserver.k8s.io",
+            "versions": [{"groupVersion": "flowcontrol.apiserver.k8s.io/v1", "version": "v1"}, {"groupVersion": "flowcontrol.apiserver.k8s.io/v1beta3", "version": "v1beta3"}],
+            "preferredVersion": {"groupVersion": "flowcontrol.apiserver.k8s.io/v1", "version": "v1"}}]}))
+        .get("/apis/flowcontrol.apiserver.k8s.io/v1", json!({"kind": "APIResourceList", "groupVersion": "flowcontrol.apiserver.k8s.io/v1",
+            "resources": [res("flowschemas", "FlowSchema", false)]}))
+        .list("/apis/flowcontrol.apiserver.k8s.io/v1/flowschemas", vec![flowschema])
+        .list("/apis/apiextensions.k8s.io/v1/customresourcedefinitions", vec![])
+        .list("/api/v1/nodes", vec![node])
+        .list("/apis/policy/v1/poddisruptionbudgets", vec![pdb])
+        .list("/apis/apps/v1/deployments", vec![])
+        .list("/apis/apps/v1/statefulsets", vec![])
+        .start();
+    let env = k8s_mcp_tools::upgrade_readiness(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::UpgradeReadinessInput::default(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        env.summary.starts_with("Upgrade 1.31 → 1.32: 2 blocked, 0 to review. Top finding: flowcontrol.apiserver.k8s.io/v1beta3 flowschemas is removed in 1.32"),
+        "{}",
+        env.summary
+    );
+    let ids: Vec<&str> = env.findings.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["upgrade.removed_api_in_use", "upgrade.pdb_blocks_drain"]
+    );
+    assert!(env.findings[0].evidence.iter().any(|e| e.text
+        == "FlowSchema team-a last written with flowcontrol.apiserver.k8s.io/v1beta3 by helm"));
+    let status = |check: &str| {
+        env.items
+            .iter()
+            .find(|i| i["check"] == check)
+            .map(|i| i["status"].clone())
+    };
+    assert_eq!(status("removed APIs"), Some(json!("blocked")));
+    assert_eq!(status("kubelet skew"), Some(json!("ok")));
+    assert_eq!(
+        env.untrusted_fields,
+        ["findings[*].evidence[?(@.source=='related')].text"]
+    );
+    let requests = mock.requests.lock().unwrap().clone();
+    assert!(
+        !requests.iter().any(|r| r.contains("/v1beta3/")),
+        "requested the deprecated version: {requests:?}"
+    );
+
+    let too_old = k8s_mcp_tools::upgrade_readiness(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::UpgradeReadinessInput {
+            target_version: Some("1.31".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        too_old
+            .to_string()
+            .contains("not newer than the control plane's 1.31"),
+        "{too_old}"
+    );
+}
+
+/// Without /metrics access the removed-API row says "not checked" instead of "ok".
+#[tokio::test]
+async fn upgrade_readiness_without_the_metric_says_not_checked() {
+    let version = json!({"major": "1", "minor": "33", "gitVersion": "v1.33.5", "gitCommit": "", "gitTreeState": "", "buildDate": "", "goVersion": "", "compiler": "", "platform": ""});
+    let mock = MockApi::new()
+        .get("/version", version)
+        .forbid("/metrics")
+        .list(
+            "/apis/apiextensions.k8s.io/v1/customresourcedefinitions",
+            vec![],
+        )
+        .list("/api/v1/nodes", vec![])
+        .list("/apis/policy/v1/poddisruptionbudgets", vec![])
+        .list("/apis/apps/v1/deployments", vec![])
+        .list("/apis/apps/v1/statefulsets", vec![])
+        .start();
+    let env = k8s_mcp_tools::upgrade_readiness(
+        &ctx(&mock, Policy::permissive()),
+        k8s_mcp_tools::UpgradeReadinessInput::default(),
+    )
+    .await
+    .unwrap();
+    let row = env
+        .items
+        .iter()
+        .find(|i| i["check"] == "removed APIs")
+        .unwrap();
+    assert_eq!(row["status"], "not checked");
+    let notes = env
+        .sections
+        .iter()
+        .find(|s| s.title == "UNAVAILABLE EVIDENCE")
+        .unwrap();
+    assert!(
+        notes
+            .lines
+            .iter()
+            .any(|l| l.contains("apiserver_requested_deprecated_apis") && l.contains("/metrics")),
+        "{:?}",
+        notes.lines
+    );
+}

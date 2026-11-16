@@ -99,6 +99,14 @@ pub fn diagnose_autoscaling(ev: &AutoscalingEvidence) -> Vec<Finding> {
     out
 }
 
+/// Upgrade readiness for the evidence's target version.
+pub fn diagnose_upgrade(ev: &UpgradeEvidence) -> Vec<Finding> {
+    let mut out = Vec::new();
+    rules::upgrade::check(ev, &mut out);
+    rank(&mut out);
+    out
+}
+
 /// Every rule id this engine can emit, with title and docs link.
 pub fn catalogue() -> Vec<RuleMeta> {
     let mut all: Vec<RuleMeta> = [
@@ -117,6 +125,7 @@ pub fn catalogue() -> Vec<RuleMeta> {
         rules::service::RULES,
         rules::pvc::RULES,
         rules::autoscaling::RULES,
+        rules::upgrade::RULES,
     ]
     .concat();
     all.sort_by_key(|r| r.id);
@@ -128,7 +137,7 @@ mod tests {
     use super::*;
     use crate::test_support::{
         autoscaling_fixture, dns_fixture, node_fixture, pod_fixture, pvc_fixture, service_fixture,
-        workload_fixture,
+        upgrade_fixture, workload_fixture,
     };
 
     /// Every fixture under `dir`, sorted, as `dir/<file>` names.
@@ -196,6 +205,11 @@ mod tests {
         assert!(!autoscaling.is_empty());
         for f in &autoscaling {
             check(f, diagnose_autoscaling(&autoscaling_fixture(f)));
+        }
+        let upgrade = fixtures("upgrade");
+        assert!(!upgrade.is_empty());
+        for f in &upgrade {
+            check(f, diagnose_upgrade(&upgrade_fixture(f)));
         }
     }
 

@@ -54,6 +54,9 @@ rules:
   - apiGroups: [gateway.networking.k8s.io]
     resources: [gateways, httproutes]
     verbs: [get, list, watch]
+  # upgrade_readiness: the API server's apiserver_requested_deprecated_apis metric.
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
   {{- if .Values.rbac.secretsMetadata }}
   - apiGroups: [""]
     resources: [secrets]

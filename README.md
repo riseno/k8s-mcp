@@ -94,11 +94,11 @@ NEXT
 
 | Toolset | Tools |
 |---|---|
-| `core` | `list_contexts`, `cluster_overview`, `api_resources`, `list_resources`, `get_resource`, `list_events`, `get_logs`, `top`, `autoscaling_status`, `recent_changes`, `rollout_history`, `check_permissions` |
+| `core` | `list_contexts`, `cluster_overview`, `api_resources`, `list_resources`, `get_resource`, `list_events`, `get_logs`, `top`, `autoscaling_status`, `upgrade_readiness`, `recent_changes`, `rollout_history`, `check_permissions` |
 | `diagnose` | `diagnose_pod`, `diagnose_workload`, `diagnose_node`, `diagnose_service`, `diagnose_pvc`, `diagnose_dns`, `find_problems` |
 | `eks` (when the cluster is EKS) | `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check`, `eks_logs` ([docs/providers/eks.md](docs/providers/eks.md)) |
 
-Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `access-review`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules` and the template `k8s-mcp://cluster/{context}/overview`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
+Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `access-review`, `upgrade-readiness`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules` and the template `k8s-mcp://cluster/{context}/overview`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
 
 ## In-cluster endpoint
 

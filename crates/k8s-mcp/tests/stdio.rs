@@ -68,7 +68,7 @@ async fn default_tool_list_is_read_only_and_well_formed() {
 
     let tools = client.list_all_tools().await.unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-    assert_eq!(tools.len(), 19, "{names:?}");
+    assert_eq!(tools.len(), 20, "{names:?}");
     for t in &tools {
         let a = t
             .annotations
@@ -88,7 +88,7 @@ async fn default_tool_list_is_read_only_and_well_formed() {
         assert!(!names.contains(&unwanted));
     }
 
-    assert_eq!(client.list_all_prompts().await.unwrap().len(), 4);
+    assert_eq!(client.list_all_prompts().await.unwrap().len(), 5);
     assert_eq!(client.list_all_resources().await.unwrap().len(), 3);
     let templates = client.list_all_resource_templates().await.unwrap();
     assert_eq!(

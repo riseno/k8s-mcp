@@ -1,0 +1,7 @@
+---
+source: crates/k8s-mcp-provider-gke/tests/mocked.rs
+expression: "k8s_mcp_provider::upgrade_lines(ProviderId::Gke, &info).join(\"\\n\")"
+---
+GKE control plane 1.33.5-gke.1000; offered: 1.34
+GKE check release channel: passing (REGULAR)
+GKE check channel upgrade target: passing (GKE upgrades this channel's clusters to 1.34.3-gke.200)

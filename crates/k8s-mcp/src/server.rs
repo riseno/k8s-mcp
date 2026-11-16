@@ -101,7 +101,7 @@ tools! {
         "Why is the cluster not scaling? Karpenter NodePools (limits vs provisioned) and NodeClaims (launch/registration failures), the Cluster Autoscaler status and NotTriggerScaleUp reasons, and HPAs that cannot read metrics or sit at maxReplicas. Use when pods stay Pending for capacity.",
         |c, i| t::autoscaling_status(c, i).await;
     "upgrade_readiness", "core", t::UpgradeReadinessInput,
-        "Is the cluster ready for the next control-plane minor (or `target_version`)? A checklist: removed and deprecated API versions still in use (the API server's deprecated-API metric, CRD versions marked deprecated, objects last written with them and by whom), kubelets the target leaves beyond the supported skew, PodDisruptionBudgets that block node drains, single-replica workloads, end of standard support, plus the provider's upgrade checks (EKS upgrade insights) when a provider toolset is registered.",
+        "Is the cluster ready for the next control-plane minor (or `target_version`)? A checklist: removed and deprecated API versions still in use (the API server's deprecated-API metric, CRD versions marked deprecated, objects last written with them and by whom), kubelets the target leaves beyond the supported skew, PodDisruptionBudgets that block node drains, single-replica workloads, end of standard support, plus the provider's upgrade checks (EKS upgrade insights, GKE release-channel versions) when a provider toolset is registered.",
         |c, i| t::upgrade_readiness(c, i).await;
     "recent_changes", "core", t::RecentChangesInput,
         "What changed recently that could explain this? Rollouts (with image/env-name/resource diffs), objects created or updated (and by which field manager) and Helm release revisions, newest first, in a namespace or the whole cluster (since: default 2h). Env values and object bodies are never read or shown.",
@@ -131,29 +131,49 @@ tools! {
         "Is DNS the problem? For a pod (or a namespace): NetworkPolicies blocking egress to port 53, CoreDNS pod health and its logs (loops, upstream timeouts), kube-dns Service endpoints, DNS errors in the pod's logs and ndots for external names. Reads kube-system only when the namespace policy allows it.",
         |c, i| t::diagnose_dns(c, i).await;
     #[cfg(feature = "provider-eks")]
-    "eks_cluster_info", "eks", t::EksInput,
+    "eks_cluster_info", "eks", t::ProviderInput,
         "Amazon EKS cluster as AWS describes it: version, platform version, status and health issues, endpoint access, authentication mode, OIDC issuer, control-plane log types, Auto Mode and support policy. Needs AWS credentials (default chain); registered when the cluster is detected as EKS.",
         |c, i| t::eks_cluster_info(c, i).await;
     #[cfg(feature = "provider-eks")]
-    "eks_nodegroups", "eks", t::EksInput,
+    "eks_nodegroups", "eks", t::ProviderInput,
         "EKS managed node groups (version, instance types, capacity type, desired/min/max, health issues) and Fargate profiles, with version-skew findings.",
         |c, i| t::eks_nodegroups(c, i).await;
     #[cfg(feature = "provider-eks")]
-    "eks_addons", "eks", t::EksInput,
+    "eks_addons", "eks", t::ProviderInput,
         "EKS add-ons (vpc-cni, coredns, kube-proxy, ebs-csi, pod-identity-agent...): version, status and health issues, and the newest version compatible with the cluster's Kubernetes version.",
         |c, i| t::eks_addons(c, i).await;
     #[cfg(feature = "provider-eks")]
-    "eks_access", "eks", t::EksInput,
+    "eks_access", "eks", t::ProviderInput,
         "Who AWS maps into the cluster: access entries with their access policies, and aws-auth roles and users (when kube-system may be read), with cluster-admin flagged.",
         |c, i| t::eks_access(c, i).await;
     #[cfg(feature = "provider-eks")]
-    "eks_identity_check", "eks", t::EksIdentityInput,
+    "eks_identity_check", "eks", t::IdentityInput,
         "Does a ServiceAccount's AWS identity work? IRSA (role annotation, role exists, trust policy names this cluster's OIDC provider and the ServiceAccount, IAM OIDC provider registered) and EKS Pod Identity (association, role trust, agent), plus whether its pods got the credentials injected. Without AWS credentials it returns the Kubernetes side with cloud_checks: skipped.",
         |c, i| t::eks_identity_check(c, i).await;
     #[cfg(feature = "provider-eks")]
-    "eks_logs", "eks", t::EksLogsInput,
+    "eks_logs", "eks", t::LogsInput,
         "CloudWatch Logs for the cluster: control-plane logs (api, audit, authenticator, controllerManager, scheduler) or Container Insights application logs for a namespace or pod, filtered by grep and since (1h). Lines are redacted and untrusted. Control-plane logs are refused while --namespaces restricts namespaces.",
         |c, i| t::eks_logs(c, i).await;
+    #[cfg(feature = "provider-gke")]
+    "gke_cluster_info", "gke", t::ProviderInput,
+        "Google Kubernetes Engine cluster as Google Cloud describes it: version, status and conditions, Autopilot or Standard, release channel, endpoint access (public endpoint, authorized networks, private nodes), Workload Identity pool, logging and monitoring, maintenance window. Needs Google Cloud credentials (ADC); registered when the cluster is detected as GKE.",
+        |c, i| t::gke_cluster_info(c, i).await;
+    #[cfg(feature = "provider-gke")]
+    "gke_node_pools", "gke", t::ProviderInput,
+        "GKE node pools (version, machine type, spot, autoscaling, workload metadata mode, status and conditions such as GCE_STOCKOUT), with version-skew findings.",
+        |c, i| t::gke_node_pools(c, i).await;
+    #[cfg(feature = "provider-gke")]
+    "gke_addons", "gke", t::ProviderInput,
+        "GKE-managed add-ons and whether they are enabled: HTTP load balancing, HPA, network policy, NodeLocal DNSCache, the Persistent Disk, Filestore and Cloud Storage FUSE CSI drivers, Backup for GKE, Config Connector.",
+        |c, i| t::gke_addons(c, i).await;
+    #[cfg(feature = "provider-gke")]
+    "gke_identity_check", "gke", t::IdentityInput,
+        "Does a ServiceAccount's GKE Workload Identity work? The iam.gke.io/gcp-service-account annotation, the cluster's workload pool, node pools in GKE_METADATA mode, the Google service account exists and is enabled, and its IAM policy grants roles/iam.workloadIdentityUser to this ServiceAccount. Without Google Cloud credentials it returns the Kubernetes side with cloud_checks: skipped.",
+        |c, i| t::gke_identity_check(c, i).await;
+    #[cfg(feature = "provider-gke")]
+    "gke_logs", "gke", t::LogsInput,
+        "Cloud Logging for the cluster: control-plane logs (api, audit, controllerManager, scheduler) or container logs for a namespace or pod, filtered by grep and since (1h). Lines are redacted and untrusted. Control-plane logs are refused while --namespaces restricts namespaces.",
+        |c, i| t::gke_logs(c, i).await;
     "find_problems", "diagnose", t::FindProblemsInput,
         "Scan a namespace or the whole cluster (default, policy-filtered) for broken pods, workloads, nodes, Services and PVCs. Returns ranked findings, each with the object and the diagnose_* call to run next. Use after cluster_overview or when the user asks what is wrong.",
         |c, i| t::find_problems(c, i).await;
@@ -195,6 +215,7 @@ pub struct K8sMcp {
 
 impl K8sMcp {
     /// Audit an HTTP caller that authenticated but is outside `--allowed-callers` (no tool ran).
+    #[cfg(feature = "http")]
     pub fn audit_refused(&self, caller: &str) {
         self.audit.record(&Record {
             ts: jiff::Timestamp::now().to_string(),
@@ -239,7 +260,7 @@ impl K8sMcp {
             .destructive(def.tier == Tier::Destructive)
             .idempotent(def.tier == Tier::Read)
             // Provider tools call the cloud's API.
-            .open_world(def.toolset == "eks");
+            .open_world(matches!(def.toolset, "eks" | "gke"));
         Tool::new(def.name, def.description, def.input_schema.clone())
             .with_output_schema::<Envelope>()
             .with_annotations(annotations)
@@ -362,6 +383,10 @@ fn rules_catalogue() -> Vec<k8s_mcp_core::finding::RuleMeta> {
     all.extend_from_slice(t::EKS_RULES);
     #[cfg(feature = "provider-eks")]
     all.extend_from_slice(t::EKS_IDENTITY_RULES);
+    #[cfg(feature = "provider-gke")]
+    all.extend_from_slice(t::GKE_RULES);
+    #[cfg(feature = "provider-gke")]
+    all.extend_from_slice(t::GKE_IDENTITY_RULES);
     all.sort_by_key(|r| r.id);
     all
 }
@@ -802,6 +827,45 @@ mod tests {
         );
     }
 
+    /// v0.3 AC 1: every provider has the same capabilities, with the same input schema and the
+    /// same tier and toolset rules, so the assistant sees parallel tools. Their outputs share
+    /// one set of renderers (`k8s_mcp_provider::*_envelope`), so the columns match too.
+    #[cfg(all(feature = "provider-eks", feature = "provider-gke"))]
+    #[test]
+    fn provider_tools_have_parity() {
+        let tools = all_tools();
+        let get = |name: &str| {
+            tools
+                .iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("{name} missing"))
+        };
+        for (eks, gke) in [
+            ("eks_cluster_info", "gke_cluster_info"),
+            ("eks_nodegroups", "gke_node_pools"),
+            ("eks_addons", "gke_addons"),
+            ("eks_identity_check", "gke_identity_check"),
+            ("eks_logs", "gke_logs"),
+        ] {
+            let (a, b) = (get(eks), get(gke));
+            assert_eq!(a.input_schema, b.input_schema, "{eks} vs {gke}");
+            assert!(
+                a.tier == b.tier && a.toolset == "eks" && b.toolset == "gke",
+                "{eks} vs {gke}"
+            );
+        }
+        let gke: Vec<&str> = tools
+            .iter()
+            .filter(|t| t.toolset == "gke")
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(
+            gke.len(),
+            5,
+            "gke_access arrives in v1.0 (PROPOSAL §8.4): {gke:?}"
+        );
+    }
+
     #[test]
     fn overview_context_is_percent_decoded() {
         assert_eq!(
@@ -872,9 +936,9 @@ mod docs {
 
     fn tools_md() -> String {
         let mut out = String::from(
-            "# Tool reference\n\n<!-- Generated by `cargo xtask docs` from the tool registry. Do not edit. -->\n\nEvery tool is read-only (`readOnlyHint: true`); the `eks` toolset is registered when the cluster is detected as EKS (`--providers`) and calls the AWS API. Every cluster tool takes an optional `context`; namespaced tools take an optional `namespace` (default: the context's namespace). Outputs use the envelope described in [output.md](output.md).\n",
+            "# Tool reference\n\n<!-- Generated by `cargo xtask docs` from the tool registry. Do not edit. -->\n\nEvery tool is read-only (`readOnlyHint: true`); the `eks` and `gke` toolsets are registered when the cluster is detected as EKS or GKE (`--providers`) and call the AWS or Google Cloud APIs. Every cluster tool takes an optional `context`; namespaced tools take an optional `namespace` (default: the context's namespace). Outputs use the envelope described in [output.md](output.md).\n",
         );
-        for set in ["core", "diagnose", "eks"] {
+        for set in ["core", "diagnose", "eks", "gke"] {
             let _ = write!(out, "\n## Toolset `{set}`\n");
             for t in all_tools().into_iter().filter(|t| t.toolset == set) {
                 let _ = write!(

@@ -1546,7 +1546,7 @@ async fn eks_identity_check_returns_the_kubernetes_side_when_aws_is_unavailable(
         .list("/api/v1/namespaces/shop/pods", vec![p])
         .list("/api/v1/nodes", vec![])
         .start();
-    let input = k8s_mcp_tools::EksIdentityInput {
+    let input = k8s_mcp_tools::IdentityInput {
         service_account: "api".into(),
         ..Default::default()
     };
@@ -1587,7 +1587,7 @@ async fn eks_identity_check_returns_the_kubernetes_side_when_aws_is_unavailable(
 async fn eks_logs_respect_the_namespace_policy() {
     let mock = MockApi::new().start();
     let restricted = ctx(&mock, policy(&["shop"], &[]));
-    let err = k8s_mcp_tools::eks_logs(&restricted, k8s_mcp_tools::EksLogsInput::default())
+    let err = k8s_mcp_tools::eks_logs(&restricted, k8s_mcp_tools::LogsInput::default())
         .await
         .unwrap_err();
     assert!(
@@ -1595,7 +1595,7 @@ async fn eks_logs_respect_the_namespace_policy() {
             .contains("control-plane logs cover every namespace"),
         "{err}"
     );
-    let other = k8s_mcp_tools::EksLogsInput {
+    let other = k8s_mcp_tools::LogsInput {
         source: Some("application".into()),
         namespace: Some("payments".into()),
         ..Default::default()

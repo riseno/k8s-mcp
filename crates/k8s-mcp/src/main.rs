@@ -17,6 +17,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use k8s_mcp_core::audit::Audit;
 use k8s_mcp_core::cluster::{ClusterManager, LoadOptions};
 use k8s_mcp_core::policy::{Policy, RedactLevel};
+use k8s_mcp_core::provider::ProviderId;
 use k8s_mcp_tools::Ctx;
 use rmcp::ServiceExt;
 
@@ -181,6 +182,9 @@ pub struct Opts {
     /// EKS cluster region, when detection cannot tell.
     #[arg(long, global = true, env = "K8S_MCP_EKS_REGION")]
     eks_region: Option<String>,
+    /// GKE cluster as <project>/<location>/<name>, when detection cannot tell.
+    #[arg(long, global = true, env = "K8S_MCP_GKE_CLUSTER")]
+    gke_cluster: Option<String>,
     /// Toolsets to expose (comma separated): core, diagnose, eks (provider toolsets are added
     /// per --providers).
     #[arg(
@@ -238,12 +242,16 @@ impl Opts {
         ctx.cloud = k8s_mcp_tools::CloudOverride {
             cluster: self.eks_cluster.clone(),
             region: self.eks_region.clone(),
+            gke: self.gke_cluster.clone(),
         };
         Ok(ctx)
     }
 }
 
 fn main() -> ExitCode {
+    // The Google Cloud clients' reqwest has no crypto provider of its own (no aws-lc, ADR
+    // 0007): ring serves every rustls client in the process.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -293,20 +301,39 @@ fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
 }
 
 /// The toolsets to expose: `--toolsets`, plus provider toolsets per `--providers`.
+/// Provider toolsets: name, provider, whether this build has it, and whether its identity flag
+/// was given (which implies the provider).
+fn provider_toolsets(opts: &Opts) -> [(&'static str, ProviderId, bool, bool); 2] {
+    [
+        (
+            "eks",
+            ProviderId::Eks,
+            cfg!(feature = "provider-eks"),
+            opts.eks_cluster.is_some(),
+        ),
+        (
+            "gke",
+            ProviderId::Gke,
+            cfg!(feature = "provider-gke"),
+            opts.gke_cluster.is_some(),
+        ),
+    ]
+}
+
 async fn toolsets(opts: &Opts, ctx: &Ctx) -> anyhow::Result<Vec<String>> {
     if let Some(t) = opts
         .toolsets
         .iter()
-        .find(|t| !matches!(t.as_str(), "core" | "diagnose" | "eks"))
+        .find(|t| !matches!(t.as_str(), "core" | "diagnose" | "eks" | "gke"))
     {
-        bail!("unknown toolset {t:?}; valid toolsets are core, diagnose and eks");
+        bail!("unknown toolset {t:?}; valid toolsets are core, diagnose, eks and gke");
     }
     let p = &opts.providers;
     if let Some(bad) = p
         .iter()
-        .find(|p| !matches!(p.as_str(), "auto" | "none" | "eks"))
+        .find(|p| !matches!(p.as_str(), "auto" | "none" | "eks" | "gke"))
     {
-        bail!("unknown provider {bad:?}: use auto, none or eks (GKE and AKS arrive in v0.3)");
+        bail!("unknown provider {bad:?}: use auto, none, eks or gke (AKS arrives later in v0.3)");
     }
     let mut out = opts.toolsets.clone();
     if p.iter().any(|x| x == "none") {
@@ -315,51 +342,64 @@ async fn toolsets(opts: &Opts, ctx: &Ctx) -> anyhow::Result<Vec<String>> {
         }
         return Ok(out);
     }
-    let explicit = p.iter().any(|x| x == "eks");
-    let eks = explicit
-        || opts.eks_cluster.is_some()
-        || (p.iter().any(|x| x == "auto") && detected_eks(ctx).await);
-    if eks && !cfg!(feature = "provider-eks") {
-        if explicit {
-            bail!("this build has no EKS provider (built without the `provider-eks` feature)");
+    let detected = if p.iter().any(|x| x == "auto") {
+        detected_provider(ctx).await
+    } else {
+        None
+    };
+    for (name, id, compiled, flag) in provider_toolsets(opts) {
+        let explicit = p.iter().any(|x| x == name);
+        if !(explicit || flag || detected == Some(id)) {
+            continue;
         }
-    } else if eks && !out.iter().any(|t| t == "eks") {
-        out.push("eks".into());
+        if !compiled {
+            if explicit {
+                bail!(
+                    "this build has no {} provider (built without the `provider-{name}` feature)",
+                    name.to_uppercase()
+                );
+            }
+        } else if !out.iter().any(|t| t == name) {
+            out.push(name.into());
+        }
     }
     Ok(out)
 }
 
-/// Whether the default context is EKS with high confidence: from the kubeconfig, or in-cluster
-/// (where the kubeconfig says nothing) from a few nodes.
-async fn detected_eks(ctx: &Ctx) -> bool {
-    use k8s_mcp_core::provider::{Confidence, Detection, ProviderId};
-    let is_eks = |d: Option<Detection>| {
-        d.is_some_and(|d| d.provider == ProviderId::Eks && d.confidence == Confidence::High)
+/// The default context's provider when detected with high confidence: from the kubeconfig,
+/// or in-cluster (where the kubeconfig says nothing) from a few nodes.
+async fn detected_provider(ctx: &Ctx) -> Option<ProviderId> {
+    use k8s_mcp_core::provider::{Confidence, Detection};
+    let sure = |d: Option<Detection>| {
+        d.filter(|d| d.confidence == Confidence::High)
+            .map(|d| d.provider)
     };
     let default = ctx.clusters.default_context().to_owned();
-    if is_eks(ctx.clusters.detect_provider(&default, &[])) {
-        return true;
+    if let Some(id) = sure(ctx.clusters.detect_provider(&default, &[])) {
+        return Some(id);
     }
     if default != k8s_mcp_core::cluster::IN_CLUSTER {
-        return false;
+        return None;
     }
-    let Ok(target) = ctx.clusters.target(None, &ctx.policy).await else {
-        return false;
-    };
+    let target = ctx.clusters.target(None, &ctx.policy).await.ok()?;
     let lp = kube::api::ListParams::default().limit(20);
     let nodes = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         kube::Api::<k8s_openapi::api::core::v1::Node>::all(target.client).list(&lp),
     )
-    .await;
-    matches!(nodes, Ok(Ok(l)) if is_eks(ctx.clusters.detect_provider(&default, &l.items)))
+    .await
+    .ok()?
+    .ok()?;
+    sure(ctx.clusters.detect_provider(&default, &nodes.items))
 }
 
 async fn serve(opts: &Opts) -> anyhow::Result<()> {
     let mut ctx = opts.ctx()?;
     let toolsets = toolsets(opts, &ctx).await?;
-    if toolsets.iter().any(|t| t == "eks") {
-        ctx.providers.push(k8s_mcp_core::provider::ProviderId::Eks);
+    for (name, id, _, _) in provider_toolsets(opts) {
+        if toolsets.iter().any(|t| t == name) {
+            ctx.providers.push(id);
+        }
     }
     if ctx.policy.redact == RedactLevel::Off {
         tracing::warn!(

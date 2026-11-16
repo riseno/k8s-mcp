@@ -3,6 +3,7 @@
 - [Install](install.md)
 - [In-cluster endpoint (Helm)](in-cluster.md)
 - [Amazon EKS provider](providers/eks.md)
+- [Google Kubernetes Engine provider](providers/gke.md)
 - [MCP clients](clients.md)
 - [Tools](tools.md)
 - [Output format](output.md)
@@ -22,3 +23,4 @@
   - [0009 Mask Secret values in logs](adr/0009-scrub-secret-values-from-logs.md)
   - [0010 Provider detection in core](adr/0010-provider-detection-in-core.md)
   - [0011 Upgrade readiness signals](adr/0011-upgrade-readiness-signals.md)
+  - [0012 Google Cloud SDK on ring](adr/0012-google-cloud-sdk-on-ring.md)

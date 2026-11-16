@@ -97,6 +97,7 @@ NEXT
 | `core` | `list_contexts`, `cluster_overview`, `api_resources`, `list_resources`, `get_resource`, `list_events`, `get_logs`, `top`, `autoscaling_status`, `upgrade_readiness`, `recent_changes`, `rollout_history`, `check_permissions` |
 | `diagnose` | `diagnose_pod`, `diagnose_workload`, `diagnose_node`, `diagnose_service`, `diagnose_pvc`, `diagnose_dns`, `find_problems` |
 | `eks` (when the cluster is EKS) | `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check`, `eks_logs` ([docs/providers/eks.md](docs/providers/eks.md)) |
+| `gke` (when the cluster is GKE) | `gke_cluster_info`, `gke_node_pools`, `gke_addons`, `gke_identity_check`, `gke_logs` ([docs/providers/gke.md](docs/providers/gke.md)) |
 
 Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `access-review`, `upgrade-readiness`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules` and the template `k8s-mcp://cluster/{context}/overview`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
 
@@ -131,8 +132,9 @@ No config file is needed; every flag also reads `K8S_MCP_<FLAG>` (for example `K
 | `--allowed-callers <glob,...>` | all authenticated | `tokenreview` callers let in: username globs or `group:<glob>`; others get 403, audited |
 | `--allowed-hosts <host,...>` | `localhost`, `127.0.0.1`, `::1` | HTTP `Host` values accepted (DNS-rebinding protection) |
 | `--allowed-origins <origin,...>` | none | Browser `Origin` values accepted; any other `Origin` gets 403 |
-| `--providers auto\|none\|eks` | `auto` | Cloud provider toolsets: `auto` registers one when the default context is detected as that provider |
+| `--providers auto\|none\|eks\|gke` | `auto` | Cloud provider toolsets: `auto` registers one when the default context is detected as that provider |
 | `--eks-cluster`, `--eks-region` | detected | EKS cluster name and region when detection cannot tell (in-cluster) |
+| `--gke-cluster <project>/<location>/<name>` | detected | GKE cluster when detection cannot tell (in-cluster) |
 | `--kubeconfig <path>` | `$KUBECONFIG` or `~/.kube/config` | Kubeconfig |
 | `--in-cluster` | auto | Use the ServiceAccount token |
 | `--context <name>` | current-context | Default context |

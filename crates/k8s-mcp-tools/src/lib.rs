@@ -4,12 +4,16 @@
 
 mod autoscaling;
 mod changes;
+#[cfg(any(feature = "provider-eks", feature = "provider-gke"))]
+mod cloud;
 mod common;
 mod diagnose;
 mod discovery;
 mod dns;
 #[cfg(feature = "provider-eks")]
 mod eks;
+#[cfg(feature = "provider-gke")]
+mod gke;
 mod logs;
 mod read;
 mod rows;
@@ -27,6 +31,8 @@ use k8s_mcp_core::redact::Redactor;
 
 pub use autoscaling::{AutoscalingStatusInput, autoscaling_status};
 pub use changes::{RecentChangesInput, RolloutHistoryInput, recent_changes, rollout_history};
+#[cfg(any(feature = "provider-eks", feature = "provider-gke"))]
+pub use cloud::{IdentityInput, LogsInput, ProviderInput};
 pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
     diagnose_pod, diagnose_workload, find_problems,
@@ -34,13 +40,18 @@ pub use diagnose::{
 pub use dns::{DiagnoseDnsInput, diagnose_dns};
 #[cfg(feature = "provider-eks")]
 pub use eks::{
-    EksIdentityInput, EksInput, EksLogsInput, eks_access, eks_addons, eks_cluster_info,
-    eks_identity_check, eks_logs, eks_nodegroups,
+    eks_access, eks_addons, eks_cluster_info, eks_identity_check, eks_logs, eks_nodegroups,
 };
+#[cfg(feature = "provider-gke")]
+pub use gke::{gke_addons, gke_cluster_info, gke_identity_check, gke_logs, gke_node_pools};
 #[cfg(feature = "provider-eks")]
 pub use k8s_mcp_provider_eks::RULES as EKS_RULES;
 #[cfg(feature = "provider-eks")]
 pub use k8s_mcp_provider_eks::identity::RULES as EKS_IDENTITY_RULES;
+#[cfg(feature = "provider-gke")]
+pub use k8s_mcp_provider_gke::RULES as GKE_RULES;
+#[cfg(feature = "provider-gke")]
+pub use k8s_mcp_provider_gke::identity::RULES as GKE_IDENTITY_RULES;
 pub use logs::{GetLogsInput, get_logs};
 pub use read::{
     ApiResourcesInput, CheckPermissionsInput, ClusterOverviewInput, GetResourceInput,
@@ -76,10 +87,12 @@ pub struct Ctx {
 /// Cloud cluster identity from flags, for when detection cannot tell (in-cluster, aliases).
 #[derive(Clone, Debug, Default)]
 pub struct CloudOverride {
-    /// Cluster name.
+    /// EKS cluster name (`--eks-cluster`).
     pub cluster: Option<String>,
-    /// Region.
+    /// EKS region (`--eks-region`).
     pub region: Option<String>,
+    /// GKE cluster as `project/location/name` (`--gke-cluster`).
+    pub gke: Option<String>,
 }
 
 impl Ctx {

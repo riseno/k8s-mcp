@@ -1,0 +1,22 @@
+---
+source: crates/k8s-mcp-provider-gke/tests/mocked.rs
+expression: e.render()
+---
+GKE 2 node pools. Top finding: Node pool legacy is RUNNING_WITH_ERROR with 1 condition(s).
+
+FINDINGS
+1. [high/high] gke.nodepool.unhealthy: Node pool legacy is RUNNING_WITH_ERROR with 1 condition(s)
+   why: GKE cannot keep the node pool at its size or manage its nodes, usually because of zone capacity or quota (GCE_STOCKOUT, quota exceeded), the node service account, or the subnet running out of addresses.
+   evidence (status): RESOURCE_EXHAUSTED: GCE_STOCKOUT: The zone europe-west1-b does not have enough resources available.
+   fix: Fix the cause in the evidence: request quota, use another zone or machine type, or restore the node service account's roles (roles/container.defaultNodeServiceAccount).
+   docs: https://cloud.google.com/kubernetes-engine/docs/troubleshooting
+2. [medium/high] gke.nodepool.version_skew: Node pool legacy runs Kubernetes 1.31.9-gke.200, behind the control plane's 1.33.5-gke.1000
+   why: Nodes may lag the control plane by a few minors, but each lagging minor must be upgraded before the next control-plane upgrade, and new features and fixes do not reach these nodes.
+   evidence (status): node pool version 1.31.9-gke.200, control plane 1.33.5-gke.1000
+   fix: Upgrade the node pool to the control plane's version (a surge upgrade that respects PodDisruptionBudgets), or enable auto-upgrade.
+   docs: https://cloud.google.com/kubernetes-engine/versioning
+
+ITEMS (2)
+NAME     KIND                            STATUS              VERSION          SIZE                    MACHINE
+general  managed, metadata GKE_METADATA  RUNNING             1.33.5-gke.1000  autoscaling 3-12 total  e2-standard-4 on-demand
+legacy   managed, metadata GCE_METADATA  RUNNING_WITH_ERROR  1.31.9-gke.200   1 (fixed)               n1-standard-2 spot

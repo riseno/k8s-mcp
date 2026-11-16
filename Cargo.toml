@@ -18,6 +18,7 @@ k8s-mcp-tools = { path = "crates/k8s-mcp-tools" }
 k8s-mcp-testkit = { path = "crates/k8s-mcp-testkit" }
 k8s-mcp-provider = { path = "crates/k8s-mcp-provider" }
 k8s-mcp-provider-eks = { path = "crates/k8s-mcp-provider-eks" }
+k8s-mcp-provider-gke = { path = "crates/k8s-mcp-provider-gke" }
 
 rmcp = { version = "3.10", features = ["server", "macros", "schemars", "transport-io"] }
 kube = { version = "5.1", default-features = false, features = ["client", "config", "rustls-tls", "ring", "gzip"] }
@@ -50,6 +51,14 @@ aws-sdk-iam = { version = "1.136", default-features = false, features = ["rt-tok
 aws-sdk-cloudwatchlogs = { version = "1.165", default-features = false, features = ["rt-tokio", "behavior-version-latest"] }
 aws-smithy-http-client = { version = "1.5", default-features = false, features = ["rustls-ring"] }
 aws-smithy-mocks = "0.3"
+# Google Cloud SDK on rustls + ring (v0.3 plan): every crate with default features off, since
+# their defaults pull aws-lc-rs (banned in deny.toml). The binary installs the ring provider.
+google-cloud-container-v1 = { version = "1.15", default-features = false }
+google-cloud-iam-admin-v1 = { version = "1.14", default-features = false }
+google-cloud-logging-v2 = { version = "1.16", default-features = false }
+google-cloud-auth = { version = "1.19", default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+wiremock = "0.6"
 aws-smithy-types = "1"
 insta = { version = "1.49", features = ["json"] }
 proptest = "1.12"

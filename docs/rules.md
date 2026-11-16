@@ -36,6 +36,16 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 | `eks.pod_identity.association_missing` | The ServiceAccount has no AWS identity (no IRSA role, no Pod Identity association) | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `eks.pod_identity.trust_mismatch` | The Pod Identity role's trust policy does not allow EKS Pod Identity | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `eks.upgrade.insight_failing` | An EKS upgrade insight reports a problem for the next version | [link](https://docs.aws.amazon.com/eks/latest/userguide/cluster-insights.html) |
+| `gke.cluster.no_release_channel` | The cluster is not enrolled in a release channel | [link](https://cloud.google.com/kubernetes-engine/docs/concepts/release-channels) |
+| `gke.cluster.public_endpoint` | The control-plane endpoint is public without authorized networks | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/authorized-networks) |
+| `gke.cluster.unhealthy` | The GKE cluster reports an error or degraded status | [link](https://cloud.google.com/kubernetes-engine/docs/troubleshooting) |
+| `gke.nodepool.unhealthy` | A node pool reports an error or degraded status | [link](https://cloud.google.com/kubernetes-engine/docs/troubleshooting) |
+| `gke.nodepool.version_skew` | A node pool runs an older Kubernetes minor than the control plane | [link](https://cloud.google.com/kubernetes-engine/versioning) |
+| `gke.wi.binding_missing` | The Google service account does not grant workloadIdentityUser to the ServiceAccount | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) |
+| `gke.wi.gsa_disabled` | The annotated Google service account is disabled | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) |
+| `gke.wi.gsa_missing` | The annotated Google service account does not exist | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) |
+| `gke.wi.metadata_mode` | Node pools do not run the GKE metadata server | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) |
+| `gke.wi.pool_missing` | Workload Identity is not enabled on the cluster | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) |
 | `job.backoff_limit` | Job failed: its pods failed more often than backoffLimit allows | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `job.deadline_exceeded` | Job failed: it ran longer than activeDeadlineSeconds | [link](https://kubernetes.io/docs/concepts/workloads/controllers/job/) |
 | `node.cordoned` | Node is cordoned: no new pods are scheduled there | [link](https://kubernetes.io/docs/concepts/architecture/nodes/) |

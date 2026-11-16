@@ -1,0 +1,13 @@
+---
+source: crates/k8s-mcp-provider-gke/tests/mocked.rs
+expression: e.render()
+---
+GKE 5 add-ons; no problems found by the provider rules.
+
+ITEMS (5)
+NAME                        VERSION  STATUS    LATEST
+HttpLoadBalancing           managed  enabled   -
+HorizontalPodAutoscaling    managed  enabled   -
+NodeLocalDNS                managed  enabled   -
+GcePersistentDiskCsiDriver  managed  enabled   -
+GcsFuseCsiDriver            managed  disabled  -

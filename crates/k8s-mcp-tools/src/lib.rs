@@ -3,6 +3,7 @@
 //! pure rule engine, and shape everything into an [`Envelope`]. Transport-agnostic.
 
 mod autoscaling;
+mod changes;
 mod common;
 mod diagnose;
 mod discovery;
@@ -22,6 +23,7 @@ use k8s_mcp_core::policy::Policy;
 use k8s_mcp_core::redact::Redactor;
 
 pub use autoscaling::{AutoscalingStatusInput, autoscaling_status};
+pub use changes::{RecentChangesInput, RolloutHistoryInput, recent_changes, rollout_history};
 pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
     diagnose_pod, diagnose_workload, find_problems,

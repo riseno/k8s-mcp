@@ -540,7 +540,7 @@ pub struct DiagnoseWorkloadInput {
 }
 
 /// Normalise a workload kind name.
-fn workload_kind(kind: &str) -> Result<&'static str> {
+pub(crate) fn workload_kind(kind: &str) -> Result<&'static str> {
     Ok(match kind.to_ascii_lowercase().as_str() {
         "deployment" | "deployments" | "deploy" => "Deployment",
         "statefulset" | "statefulsets" | "sts" => "StatefulSet",

@@ -25,6 +25,9 @@ All notable changes are documented here. The format follows
   found (tried ...), so k8s-mcp cannot describe the cluster ... Provide them through ...`)
   instead of 1.7 KB of AWS SDK debug output; other AWS errors drop the SDK debug dump too.
   The full SDK error is logged at `--log-level debug` (#47).
+- A context that is not in the kubeconfig is reported as such (`context "docker-desktop" is
+  not in the kubeconfig (<path>); allowed contexts: ...`); the `--contexts` advice is kept for
+  contexts that exist but are not allowed (#51).
 
 ## [0.2.0] - 2026-11-16
 

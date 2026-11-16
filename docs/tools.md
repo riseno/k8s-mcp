@@ -261,3 +261,28 @@ Who AWS maps into the cluster: access entries with their access policies, and aw
 | Input | Type | Description |
 |---|---|---|
 | `context` | string | Kubeconfig context (default: the server's default context). |
+
+### `eks_identity_check`
+
+Does a ServiceAccount's AWS identity work? IRSA (role annotation, role exists, trust policy names this cluster's OIDC provider and the ServiceAccount, IAM OIDC provider registered) and EKS Pod Identity (association, role trust, agent), plus whether its pods got the credentials injected. Without AWS credentials it returns the Kubernetes side with cloud_checks: skipped.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+| `service_account` **(required)** | string | ServiceAccount name. |
+
+### `eks_logs`
+
+CloudWatch Logs for the cluster: control-plane logs (api, audit, authenticator, controllerManager, scheduler) or Container Insights application logs for a namespace or pod, filtered by grep and since (1h). Lines are redacted and untrusted. Control-plane logs are refused while --namespaces restricts namespaces.
+
+| Input | Type | Description |
+|---|---|---|
+| `component` | string | Control-plane component: api, audit, authenticator, controllerManager or scheduler. |
+| `context` | string | Kubeconfig context. |
+| `grep` | string | Text the lines must contain. |
+| `limit` | integer | Most lines (default 100, max 500). |
+| `namespace` | string | Application logs of this namespace (required when --namespaces restricts namespaces). |
+| `pod` | string | Application logs of this pod. |
+| `since` | string | Look-back window such as `30m` or `6h` (default `1h`, at most `24h`). |
+| `source` | string | `control-plane` (default; log group /aws/eks/<cluster>/cluster) or `application` (Container Insights, /aws/containerinsights/<cluster>/application). |

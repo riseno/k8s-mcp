@@ -1467,3 +1467,80 @@ async fn recent_changes_reports_rollouts_and_helm_releases() {
         env.summary
     );
 }
+
+/// v0.2 acceptance criterion 3, Kubernetes side: when the AWS half cannot run (here the
+/// context is not identified as EKS, so no AWS client is even built, and no test can reach
+/// AWS), eks_identity_check still returns the ServiceAccount and pod checks with
+/// `cloud checks skipped`.
+#[cfg(feature = "provider-eks")]
+#[tokio::test]
+async fn eks_identity_check_returns_the_kubernetes_side_when_aws_is_unavailable() {
+    let sa = json!({"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "api", "namespace": "shop",
+        "annotations": {"eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/shop-api"}}});
+    let mut p = pod("shop", "api-1", "Running", None, 0);
+    p["spec"]["serviceAccountName"] = json!("api");
+    let mock = MockApi::new()
+        .get("/api/v1/namespaces/shop/serviceaccounts/api", sa)
+        .list("/api/v1/namespaces/shop/pods", vec![p])
+        .list("/api/v1/nodes", vec![])
+        .start();
+    let input = k8s_mcp_tools::EksIdentityInput {
+        service_account: "api".into(),
+        ..Default::default()
+    };
+    let env = k8s_mcp_tools::eks_identity_check(&ctx(&mock, Policy::permissive()), input)
+        .await
+        .unwrap();
+    assert!(
+        env.summary.contains("cloud checks skipped: "),
+        "{}",
+        env.summary
+    );
+    let rows: Vec<String> = env
+        .items
+        .iter()
+        .map(|i| {
+            format!(
+                "{} {} {}",
+                i["side"].as_str().unwrap(),
+                i["check"].as_str().unwrap(),
+                i["result"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "kubernetes IRSA role annotation ok",
+            "kubernetes IRSA credentials injected into pods fail"
+        ]
+    );
+    assert_eq!(env.findings[0].id, "eks.identity.pods_not_injected");
+}
+
+/// Control-plane logs span every namespace: refused under a namespace allow-list, before
+/// anything is asked of AWS.
+#[cfg(feature = "provider-eks")]
+#[tokio::test]
+async fn eks_logs_respect_the_namespace_policy() {
+    let mock = MockApi::new().start();
+    let restricted = ctx(&mock, policy(&["shop"], &[]));
+    let err = k8s_mcp_tools::eks_logs(&restricted, k8s_mcp_tools::EksLogsInput::default())
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("control-plane logs cover every namespace"),
+        "{err}"
+    );
+    let other = k8s_mcp_tools::EksLogsInput {
+        source: Some("application".into()),
+        namespace: Some("payments".into()),
+        ..Default::default()
+    };
+    let err = k8s_mcp_tools::eks_logs(&restricted, other)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("not allowed"), "{err}");
+    assert!(mock.requests.lock().unwrap().is_empty());
+}

@@ -70,6 +70,39 @@ pub struct AccessMapping {
     pub cluster_admin: bool,
 }
 
+/// One step of a workload identity check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityCheck {
+    /// `kubernetes` or the cloud's name.
+    pub side: &'static str,
+    /// What was checked.
+    pub check: String,
+    /// `ok`, `fail`, `missing` or `skipped`.
+    pub result: &'static str,
+    /// What was found.
+    pub detail: String,
+}
+
+/// A workload identity check: every step, plus whether the cloud half ran.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct IdentityReport {
+    /// The steps, Kubernetes side first.
+    pub checks: Vec<IdentityCheck>,
+    /// `done`, or `skipped: <reason>` when the cloud could not be asked.
+    pub cloud_checks: String,
+}
+
+/// Log lines from the cloud's logging service.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CloudLogs {
+    /// Where they came from (log group and filter).
+    pub source: String,
+    /// Lines, oldest first, already redacted by the caller.
+    pub lines: Vec<String>,
+    /// More lines matched than were returned.
+    pub truncated: bool,
+}
+
 /// A provider's answer: rows plus findings.
 pub type Report<T> = (T, Vec<Finding>);
 
@@ -85,6 +118,44 @@ pub trait Provider {
     fn addons(&self) -> impl Future<Output = Result<Report<Vec<Addon>>>> + Send;
     /// Cloud principals mapped into the cluster.
     fn access(&self) -> impl Future<Output = Result<Report<Vec<AccessMapping>>>> + Send;
+    /// The cloud identity of a ServiceAccount: the Kubernetes side always, the cloud side when
+    /// credentials allow (otherwise `cloud_checks` says why it was skipped).
+    fn identity_check(
+        &self,
+        k8s: &WorkloadIdentity,
+    ) -> impl Future<Output = Report<IdentityReport>> + Send;
+    /// Lines from the cloud's logging service.
+    fn logs(&self, q: &LogQuery) -> impl Future<Output = Result<CloudLogs>> + Send;
+}
+
+/// The Kubernetes side of a workload identity check, gathered by the caller.
+#[derive(Debug, Clone, Default)]
+pub struct WorkloadIdentity {
+    /// The ServiceAccount.
+    pub service_account: k8s_openapi::api::core::v1::ServiceAccount,
+    /// Pods running as it.
+    pub pods: Vec<k8s_openapi::api::core::v1::Pod>,
+    /// Whether the provider's identity agent (DaemonSet) runs and is ready; `None` if unknown.
+    pub agent_ready: Option<bool>,
+}
+
+/// What `logs` should return.
+#[derive(Debug, Clone, Default)]
+pub struct LogQuery {
+    /// `control-plane` or `application`.
+    pub source: String,
+    /// Control-plane component (`api`, `audit`, `authenticator`, `controllerManager`, `scheduler`).
+    pub component: Option<String>,
+    /// Application logs of this namespace.
+    pub namespace: Option<String>,
+    /// Application logs of this pod.
+    pub pod: Option<String>,
+    /// Text that lines must contain.
+    pub grep: Option<String>,
+    /// Start of the window, as Unix milliseconds.
+    pub since_ms: i64,
+    /// Most lines to return.
+    pub limit: i32,
 }
 
 fn with_findings(mut e: Envelope, mut findings: Vec<Finding>) -> Envelope {
@@ -172,4 +243,54 @@ pub fn access_envelope(
         .map(|m| json!({"principal": m.principal, "source": m.source, "username": m.username, "grants": m.grants.join(","), "admin": m.cluster_admin}))
         .collect();
     with_findings(e, findings)
+}
+
+/// `<provider>_identity_check`.
+pub fn identity_envelope(
+    p: ProviderId,
+    subject: &str,
+    (report, findings): Report<IdentityReport>,
+) -> Envelope {
+    let failed = report
+        .checks
+        .iter()
+        .filter(|c| matches!(c.result, "fail" | "missing"))
+        .count();
+    let mut e = Envelope::new(format!(
+        "{} identity of {subject}: {} checks, {failed} failed; cloud checks {}{}",
+        p.as_str().to_uppercase(),
+        report.checks.len(),
+        report.cloud_checks,
+        top(&findings)
+    ));
+    e.columns = vec!["side", "check", "result", "detail"];
+    e.items = report
+        .checks
+        .iter()
+        .map(|c| json!({"side": c.side, "check": c.check, "result": c.result, "detail": c.detail}))
+        .collect();
+    with_findings(e, findings)
+}
+
+/// `<provider>_logs`: the lines are cloud-held log text, so the section is untrusted.
+pub fn logs_envelope(p: ProviderId, logs: CloudLogs) -> Envelope {
+    let mut e = Envelope::new(format!(
+        "{} {} log lines from {}{}",
+        p.as_str().to_uppercase(),
+        logs.lines.len(),
+        logs.source,
+        if logs.truncated {
+            " (more matched: narrow with grep, since or limit)"
+        } else {
+            ""
+        }
+    ));
+    // Truncation happened on the cloud side (the summary says so), not by the size cap.
+    e.sections.push(k8s_mcp_core::envelope::Section {
+        title: format!("LOGS ({})", logs.source),
+        lines: logs.lines,
+        untrusted: Some(vec![("source".into(), "log".into())]),
+    });
+    e.untrusted_fields = vec!["sections[?(@.untrusted)].lines".into()];
+    e
 }

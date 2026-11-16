@@ -6,6 +6,14 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `eks_identity_check`: IRSA and EKS Pod Identity for a ServiceAccount, with rules
+  `eks.irsa.role_missing`, `eks.irsa.trust_mismatch` (sub/aud conditions, StringLike
+  wildcards), `eks.irsa.oidc_provider_missing`, `eks.pod_identity.association_missing`,
+  `eks.pod_identity.trust_mismatch`, `eks.pod_identity.agent_missing` and
+  `eks.identity.pods_not_injected`. Without AWS credentials it returns the Kubernetes side with
+  `cloud checks skipped`.
+- `eks_logs`: CloudWatch control-plane and Container Insights application logs, redacted and
+  untrusted; control-plane logs are refused while the namespace policy restricts namespaces.
 - Amazon EKS provider (cargo feature `provider-eks`, default): `eks_cluster_info`,
   `eks_nodegroups`, `eks_addons` and `eks_access`, with rules `eks.cluster.*` (health
   issues, public endpoint, audit logging off, aws-auth-only access), `eks.nodegroup.*`

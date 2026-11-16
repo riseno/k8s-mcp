@@ -94,14 +94,21 @@ NEXT
 
 | Toolset | Tools |
 |---|---|
-| `core` | `list_contexts`, `cluster_overview`, `api_resources`, `list_resources`, `get_resource`, `list_events`, `get_logs`, `top`, `check_permissions` |
-| `diagnose` | `diagnose_pod`, `diagnose_workload`, `diagnose_node`, `find_problems` |
+| `core` | `list_contexts`, `cluster_overview`, `api_resources`, `list_resources`, `get_resource`, `list_events`, `get_logs`, `top`, `autoscaling_status`, `recent_changes`, `rollout_history`, `check_permissions` |
+| `diagnose` | `diagnose_pod`, `diagnose_workload`, `diagnose_node`, `diagnose_service`, `diagnose_pvc`, `diagnose_dns`, `find_problems` |
+| `eks` (when the cluster is EKS) | `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check`, `eks_logs` ([docs/providers/eks.md](docs/providers/eks.md)) |
 
-Prompts: `investigate-incident`, `cluster-health-check`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
+Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `access-review`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules` and the template `k8s-mcp://cluster/{context}/overview`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
+
+## In-cluster endpoint
+
+One shared, audited endpoint for a team: `helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-namespace`
+serves streamable HTTP at `/mcp`, authenticates callers with Kubernetes tokens (TokenReview)
+and acts with a read-only ServiceAccount. See [docs/in-cluster.md](docs/in-cluster.md).
 
 ## Safety model
 
-- **Read-only.** v0.1 has no write tools at all; every tool carries `readOnlyHint: true`.
+- **Read-only.** There are no write tools yet (they arrive, opt-in, in v0.4); every tool carries `readOnlyHint: true`.
 - **Secret values are never returned**: only key names and sizes, in every mode.
 - **Redaction** of credentials in logs, env values, annotations, ConfigMaps, args and the audit log (`--redact strict|standard|off`).
 - **Scoping**: only the default context unless `--contexts` widens it; `--namespaces` / `--deny-namespaces` globs.

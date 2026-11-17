@@ -74,7 +74,7 @@ use k8s_mcp_tools as t;
 
 tools! {
     "list_contexts", "core", t::ListContextsInput,
-        "List the kubeconfig contexts this server may target (name, API server host, default namespace, guessed provider, which is default). Never shows credentials. Call when the user mentions another cluster; other tools take `context`.",
+        "List the kubeconfig contexts this server may target (name, API server host, default namespace, provider, which is default). The provider comes from the kubeconfig until a tool has listed the context's nodes, then from the nodes (`provider_source`; `provider_conflict` when they contradict the kubeconfig). Never shows credentials and makes no API calls. Call when the user mentions another cluster; other tools take `context`.",
         |c, i| Ok(t::list_contexts(c, i));
     "cluster_overview", "core", t::ClusterOverviewInput,
         "First call in any investigation: cluster health at a glance. Returns version, node readiness by pool, pods by phase, the 10 most unhealthy pods, warning-event count (1h), provider, metrics-server presence and findings from a quick rule scan. Next: find_problems or diagnose_pod on a listed pod.",

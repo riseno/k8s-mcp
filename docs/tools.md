@@ -8,7 +8,7 @@ Every tool is read-only (`readOnlyHint: true`); the `eks`, `gke` and `aks` tools
 
 ### `list_contexts`
 
-List the kubeconfig contexts this server may target (name, API server host, default namespace, guessed provider, which is default). Never shows credentials. Call when the user mentions another cluster; other tools take `context`.
+List the kubeconfig contexts this server may target (name, API server host, default namespace, provider, which is default). The provider comes from the kubeconfig until a tool has listed the context's nodes, then from the nodes (`provider_source`; `provider_conflict` when they contradict the kubeconfig). Never shows credentials and makes no API calls. Call when the user mentions another cluster; other tools take `context`.
 
 | Input | Type | Description |
 |---|---|---|

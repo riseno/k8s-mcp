@@ -5,6 +5,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `list_contexts` and `k8s-mcp://contexts` report the node-backed provider once a tool has
+  listed a context's nodes (`cluster_overview`, `doctor`, provider tools, startup), with
+  `provider_conflict` when the nodes contradict the kubeconfig, still without an API call. New
+  `provider_source` says which: `nodes`, or `kubeconfig (nodes not checked)` (#71).
+
 ## [0.3.1] - 2026-11-16
 
 ### Fixed

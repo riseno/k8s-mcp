@@ -48,7 +48,14 @@ pub fn list_contexts(ctx: &Ctx, _input: ListContextsInput) -> Envelope {
         contexts.len(),
         ctx.clusters.default_context()
     ));
-    e.columns = vec!["name", "server_host", "namespace", "provider", "is_default"];
+    e.columns = vec![
+        "name",
+        "server_host",
+        "namespace",
+        "provider",
+        "provider_source",
+        "is_default",
+    ];
     e.items = contexts.iter().map(|c| json!(c)).collect();
     e
 }

@@ -554,8 +554,6 @@ fn render_pod(ctx: &Ctx, sc: &Scope, ev: &PodEvidence, findings: Vec<Finding>) -
         });
     }
     e.findings = findings;
-    e.untrusted_fields =
-        vec!["findings[*].evidence[?(@.source=='event' || @.source=='log')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     e
 }
@@ -921,8 +919,6 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
         e.sections.push(events_section(ctx, &warnings, now));
     }
     e.findings = findings;
-    e.untrusted_fields =
-        vec!["findings[*].evidence[?(@.source=='event' || @.source=='log')].text".into()];
     let mut notes = ev.unavailable.clone();
     for p in &ev.pods {
         notes.extend(p.unavailable.iter().cloned());
@@ -1419,8 +1415,6 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
         e.omitted.findings = total - findings.len();
     }
     e.findings = findings;
-    e.untrusted_fields =
-        vec!["findings[*].evidence[?(@.source=='event' || @.source=='log')].text".into()];
     add_notes(&mut e, &un);
     Ok(e)
 }

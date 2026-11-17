@@ -7,12 +7,12 @@ AKS 2 node pools. Top finding: Node pool batch is Running (provisioning Failed).
 FINDINGS
 1. [high/high] aks.nodepool.unhealthy: Node pool batch is Running (provisioning Failed)
    why: The last operation on the node pool did not complete (often VM SKU quota or capacity, subnet address space, or a policy), or the pool is stopped and runs no nodes.
-   evidence (status): provisioningState Failed, powerState Running, node image AKSUbuntu-2204gen2containerd-202611.03.0
+   evidence (status): <<untrusted source="status">> provisioningState Failed, powerState Running, node image AKSUbuntu-2204gen2containerd-202611.03.0 <</untrusted>>
    fix: Read the failed operation in the activity log, fix the cause (request quota for the VM size, enlarge the subnet, adjust the policy), then reconcile with `az aks nodepool update`; for a stopped pool, `az aks nodepool start`.
    docs: https://learn.microsoft.com/troubleshoot/azure/azure-kubernetes/welcome-azure-kubernetes
 2. [medium/high] aks.nodepool.version_skew: Node pool batch runs Kubernetes 1.31.8, behind the control plane's 1.33.2
    why: Node pools may lag the control plane by a few minors, but each lagging minor must be upgraded before the next control-plane upgrade, and new features and fixes do not reach these nodes.
-   evidence (status): node pool version 1.31.8, control plane 1.33.2
+   evidence (status): <<untrusted source="status">> node pool version 1.31.8, control plane 1.33.2 <</untrusted>>
    fix: Upgrade the node pool to the control plane's version (`az aks nodepool upgrade`), which drains nodes and respects PodDisruptionBudgets.
    docs: https://learn.microsoft.com/azure/aks/supported-kubernetes-versions
 

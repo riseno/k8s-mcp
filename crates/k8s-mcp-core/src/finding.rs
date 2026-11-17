@@ -73,7 +73,7 @@ impl Confidence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Source {
-    /// Object status (container states, conditions, phase).
+    /// Object status (container states, conditions, phase; untrusted text).
     Status,
     /// A Kubernetes event (untrusted text).
     Event,

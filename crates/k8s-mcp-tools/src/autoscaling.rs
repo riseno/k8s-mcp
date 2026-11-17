@@ -220,7 +220,6 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
     e.columns = vec!["kind", "name", "status", "size", "limits"];
     e.items = rows(&ev);
     e.findings = findings;
-    e.untrusted_fields = vec!["findings[*].evidence[?(@.source=='event')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

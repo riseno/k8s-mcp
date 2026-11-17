@@ -7,7 +7,7 @@ EKS 3 principals mapped into the cluster, 2 with cluster-admin. Top finding: aws
 FINDINGS
 1. [high/high] eks.access.aws_auth_invalid: aws-auth mapUsers is not valid YAML
    why: EKS ignores mappings it cannot parse: nodes mapped through aws-auth cannot join and users mapped there are refused.
-   evidence (status): error: line 3 column 11: unclosed bracket '['
+   evidence (status): <<untrusted source="status">> error: line 3 column 11: unclosed bracket '[' <</untrusted>>
    fix: Fix the YAML of the aws-auth ConfigMap in kube-system (a list of rolearn/userarn, username and groups), or move the mappings to access entries.
    docs: https://docs.aws.amazon.com/eks/latest/userguide/grant-k8s-access.html
 

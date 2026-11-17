@@ -205,10 +205,6 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
         });
     }
     e.findings = findings;
-    e.untrusted_fields = vec![
-        "findings[*].evidence[?(@.source=='log')].text".into(),
-        "sections[?(@.untrusted)].lines".into(),
-    ];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

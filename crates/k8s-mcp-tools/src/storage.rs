@@ -204,7 +204,6 @@ pub async fn diagnose_pvc(ctx: &Ctx, input: DiagnosePvcInput) -> Result<Envelope
         e.sections.push(events_section(ctx, &events, now));
     }
     e.findings = findings;
-    e.untrusted_fields = vec!["findings[*].evidence[?(@.source=='event')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

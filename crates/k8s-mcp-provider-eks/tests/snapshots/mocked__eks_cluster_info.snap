@@ -7,7 +7,7 @@ EKS cluster shop: Kubernetes 1.33, status ACTIVE. Top finding: EKS cluster shop 
 FINDINGS
 1. [high/high] eks.cluster.unhealthy: EKS cluster shop is ACTIVE with 1 health issue(s)
    why: EKS reports control-plane problems that it cannot fix by itself, typically because a resource it depends on (subnets, security groups, the cluster IAM role, a KMS key) was changed or deleted.
-   evidence (status): Ec2SubnetNotFound: One or more subnets are no longer available: subnet-0dead
+   evidence (status): <<untrusted source="status">> Ec2SubnetNotFound: One or more subnets are no longer available: subnet-0dead <</untrusted>>
    fix: Fix each issue in the evidence on the AWS side (restore the subnet, security group, IAM role or KMS key permission); EKS clears the issue once the resource works again.
    docs: https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html
 2. [low/high] eks.cluster.public_endpoint: The API server of shop accepts connections from any IP address

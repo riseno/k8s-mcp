@@ -175,7 +175,6 @@ pub async fn diagnose_service(ctx: &Ctx, input: DiagnoseServiceInput) -> Result<
         e.sections.push(events_section(ctx, &ev.events, now));
     }
     e.findings = findings;
-    e.untrusted_fields = vec!["findings[*].evidence[?(@.source=='event')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

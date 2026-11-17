@@ -36,6 +36,10 @@ All notable changes are documented here. The format follows
 - `list_resources kind=pods` (or `nodes`) no longer says "Kind Pod is also served by
   metrics.k8s.io/v1beta1" on clusters with metrics-server: only resources of the same kind
   count as alternatives, not ones that share the plural (`PodMetrics`, `NodeMetrics`) (#77).
+- Finding evidence from object `status` (condition and container messages, which anything with
+  status write access chooses) is wrapped as untrusted like event and log evidence, in the JSON
+  as well as the text, and `untrusted_fields` lists it for every tool, `diagnose_node`
+  included. The envelope now adds the evidence path itself instead of each tool (#78).
 
 ## [0.3.1] - 2026-11-16
 

@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_cause, rank};
-use k8s_mcp_core::text::{dedup_lines, is_marker_line, strip_ansi};
+use k8s_mcp_core::text::{dedup_lines, escape_controls, is_marker_line, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
     ContainerLog, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind, ServiceEvidence,
@@ -301,7 +301,7 @@ pub(crate) async fn container_logs(
             "{}logs of container {container}",
             if previous { "previous " } else { "" }
         );
-        match api.logs(&name, &lp).await {
+        match pod_logs(&api, &name, &lp).await {
             Ok(raw) if raw.starts_with("unable to retrieve container logs") => {
                 un.push(Unavailable {
                     what,
@@ -340,8 +340,35 @@ fn note(
 
 /// Redact one container log: exact Secret values first (every level), then patterns, tracking
 /// multi-line PEM keys.
+/// A container's log as text. Read as bytes because `Api::logs` fails the whole read on one
+/// invalid UTF-8 byte (riseno/k8s-mcp#75): such bytes become `�` here.
+pub async fn pod_logs(api: &Api<Pod>, name: &str, lp: &LogParams) -> kube::Result<String> {
+    let req = kube::core::Request::new(api.resource_url())
+        .logs(name, lp)
+        .map_err(kube::Error::BuildRequest)?;
+    let res = api
+        .clone()
+        .into_client()
+        .send(req.map(kube::client::Body::from))
+        .await?;
+    let code = res.status();
+    let text = String::from_utf8_lossy(&res.into_body().collect_bytes().await?).into_owned();
+    if code.is_client_error() || code.is_server_error() {
+        // As kube-client does: a `Status` body, or else the body as the message.
+        let status = serde_json::from_str::<kube::core::Status>(&text).unwrap_or_else(|_| {
+            kube::core::Status::failure(text.trim(), "Failed to parse error data")
+                .with_code(code.as_u16())
+        });
+        return Err(kube::Error::Api(status.boxed()));
+    }
+    Ok(text)
+}
+
 pub fn redact_log(ctx: &Ctx, raw: &str, secret_values: &[String]) -> Vec<String> {
-    let mut lines: Vec<String> = raw.lines().map(|l| strip_ansi(l).into_owned()).collect();
+    let mut lines: Vec<String> = raw
+        .lines()
+        .map(|l| escape_controls(&strip_ansi(l)).into_owned())
+        .collect();
     k8s_mcp_core::redact::scrub_values(&mut lines, secret_values);
     ctx.redactor.lines(lines.iter().map(String::as_str))
 }

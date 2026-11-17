@@ -22,6 +22,11 @@ All notable changes are documented here. The format follows
   "could not reach the API server" error at the first failed request instead of noting each
   one and running into the 30 s call timeout. The timeout message no longer assumes a large
   request (#80).
+- `get_logs` and `diagnose_pod` show logs that contain invalid UTF-8 (binary output, Latin-1,
+  a cut multi-byte character) with `�` for the bad bytes instead of dropping the whole log
+  with a misleading network error. Control characters other than tab are shown as symbols
+  (`\0` as `␀`, a lone `\r` as `␍`), and a response that cannot be decoded gets its own
+  message (#75).
 
 ## [0.3.1] - 2026-11-16
 

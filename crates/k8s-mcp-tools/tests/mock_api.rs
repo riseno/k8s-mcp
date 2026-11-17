@@ -823,6 +823,55 @@ async fn get_logs_masks_secret_values_and_multi_line_keys() {
     assert!(all.contains("ready"));
 }
 
+/// riseno/k8s-mcp#75: invalid UTF-8 and control bytes in a log are shown, not a lost log.
+#[tokio::test]
+async fn binary_log_output_is_decoded_and_escaped() {
+    let mock = MockApi::new()
+        .get(
+            "/api/v1/namespaces/shop/pods/api-1",
+            pod("shop", "api-1", "Running", None, 0),
+        )
+        .get_bytes(
+            "/api/v1/namespaces/shop/pods/api-1/log",
+            b"start\r\nbinary \xff\xfe\x00\x01 end\nERROR invalid utf8 \xc3\x28 here\ntab\there\n",
+        )
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let expected = [
+        "start",
+        "binary \u{fffd}\u{fffd}␀␁ end",
+        "ERROR invalid utf8 \u{fffd}( here",
+        "tab\there",
+    ];
+    let logs = k8s_mcp_tools::get_logs(
+        &c,
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(logs.sections[0].lines, expected, "{}", logs.render());
+    let diag = k8s_mcp_tools::diagnose_pod(
+        &c,
+        DiagnosePodInput {
+            name: "api-1".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let section = diag.sections.iter().find(|s| s.title.starts_with("LOG EXCERPT"));
+    assert_eq!(
+        section.map(|s| &s.lines[..]),
+        Some(&expected.map(String::from)[..]),
+        "{}",
+        diag.render()
+    );
+}
+
 /// riseno/k8s-mcp#46: when RBAC hides a Secret the pod uses, its values cannot be masked, and
 /// the summary says so (get_logs and diagnose_pod).
 #[tokio::test]

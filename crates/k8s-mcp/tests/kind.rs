@@ -426,5 +426,20 @@ async fn renamed_context_never_reaches_a_cloud() {
         text.contains("on kind (the context looks like gke"),
         "{text}"
     );
+    // Issue #71: list_contexts then reports what the nodes said, without an API call.
+    let (_, r) = call(&client, "list_contexts", json!({})).await;
+    let row = &r.structured_content.unwrap()["items"][0];
+    assert_eq!(
+        (&row["provider"], &row["provider_source"]),
+        (&json!(null), &json!("nodes")),
+        "{row}"
+    );
+    assert!(
+        row["provider_conflict"]
+            .as_str()
+            .unwrap()
+            .ends_with("its nodes run on kind"),
+        "{row}"
+    );
     client.cancel().await.unwrap();
 }

@@ -16,7 +16,7 @@ use k8s_openapi::api::core::v1::Node;
 
 use crate::error::{Error, Result};
 use crate::policy::Policy;
-use crate::provider::{Detection, Signals, detect};
+use crate::provider::{Detection, ProviderId, Signals, detect};
 
 /// Name used for the in-cluster ServiceAccount "context".
 pub const IN_CLUSTER: &str = "in-cluster";
@@ -51,9 +51,25 @@ pub struct ContextInfo {
     pub namespace: String,
     /// Whether this is the default context.
     pub is_default: bool,
-    /// Provider guessed from the server host or exec plugin (no cloud calls).
+    /// Provider detected from the kubeconfig, or from its nodes once a tool has listed them
+    /// (no cloud calls).
     pub provider: Option<&'static str>,
+    /// `nodes` when the nodes were checked, else `kubeconfig (nodes not checked)`.
+    pub provider_source: &'static str,
+    /// Why the kubeconfig's provider does not hold, when the nodes contradict it (#64).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_conflict: Option<String>,
 }
+
+/// What the nodes of a context said about its provider, the last time a tool listed them.
+#[derive(Debug, Clone)]
+struct NodeCheck {
+    provider: Option<ProviderId>,
+    conflict: Option<String>,
+}
+
+const FROM_NODES: &str = "nodes";
+const FROM_KUBECONFIG: &str = "kubeconfig (nodes not checked)";
 
 /// One API resource from discovery.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -115,6 +131,8 @@ pub struct ClusterManager {
     pub exec_plugins: Vec<String>,
     clients: Mutex<HashMap<String, Client>>,
     discovery: Mutex<HashMap<String, (Instant, Discovered)>>,
+    /// Node-backed detection per context, from tools that listed the nodes (#71).
+    node_checks: Mutex<HashMap<String, NodeCheck>>,
 }
 
 impl ClusterManager {
@@ -168,6 +186,7 @@ impl ClusterManager {
             exec_plugins,
             clients: Mutex::default(),
             discovery: Mutex::default(),
+            node_checks: Mutex::default(),
         })
     }
 
@@ -182,6 +201,7 @@ impl ClusterManager {
             exec_plugins: Vec::new(),
             clients: Mutex::default(),
             discovery: Mutex::default(),
+            node_checks: Mutex::default(),
         }
     }
 
@@ -195,6 +215,7 @@ impl ClusterManager {
             exec_plugins: Vec::new(),
             clients: Mutex::default(),
             discovery: Mutex::default(),
+            node_checks: Mutex::default(),
         }
     }
 
@@ -206,13 +227,40 @@ impl ClusterManager {
     /// Detect the cloud provider of a context from its kubeconfig and, when given, its nodes.
     /// No cloud calls.
     pub fn detect_provider(&self, context: &str, nodes: &[Node]) -> Option<Detection> {
+        self.remember_nodes(context, nodes);
         self.with_signals(context, nodes, detect)
     }
 
     /// When the context's kubeconfig looks like one cloud but its nodes run elsewhere, why
     /// (see [`crate::provider::conflict`]).
     pub fn detection_conflict(&self, context: &str, nodes: &[Node]) -> Option<String> {
+        self.remember_nodes(context, nodes);
         self.with_signals(context, nodes, crate::provider::conflict)
+    }
+
+    /// Keep what listed nodes say, so `contexts()` can report it without an API call (#71).
+    fn remember_nodes(&self, context: &str, nodes: &[Node]) {
+        if nodes.is_empty() {
+            return;
+        }
+        let check = NodeCheck {
+            provider: self
+                .with_signals(context, nodes, detect)
+                .map(|d| d.provider),
+            conflict: self.with_signals(context, nodes, crate::provider::conflict),
+        };
+        self.node_checks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(context.to_owned(), check);
+    }
+
+    fn node_check(&self, context: &str) -> Option<NodeCheck> {
+        self.node_checks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(context)
+            .cloned()
     }
 
     fn with_signals<T>(&self, context: &str, nodes: &[Node], f: impl Fn(&Signals) -> T) -> T {
@@ -243,6 +291,8 @@ impl ClusterManager {
                 namespace: self.default_namespace.clone(),
                 is_default: true,
                 provider: None,
+                provider_source: FROM_KUBECONFIG,
+                provider_conflict: None,
             }];
         };
         let mut out: Vec<ContextInfo> = kc
@@ -251,10 +301,20 @@ impl ClusterManager {
             .filter(|c| policy.context_allowed(&c.name, &self.default_context))
             .map(|c| {
                 let ctx = c.context.as_ref();
+                let checked = self.node_check(&c.name);
+                let (provider, provider_source, provider_conflict) = match checked {
+                    Some(n) => (n.provider.map(ProviderId::as_str), FROM_NODES, n.conflict),
+                    None => (
+                        self.detect_provider(&c.name, &[])
+                            .map(|d| d.provider.as_str()),
+                        FROM_KUBECONFIG,
+                        None,
+                    ),
+                };
                 ContextInfo {
-                    provider: self
-                        .detect_provider(&c.name, &[])
-                        .map(|d| d.provider.as_str()),
+                    provider,
+                    provider_source,
+                    provider_conflict,
                     server_host: kubeconfig_signals(kc, &c.name).0,
                     namespace: ctx
                         .and_then(|c| c.namespace.clone())
@@ -557,6 +617,44 @@ users:
             cm,
             Policy::new(&ctx, &[], &[], RedactLevel::Standard, 24_000).unwrap(),
         )
+    }
+
+    /// Issue #71: once nodes were listed, contexts() reports what they say (here: a context
+    /// that looks like EKS, whose nodes run on kind), still without an API call.
+    #[test]
+    fn contexts_use_the_last_node_check() {
+        let (cm, policy) = load(&["prod"]);
+        let prod = |cm: &ClusterManager| {
+            cm.contexts(&policy)
+                .into_iter()
+                .find(|c| c.name == "prod")
+                .unwrap()
+        };
+        let before = prod(&cm);
+        assert_eq!(
+            (
+                before.provider,
+                before.provider_source,
+                before.provider_conflict.as_deref()
+            ),
+            (Some("eks"), FROM_KUBECONFIG, None)
+        );
+        let kind: Vec<Node> = serde_json::from_value(serde_json::json!([{"metadata": {"name": "n"}, "spec": {"providerID": "kind://docker/dev/n"}}])).unwrap();
+        assert!(cm.detect_provider("prod", &kind).is_none());
+        let after = prod(&cm);
+        assert_eq!((after.provider, after.provider_source), (None, FROM_NODES));
+        assert!(
+            after
+                .provider_conflict
+                .unwrap()
+                .ends_with("but its nodes run on kind")
+        );
+        assert_eq!(prod(&cm).provider_source, FROM_NODES, "kept");
+        assert_eq!(
+            cm.contexts(&policy)[0].provider_source,
+            FROM_KUBECONFIG,
+            "other contexts unchanged"
+        );
     }
 
     #[test]

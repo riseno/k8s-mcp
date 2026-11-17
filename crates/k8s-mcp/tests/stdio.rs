@@ -341,14 +341,21 @@ async fn spawn_with_plugin(dir: &Path, command: &str) -> RunningService<RoleClie
 #[tokio::test]
 async fn exec_plugin_failures_never_echo_output_or_env() {
     let dir = tempfile::tempdir().unwrap();
-    fake_plugin(dir.path(), "bad-json-plugin", "echo 'not json at all STDOUTTOKEN789'");
+    fake_plugin(
+        dir.path(),
+        "bad-json-plugin",
+        "echo 'not json at all STDOUTTOKEN789'",
+    );
     fake_plugin(
         dir.path(),
         "failing-plugin",
         "echo STDOUTTOKEN789; echo STDERRTOKEN123 >&2; exit 1",
     );
     for (plugin, expected) in [
-        ("bad-json-plugin", "plugin's output is not an ExecCredential"),
+        (
+            "bad-json-plugin",
+            "plugin's output is not an ExecCredential",
+        ),
         ("failing-plugin", "plugin failed (exit status: 1)"),
     ] {
         let client = spawn_with_plugin(dir.path(), plugin).await;

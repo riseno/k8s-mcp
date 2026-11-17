@@ -105,13 +105,17 @@ impl Error {
 
 /// What went wrong with the credentials, without any plugin output.
 fn auth_failure(a: &AuthError) -> String {
-    const RUN_IT: &str = "Run the plugin command yourself to see its error, re-authenticate if needed, then retry.";
+    const RUN_IT: &str =
+        "Run the plugin command yourself to see its error, re-authenticate if needed, then retry.";
     match a {
         AuthError::AuthExecStart(e) => format!(
             "the kubeconfig exec auth plugin could not be started ({e}). Is the plugin (for example `aws`, `gke-gcloud-auth-plugin` or `kubelogin`) installed and on PATH for this MCP client? Install it, or start k8s-mcp with --path-prepend <dir containing it>."
         ),
         AuthError::AuthExecRun { out, .. } => {
-            format!("the kubeconfig exec auth plugin failed ({}). {RUN_IT}", out.status)
+            format!(
+                "the kubeconfig exec auth plugin failed ({}). {RUN_IT}",
+                out.status
+            )
         }
         AuthError::AuthExecParse(_) | AuthError::ExecPluginFailed => {
             format!("the kubeconfig exec auth plugin's output is not an ExecCredential. {RUN_IT}")

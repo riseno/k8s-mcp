@@ -212,6 +212,9 @@ mod tests {
     #[test]
     fn control_characters_are_shown_not_sent() {
         assert_eq!(escape_controls("a\tb"), "a\tb");
-        assert_eq!(escape_controls("x\0\x01\x1b\ry\x7f\u{85}"), "x␀␁␛␍y␡\u{fffd}");
+        assert_eq!(
+            escape_controls("x\0\x01\x1b\ry\x7f\u{85}"),
+            "x␀␁␛␍y␡\u{fffd}"
+        );
     }
 }

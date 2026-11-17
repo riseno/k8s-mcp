@@ -384,12 +384,16 @@ pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelo
     {
         let why = match registered.preferred_version.as_ref() {
             Some(v) => match apiservice(&sc.target.client, &format!("{}.{g}", v.version)).await {
-                Some(Aggregated::Unavailable(why)) => format!(" (APIService {}.{g}: {why})", v.version),
+                Some(Aggregated::Unavailable(why)) => {
+                    format!(" (APIService {}.{g}: {why})", v.version)
+                }
                 _ => String::new(),
             },
             None => String::new(),
         };
-        summary = format!("0 resource kinds: API group {g} is registered but its server is unavailable{why}.");
+        summary = format!(
+            "0 resource kinds: API group {g} is registered but its server is unavailable{why}."
+        );
     }
     if group.is_none() {
         // Name every group, so a truncated table can always be narrowed with `group`.
@@ -1444,7 +1448,8 @@ pub struct TopInput {
 
 /// The APIService that serves `metrics.k8s.io`.
 const METRICS_APISERVICE: &str = "v1beta1.metrics.k8s.io";
-const CHECK_METRICS_SERVER: &str = "Check it with diagnose_workload kind=Deployment name=metrics-server namespace=kube-system.";
+const CHECK_METRICS_SERVER: &str =
+    "Check it with diagnose_workload kind=Deployment name=metrics-server namespace=kube-system.";
 
 /// An aggregated API, by its APIService's `Available` condition (riseno/k8s-mcp#76).
 enum Aggregated {
@@ -1501,7 +1506,11 @@ pub async fn top(ctx: &Ctx, input: TopInput) -> Result<Envelope> {
             match apiservice(&sc.target.client, METRICS_APISERVICE).await {
                 Some(Aggregated::Missing) => "metrics.k8s.io is not available: metrics-server is not installed in this cluster, so live CPU/memory usage cannot be read. Install metrics-server, or use get_resource to see requests/limits.".into(),
                 Some(Aggregated::Unavailable(why)) => format!("metrics-server is installed but unavailable (APIService {METRICS_APISERVICE}: {why}), so live CPU/memory usage cannot be read. {CHECK_METRICS_SERVER}"),
-                Some(Aggregated::Available) => "metrics.k8s.io did not answer discovery although its APIService reports Available; retry in a minute.".into(),
+                Some(Aggregated::Available) => {
+                    // Discovery was cached while it was down: the retry reads it afresh.
+                    ctx.clusters.forget_discovery(&sc.target.context);
+                    "metrics.k8s.io was not served when discovery last ran, and its APIService now reports Available; retry.".into()
+                }
                 None => format!("metrics.k8s.io is not available: metrics-server is not installed or not running (APIService {METRICS_APISERVICE} could not be read to tell which), so live CPU/memory usage cannot be read. {CHECK_METRICS_SERVER}"),
             },
         ));

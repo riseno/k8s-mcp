@@ -138,7 +138,11 @@ fn create_failures(ev: &WorkloadEvidence, ns: &str, out: &mut Vec<Finding>) {
                 .fix("Change the pod template to satisfy the policy's validation, or change the policy or the binding's match rules and parameters.")
                 .docs(docs::VAP);
             if dns_name(&c[1]) {
-                f.next("get_resource", json!({"kind": "ValidatingAdmissionPolicy", "name": &c[1]}), "read the policy's validations")
+                f.next(
+                    "get_resource",
+                    json!({"kind": "ValidatingAdmissionPolicy", "name": &c[1]}),
+                    "read the policy's validations",
+                )
             } else {
                 f
             }
@@ -547,12 +551,18 @@ mod tests {
         }
         // riseno/k8s-mcp#79: the policy is named for a follow-up read.
         let mut ev = base.clone();
-        let vap = cases.iter().find(|c| c.0.contains("ValidatingAdmissionPolicy"));
+        let vap = cases
+            .iter()
+            .find(|c| c.0.contains("ValidatingAdmissionPolicy"));
         ev.events[0].message = vap.map(|c| c.0.into());
         let f = &run(&ev)[0];
         assert_eq!(f.next[0].args["kind"], "ValidatingAdmissionPolicy");
         assert_eq!(f.next[0].args["name"], "v4-no-deny-label");
-        assert!(f.evidence[0].text.contains("pods labelled deny"), "{:?}", f.evidence);
+        assert!(
+            f.evidence[0].text.contains("pods labelled deny"),
+            "{:?}",
+            f.evidence
+        );
     }
 
     #[test]

@@ -863,7 +863,10 @@ async fn binary_log_output_is_decoded_and_escaped() {
     )
     .await
     .unwrap();
-    let section = diag.sections.iter().find(|s| s.title.starts_with("LOG EXCERPT"));
+    let section = diag
+        .sections
+        .iter()
+        .find(|s| s.title.starts_with("LOG EXCERPT"));
     assert_eq!(
         section.map(|s| &s.lines[..]),
         Some(&expected.map(String::from)[..]),

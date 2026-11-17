@@ -414,7 +414,12 @@ impl ClusterManager {
         config.connect_timeout = Some(Duration::from_secs(10));
         config.read_timeout = Some(API_TIMEOUT);
         let what = format!("create a client for context {name:?}");
-        let Some(plugin) = config.auth_info.exec.as_ref().and_then(|e| e.command.clone()) else {
+        let Some(plugin) = config
+            .auth_info
+            .exec
+            .as_ref()
+            .and_then(|e| e.command.clone())
+        else {
             return Client::try_from(config).map_err(|e| Error::kube(what, &e));
         };
         // `Client::try_from` runs the exec plugin with a blocking `Command::output`: on the
@@ -429,7 +434,9 @@ impl ClusterManager {
             ))),
             Err(_) => Err(Error::Unreachable(format!(
                 "cannot {what}: the kubeconfig exec auth plugin `{}` did not finish within {}s. Run it yourself to see why (it may be waiting for a login or the network), then retry.",
-                Path::new(&plugin).file_name().map_or(plugin.as_str().into(), |f| f.to_string_lossy()),
+                Path::new(&plugin)
+                    .file_name()
+                    .map_or(plugin.as_str().into(), |f| f.to_string_lossy()),
                 EXEC_TIMEOUT.as_secs()
             ))),
         }

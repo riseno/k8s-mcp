@@ -33,6 +33,9 @@ All notable changes are documented here. The format follows
   `diagnose_workload` for metrics-server. `api_resources group=<g>` reports a registered
   aggregated group whose server is down instead of "0 resource kinds." The chart's ClusterRole
   gains `get` on `apiregistration.k8s.io` APIServices (#76).
+- `list_resources kind=pods` (or `nodes`) no longer says "Kind Pod is also served by
+  metrics.k8s.io/v1beta1" on clusters with metrics-server: only resources of the same kind
+  count as alternatives, not ones that share the plural (`PodMetrics`, `NodeMetrics`) (#77).
 
 ## [0.3.1] - 2026-11-16
 

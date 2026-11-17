@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-17
+
 ### Fixed
 - The exec deadline kills the processes a plugin started as well (on Linux and macOS): a
   wrapper such as `aws-vault exec … -- aws` or `sh -c` no longer leaves its stalled child

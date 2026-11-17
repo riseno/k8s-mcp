@@ -354,9 +354,9 @@ async fn exec_plugin_failures_never_echo_output_or_env() {
     for (plugin, expected) in [
         (
             "bad-json-plugin",
-            "plugin's output is not an ExecCredential",
+            "`bad-json-plugin` returned output that is not an ExecCredential",
         ),
-        ("failing-plugin", "plugin failed (exit status: 1)"),
+        ("failing-plugin", "`failing-plugin` failed (exit status: 1)"),
     ] {
         let client = spawn_with_plugin(dir.path(), plugin).await;
         let r = call(&client, "list_resources", json!({"kind": "Pod"})).await;
@@ -376,22 +376,50 @@ async fn exec_plugin_failures_never_echo_output_or_env() {
     }
 }
 
-/// riseno/k8s-mcp#73: a stalled exec plugin fails the call after 20 s instead of hanging it.
+/// riseno/k8s-mcp#73, #84: a stalled exec plugin fails the call after 20 s instead of hanging
+/// it, is killed at the deadline, and concurrent calls share one plugin run.
 #[cfg(unix)]
 #[tokio::test]
-async fn stalled_exec_plugin_fails_the_call() {
+async fn stalled_exec_plugin_fails_the_call_and_is_killed() {
     let dir = tempfile::tempdir().unwrap();
-    fake_plugin(dir.path(), "stalled-plugin", "exec sleep 30");
+    let pids = dir.path().join("pids");
+    fake_plugin(
+        dir.path(),
+        "stalled-plugin",
+        &format!("echo $$ >> {}\nexec sleep 30", pids.display()),
+    );
     let client = spawn_with_plugin(dir.path(), "stalled-plugin").await;
     let start = std::time::Instant::now();
-    let r = call(&client, "list_resources", json!({"kind": "Pod"})).await;
-    let t = text(&r);
-    assert!(
-        t.contains("exec auth plugin `stalled-plugin` did not finish within 20s"),
-        "{t}"
+    let (a, b) = tokio::join!(
+        call(&client, "list_resources", json!({"kind": "Pod"})),
+        call(&client, "list_resources", json!({"kind": "Deployment"})),
     );
+    for r in [a, b] {
+        let t = text(&r);
+        assert!(
+            t.contains("exec auth plugin `stalled-plugin` did not finish within 20s"),
+            "{t}"
+        );
+    }
     assert!(start.elapsed().as_secs() < 25, "{:?}", start.elapsed());
-    client.cancel().await.unwrap();
+    let pids = std::fs::read_to_string(&pids).unwrap();
+    let pids: Vec<&str> = pids.lines().collect();
+    assert_eq!(pids.len(), 1, "one plugin run for both calls: {pids:?}");
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", pids[0]])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    for _ in 0..50 {
+        if !alive() {
+            client.cancel().await.unwrap();
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("plugin {} still running while the server runs", pids[0]);
 }
 
 /// riseno/k8s-mcp#80: against an API server that accepts connections and never answers, tools

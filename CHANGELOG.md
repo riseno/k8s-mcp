@@ -5,6 +5,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- A kubeconfig exec plugin that stalls is now killed at the 20 s deadline instead of being left
+  running: each retry used to start another plugin, and they outlived the server. k8s-mcp runs
+  exec plugins itself (ADR 0014), rebuilds a context's client shortly before the exec
+  credential expires, and runs one plugin per context at a time, so concurrent calls share its
+  result (#84).
+
 ## [0.3.2] - 2026-11-17
 
 ### Fixed

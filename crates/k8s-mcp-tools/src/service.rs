@@ -58,7 +58,7 @@ pub async fn diagnose_service(ctx: &Ctx, input: DiagnoseServiceInput) -> Result<
             .map_err(|e| Error::kube(format!("list pods in namespace {ns}"), &e)),
         "pods",
         &mut un,
-    );
+    )?;
     let slices = soft(
         Api::<EndpointSlice>::namespaced(client, &ns)
             .list(
@@ -70,12 +70,12 @@ pub async fn diagnose_service(ctx: &Ctx, input: DiagnoseServiceInput) -> Result<
             .map_err(|e| Error::kube("list endpointslices", &e)),
         "EndpointSlices",
         &mut un,
-    );
+    )?;
     let events = soft(
         events_for(&sc.target, &ns, "Service", &input.name, now).await,
         "service events",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     let ev = ServiceEvidence {
         service,

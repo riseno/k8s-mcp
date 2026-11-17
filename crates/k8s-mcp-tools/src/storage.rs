@@ -68,7 +68,7 @@ pub async fn diagnose_pvc(ctx: &Ctx, input: DiagnosePvcInput) -> Result<Envelope
             .map_err(|e| Error::kube("list storageclasses", &e)),
         "StorageClasses",
         &mut un,
-    );
+    )?;
     let volume = pvc.spec.as_ref().and_then(|s| s.volume_name.clone());
     let pv = match &volume {
         Some(v) => soft(
@@ -78,7 +78,7 @@ pub async fn diagnose_pvc(ctx: &Ctx, input: DiagnosePvcInput) -> Result<Envelope
                 .map_err(|e| Error::kube(format!("get persistentvolume {v}"), &e)),
             "the bound PersistentVolume",
             &mut un,
-        ),
+        )?,
         None => None,
     };
     let pods: Vec<Pod> = soft(
@@ -89,7 +89,7 @@ pub async fn diagnose_pvc(ctx: &Ctx, input: DiagnosePvcInput) -> Result<Envelope
             .map_err(|e| Error::kube(format!("list pods in namespace {ns}"), &e)),
         "pods using the claim",
         &mut un,
-    )
+    )?
     .unwrap_or_default()
     .into_iter()
     .filter(|p| uses_claim(p, &input.name))
@@ -102,7 +102,7 @@ pub async fn diagnose_pvc(ctx: &Ctx, input: DiagnosePvcInput) -> Result<Envelope
             .map_err(|e| Error::kube(format!("list events in namespace {ns}"), &e)),
         "events",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     retain_recent(&mut ns_events, now, SignedDuration::from_hours(1));
     let about = |kind: &str, names: &[&str]| -> Vec<Event> {

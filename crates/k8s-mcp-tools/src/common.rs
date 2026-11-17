@@ -246,16 +246,19 @@ pub fn fallback_namespaces(
     namespaces
 }
 
-/// Fetch something, turning failures into an [`Unavailable`] note instead of an error.
-pub fn soft<T>(res: Result<T>, what: &str, notes: &mut Vec<Unavailable>) -> Option<T> {
+/// Fetch something, turning failures into an [`Unavailable`] note instead of an error. An
+/// unreachable API server or failing credentials still fail the call (riseno/k8s-mcp#80):
+/// every later request would fail the same way, one timeout at a time.
+pub fn soft<T>(res: Result<T>, what: &str, notes: &mut Vec<Unavailable>) -> Result<Option<T>> {
     match res {
-        Ok(v) => Some(v),
+        Ok(v) => Ok(Some(v)),
+        Err(e) if e.is_unreachable() => Err(e),
         Err(e) => {
             notes.push(Unavailable {
                 what: what.to_owned(),
                 reason: e.to_string(),
             });
-            None
+            Ok(None)
         }
     }
 }

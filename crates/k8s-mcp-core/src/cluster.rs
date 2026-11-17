@@ -5,7 +5,7 @@
 //! `PATH` (`--path-prepend`, plus Homebrew dirs on macOS) through their `env`.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -26,6 +26,8 @@ const DISCOVERY_TTL: Duration = Duration::from_secs(300);
 
 /// Per-request timeout for API calls.
 pub const API_TIMEOUT: Duration = Duration::from_secs(20);
+/// Budget for a kubeconfig exec auth plugin to print its credential.
+const EXEC_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Options for [`ClusterManager::load`].
 #[derive(Debug, Clone, Default)]
@@ -411,8 +413,26 @@ impl ClusterManager {
         };
         config.connect_timeout = Some(Duration::from_secs(10));
         config.read_timeout = Some(API_TIMEOUT);
-        Client::try_from(config)
-            .map_err(|e| Error::kube(format!("create a client for context {name:?}"), &e))
+        let what = format!("create a client for context {name:?}");
+        let Some(plugin) = config.auth_info.exec.as_ref().and_then(|e| e.command.clone()) else {
+            return Client::try_from(config).map_err(|e| Error::kube(what, &e));
+        };
+        // `Client::try_from` runs the exec plugin with a blocking `Command::output`: on the
+        // async worker a stalled plugin would hold the call past every timeout (#73).
+        // ponytail: the stalled plugin keeps its blocking thread until it exits; kube-client
+        // owns the process, so it cannot be killed from here.
+        let build = tokio::task::spawn_blocking(move || Client::try_from(config));
+        match tokio::time::timeout(EXEC_TIMEOUT, build).await {
+            Ok(Ok(built)) => built.map_err(|e| Error::kube(what, &e)),
+            Ok(Err(e)) => Err(Error::Api(format!(
+                "cannot {what}: the exec auth plugin task failed ({e})"
+            ))),
+            Err(_) => Err(Error::Unreachable(format!(
+                "cannot {what}: the kubeconfig exec auth plugin `{}` did not finish within {}s. Run it yourself to see why (it may be waiting for a login or the network), then retry.",
+                Path::new(&plugin).file_name().map_or(plugin.as_str().into(), |f| f.to_string_lossy()),
+                EXEC_TIMEOUT.as_secs()
+            ))),
+        }
     }
 
     fn lock_clients(&self) -> std::sync::MutexGuard<'_, HashMap<String, Client>> {

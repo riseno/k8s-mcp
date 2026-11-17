@@ -90,7 +90,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
             .map_err(|e| Error::kube("list nodes", &e)),
         "nodes",
         &mut notes,
-    );
+    )?;
     let namespaces = soft(
         Api::<Namespace>::all(client.clone())
             .list_metadata(&ListParams::default())
@@ -109,7 +109,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
             .map_err(|e| Error::kube("list namespaces", &e)),
         "namespaces",
         &mut notes,
-    );
+    )?;
     let pods: Vec<Pod> = list_scoped(ctx, &sc, &ListParams::default(), "pods", &mut notes).await?;
     let mut warnings: Vec<Event> = soft(
         list_scoped(
@@ -122,7 +122,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
         .await,
         "warning events",
         &mut notes,
-    )
+    )?
     .unwrap_or_default();
     retain_recent(&mut warnings, now, SignedDuration::from_hours(1));
     // One request: full discovery walks every API group, and broken aggregated APIs stall it.

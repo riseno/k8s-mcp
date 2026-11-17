@@ -10,6 +10,18 @@ All notable changes are documented here. The format follows
   listed a context's nodes (`cluster_overview`, `doctor`, provider tools, startup), with
   `provider_conflict` when the nodes contradict the kubeconfig, still without an API call. New
   `provider_source` says which: `nodes`, or `kubeconfig (nodes not checked)` (#71).
+- Exec auth plugin failures no longer echo the plugin's output or the command's environment:
+  a malformed credential (whose parse error quoted stdout, tokens included) and a failing
+  plugin (whose message held every `env:` value and PATH) are reported as "the plugin's
+  output is not an ExecCredential" or "the plugin failed (exit status: N)" (#74).
+- A kubeconfig exec plugin that stalls fails the call after 20 s ("did not finish within
+  20s; run it yourself") instead of holding it indefinitely: kube-client runs the plugin with
+  a blocking call that stopped the 30 s call timeout from firing (#73).
+- When the API server cannot be reached or the credentials fail, tools that gather optional
+  evidence (`recent_changes`, `autoscaling_status`, `diagnose_dns` and others) return the
+  "could not reach the API server" error at the first failed request instead of noting each
+  one and running into the 30 s call timeout. The timeout message no longer assumes a large
+  request (#80).
 
 ## [0.3.1] - 2026-11-16
 

@@ -307,6 +307,116 @@ async fn exec_plugin_token_is_used_via_path_prepend() {
     );
 }
 
+/// A fake exec auth plugin `name` in `dir` that runs `body`.
+#[cfg(unix)]
+fn fake_plugin(dir: &Path, name: &str, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let p = dir.join(name);
+    std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// A server whose only context authenticates with the fake plugin `command` (with an `env:`
+/// secret), found through `--path-prepend dir`.
+#[cfg(unix)]
+async fn spawn_with_plugin(dir: &Path, command: &str) -> RunningService<RoleClient, ()> {
+    let user = format!(
+        "    exec:\n      apiVersion: client.authentication.k8s.io/v1beta1\n      command: {command}\n      env:\n      - {{name: AZURE_CLIENT_SECRET, value: envsecret456}}"
+    );
+    let kc = offline_kubeconfig(dir, "https://127.0.0.1:1", &user);
+    spawn(&[
+        "--kubeconfig",
+        kc.to_str().unwrap(),
+        "--audit-log",
+        "off",
+        "--path-prepend",
+        dir.to_str().unwrap(),
+    ])
+    .await
+}
+
+/// riseno/k8s-mcp#74: a failing or malformed exec plugin is reported without its output, the
+/// parser's excerpt of it, or the command's environment.
+#[cfg(unix)]
+#[tokio::test]
+async fn exec_plugin_failures_never_echo_output_or_env() {
+    let dir = tempfile::tempdir().unwrap();
+    fake_plugin(dir.path(), "bad-json-plugin", "echo 'not json at all STDOUTTOKEN789'");
+    fake_plugin(
+        dir.path(),
+        "failing-plugin",
+        "echo STDOUTTOKEN789; echo STDERRTOKEN123 >&2; exit 1",
+    );
+    for (plugin, expected) in [
+        ("bad-json-plugin", "plugin's output is not an ExecCredential"),
+        ("failing-plugin", "plugin failed (exit status: 1)"),
+    ] {
+        let client = spawn_with_plugin(dir.path(), plugin).await;
+        let r = call(&client, "list_resources", json!({"kind": "Pod"})).await;
+        let t = text(&r);
+        assert_eq!(r.is_error, Some(true), "{t}");
+        assert!(t.contains(expected), "{t}");
+        for leak in [
+            "STDOUTTOKEN789",
+            "STDERRTOKEN123",
+            "envsecret456",
+            "KUBERNETES_EXEC_INFO",
+            "PATH",
+        ] {
+            assert!(!t.contains(leak), "{leak} leaked: {t}");
+        }
+        client.cancel().await.unwrap();
+    }
+}
+
+/// riseno/k8s-mcp#73: a stalled exec plugin fails the call after 20 s instead of hanging it.
+#[cfg(unix)]
+#[tokio::test]
+async fn stalled_exec_plugin_fails_the_call() {
+    let dir = tempfile::tempdir().unwrap();
+    fake_plugin(dir.path(), "stalled-plugin", "exec sleep 30");
+    let client = spawn_with_plugin(dir.path(), "stalled-plugin").await;
+    let start = std::time::Instant::now();
+    let r = call(&client, "list_resources", json!({"kind": "Pod"})).await;
+    let t = text(&r);
+    assert!(
+        t.contains("exec auth plugin `stalled-plugin` did not finish within 20s"),
+        "{t}"
+    );
+    assert!(start.elapsed().as_secs() < 25, "{:?}", start.elapsed());
+    client.cancel().await.unwrap();
+}
+
+/// riseno/k8s-mcp#80: against an API server that accepts connections and never answers, tools
+/// that gather optional evidence fail with the network error before the 30 s call timeout.
+#[tokio::test]
+async fn silent_api_server_fails_with_the_network_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        let held: Vec<_> = listener.incoming().flatten().collect();
+        drop(held);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let kc = offline_kubeconfig(
+        dir.path(),
+        &format!("https://{addr}"),
+        "    token: not-a-real-token",
+    );
+    let client = spawn(&["--kubeconfig", kc.to_str().unwrap(), "--audit-log", "off"]).await;
+    let (changes, autoscaling, dns) = tokio::join!(
+        call(&client, "recent_changes", json!({})),
+        call(&client, "autoscaling_status", json!({})),
+        call(&client, "diagnose_dns", json!({})),
+    );
+    for r in [changes, autoscaling, dns] {
+        let t = text(&r);
+        assert_eq!(r.is_error, Some(true), "{t}");
+        assert!(t.contains("could not reach the API server"), "{t}");
+    }
+    client.cancel().await.unwrap();
+}
+
 fn kind_kubeconfig() -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.dev/kubeconfig");
     assert!(p.exists(), "run `cargo xtask kind-up` first");

@@ -308,7 +308,7 @@ impl K8sMcp {
             Some(_) => {
                 let _permit = self.permits.acquire().await;
                 tokio::select! {
-                    r = tokio::time::timeout(CALL_TIMEOUT, dispatch(&self.ctx, name, args.clone())) => r.unwrap_or_else(|_| Err(k8s_mcp_core::Error::Api(format!("{name} timed out after {}s; narrow the request (namespace, selector, limit) and retry", CALL_TIMEOUT.as_secs())))),
+                    r = tokio::time::timeout(CALL_TIMEOUT, dispatch(&self.ctx, name, args.clone())) => r.unwrap_or_else(|_| Err(k8s_mcp_core::Error::Api(format!("{name} timed out after {}s. If other calls on this context answer, narrow the request (namespace, selector, limit) and retry; if none do, the API server or the context's exec auth plugin is not answering: check network or VPN access, and `k8s-mcp doctor` shows details.", CALL_TIMEOUT.as_secs())))),
                     () = cancelled => Err(k8s_mcp_core::Error::Api("cancelled by the client".into())),
                 }
             }

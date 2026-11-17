@@ -97,12 +97,12 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
     let mut un = Vec::new();
     let nodepools = list_karpenter(&client, "NodePool", "nodepools").await;
     let karpenter_unread = nodepools.as_ref().err().map(unread);
-    let nodepools = soft(nodepools, "Karpenter NodePools", &mut un).flatten();
+    let nodepools = soft(nodepools, "Karpenter NodePools", &mut un)?.flatten();
     let mut nodeclaims_unread = None;
     let nodeclaims = if nodepools.is_some() {
         let claims = list_karpenter(&client, "NodeClaim", "nodeclaims").await;
         nodeclaims_unread = claims.as_ref().err().map(unread);
-        soft(claims, "Karpenter NodeClaims", &mut un)
+        soft(claims, "Karpenter NodeClaims", &mut un)?
             .flatten()
             .unwrap_or_default()
     } else {
@@ -160,7 +160,7 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
         .await,
         "HorizontalPodAutoscalers",
         &mut un,
-    );
+    )?;
     let mut events: Vec<Event> = soft(
         list_scoped(
             ctx,
@@ -172,7 +172,7 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
         .await,
         "NotTriggerScaleUp events",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     retain_recent(&mut events, now, SignedDuration::from_hours(1));
     let ev = AutoscalingEvidence {
@@ -220,7 +220,6 @@ pub async fn autoscaling_status(ctx: &Ctx, input: AutoscalingStatusInput) -> Res
     e.columns = vec!["kind", "name", "status", "size", "limits"];
     e.items = rows(&ev);
     e.findings = findings;
-    e.untrusted_fields = vec!["findings[*].evidence[?(@.source=='event')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

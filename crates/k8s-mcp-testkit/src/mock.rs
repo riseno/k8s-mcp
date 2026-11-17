@@ -15,7 +15,7 @@ struct Route {
     /// When set, the request's query string must contain this.
     query: Option<String>,
     status: u16,
-    body: Value,
+    body: Vec<u8>,
 }
 
 /// Builder for a mock API server.
@@ -53,7 +53,20 @@ impl MockApi {
             path: path.to_owned(),
             query: None,
             status,
-            body,
+            body: bytes(body),
+        });
+        self
+    }
+
+    /// Answer `GET path` with 200 and exactly `body` (for example a log with invalid UTF-8).
+    #[must_use]
+    pub fn get_bytes(mut self, path: &str, body: &[u8]) -> Self {
+        self.routes.push(Route {
+            method: "GET",
+            path: path.to_owned(),
+            query: None,
+            status: 200,
+            body: body.to_vec(),
         });
         self
     }
@@ -73,7 +86,7 @@ impl MockApi {
             path: path.to_owned(),
             query: Some(query.to_owned()),
             status,
-            body,
+            body: bytes(body),
         });
         self
     }
@@ -131,21 +144,17 @@ impl MockApi {
                     Some(r) => (r.status, r.body.clone()),
                     None => (
                         404,
-                        status(
+                        bytes(status(
                             404,
                             "NotFound",
                             &format!("{path} not found (no mock route)"),
-                        ),
+                        )),
                     ),
-                };
-                let bytes = match body {
-                    Value::String(s) => s.into_bytes(),
-                    v => serde_json::to_vec(&v).unwrap(),
                 };
                 send.send_response(
                     http::Response::builder()
                         .status(code)
-                        .body(Body::from(bytes))
+                        .body(Body::from(body))
                         .unwrap(),
                 );
             }
@@ -154,6 +163,14 @@ impl MockApi {
             client: kube::Client::new(svc, "default"),
             requests,
         }
+    }
+}
+
+/// A JSON string body is sent as plain text, anything else as JSON.
+fn bytes(body: Value) -> Vec<u8> {
+    match body {
+        Value::String(s) => s.into_bytes(),
+        v => serde_json::to_vec(&v).unwrap(),
     }
 }
 

@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::common::{bounded, check_name, envelope, scope};
-use crate::diagnose::{pod_secret_values, redact_log, workload_pods};
+use crate::diagnose::{pod_logs, pod_secret_values, redact_log, workload_pods};
 use crate::read::add_notes;
 use crate::rows::unhealthy;
 use crate::{Ctx, Envelope};
@@ -157,7 +157,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 since_seconds: since.map(|d| d.as_secs()),
                 ..LogParams::default()
             };
-            let mut fetched = api.logs(&pod_name, &params(input.previous)).await;
+            let mut fetched = pod_logs(&api, &pod_name, &params(input.previous)).await;
             // Between crash-loop restarts the crashed run is the *current* instance and the
             // previous one may already be gone (riseno/k8s-mcp#28): fall back to it.
             let crashed_now = pod
@@ -175,7 +175,7 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             };
             let fell_back = input.previous && crashed_now && missing(&fetched);
             if fell_back {
-                fetched = api.logs(&pod_name, &params(false)).await;
+                fetched = pod_logs(&api, &pod_name, &params(false)).await;
             }
             let previous = input.previous && !fell_back;
             let raw = match fetched {

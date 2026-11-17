@@ -823,6 +823,58 @@ async fn get_logs_masks_secret_values_and_multi_line_keys() {
     assert!(all.contains("ready"));
 }
 
+/// riseno/k8s-mcp#75: invalid UTF-8 and control bytes in a log are shown, not a lost log.
+#[tokio::test]
+async fn binary_log_output_is_decoded_and_escaped() {
+    let mock = MockApi::new()
+        .get(
+            "/api/v1/namespaces/shop/pods/api-1",
+            pod("shop", "api-1", "Running", None, 0),
+        )
+        .get_bytes(
+            "/api/v1/namespaces/shop/pods/api-1/log",
+            b"start\r\nbinary \xff\xfe\x00\x01 end\nERROR invalid utf8 \xc3\x28 here\ntab\there\n",
+        )
+        .list("/api/v1/namespaces/shop/events", vec![])
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let expected = [
+        "start",
+        "binary \u{fffd}\u{fffd}␀␁ end",
+        "ERROR invalid utf8 \u{fffd}( here",
+        "tab\there",
+    ];
+    let logs = k8s_mcp_tools::get_logs(
+        &c,
+        GetLogsInput {
+            pod: Some("api-1".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(logs.sections[0].lines, expected, "{}", logs.render());
+    let diag = k8s_mcp_tools::diagnose_pod(
+        &c,
+        DiagnosePodInput {
+            name: "api-1".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let section = diag
+        .sections
+        .iter()
+        .find(|s| s.title.starts_with("LOG EXCERPT"));
+    assert_eq!(
+        section.map(|s| &s.lines[..]),
+        Some(&expected.map(String::from)[..]),
+        "{}",
+        diag.render()
+    );
+}
+
 /// riseno/k8s-mcp#46: when RBAC hides a Secret the pod uses, its values cannot be masked, and
 /// the summary says so (get_logs and diagnose_pod).
 #[tokio::test]
@@ -1396,6 +1448,63 @@ async fn cluster_overview_names_the_detected_provider() {
         env.summary.starts_with(
             "Kubernetes v1.33.5-eks-3025e55 on eks (cluster shop, eu-west-1): 1/1 nodes Ready"
         ),
+        "{}",
+        env.summary
+    );
+}
+
+/// riseno/k8s-mcp#76: metrics-server installed but down (APIService Available=False) is not
+/// reported as "not installed", and the three tools agree.
+#[tokio::test]
+async fn unavailable_metrics_server_is_not_called_missing() {
+    let apiservice = json!({"apiVersion": "apiregistration.k8s.io/v1", "kind": "APIService",
+        "metadata": {"name": "v1beta1.metrics.k8s.io"},
+        "spec": {"group": "metrics.k8s.io", "version": "v1beta1", "groupPriorityMinimum": 100, "versionPriority": 100},
+        "status": {"conditions": [{"type": "Available", "status": "False", "reason": "MissingEndpoints",
+            "message": "endpoints for service/metrics-server in \"kube-system\" have no addresses with port name \"https\""}]}});
+    let version = json!({"major": "1", "minor": "33", "gitVersion": "v1.33.1", "gitCommit": "", "gitTreeState": "", "buildDate": "", "goVersion": "", "compiler": "", "platform": ""});
+    let mock = MockApi::new()
+        .get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": []}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [{"name": "metrics.k8s.io",
+            "versions": [{"groupVersion": "metrics.k8s.io/v1beta1", "version": "v1beta1"}],
+            "preferredVersion": {"groupVersion": "metrics.k8s.io/v1beta1", "version": "v1beta1"}}]}))
+        .route("GET", "/apis/metrics.k8s.io/v1beta1", 503, status(503, "ServiceUnavailable", "the server is currently unable to handle the request"))
+        .get("/apis/apiregistration.k8s.io/v1/apiservices/v1beta1.metrics.k8s.io", apiservice)
+        .get("/version", version)
+        .list("/api/v1/nodes", vec![])
+        .list("/api/v1/namespaces", vec![])
+        .list("/api/v1/pods", vec![])
+        .list("/api/v1/events", vec![])
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+    let err = k8s_mcp_tools::top(&c, k8s_mcp_tools::TopInput::default())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.starts_with("metrics-server is installed but unavailable (APIService v1beta1.metrics.k8s.io: MissingEndpoints: endpoints for service/metrics-server")
+            && err.contains("diagnose_workload kind=Deployment name=metrics-server namespace=kube-system"),
+        "{err}"
+    );
+    let env = k8s_mcp_tools::cluster_overview(&c, k8s_mcp_tools::ClusterOverviewInput::default())
+        .await
+        .unwrap();
+    assert!(
+        env.summary.ends_with("metrics-server installed but unavailable (MissingEndpoints: endpoints for service/metrics-server in \"kube-system\" have no addresses with port name \"https\"; top will not work)."),
+        "{}",
+        env.summary
+    );
+    let env = k8s_mcp_tools::api_resources(
+        &c,
+        k8s_mcp_tools::ApiResourcesInput {
+            group: Some("metrics.k8s.io".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        env.summary.starts_with("0 resource kinds: API group metrics.k8s.io is registered but its server is unavailable (APIService v1beta1.metrics.k8s.io: MissingEndpoints"),
         "{}",
         env.summary
     );

@@ -15,6 +15,7 @@ use k8s_openapi::api::authorization::v1::{
     SelfSubjectRulesReview, SelfSubjectRulesReviewSpec,
 };
 use k8s_openapi::api::core::v1::{Event, Namespace, Node, Pod};
+use k8s_openapi::kube_aggregator::pkg::apis::apiregistration::v1::APIService;
 use kube::api::{Api, DynamicObject, ListParams, PostParams};
 use kube::discovery::ApiResource;
 use schemars::JsonSchema;
@@ -90,7 +91,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
             .map_err(|e| Error::kube("list nodes", &e)),
         "nodes",
         &mut notes,
-    );
+    )?;
     let namespaces = soft(
         Api::<Namespace>::all(client.clone())
             .list_metadata(&ListParams::default())
@@ -109,7 +110,7 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
             .map_err(|e| Error::kube("list namespaces", &e)),
         "namespaces",
         &mut notes,
-    );
+    )?;
     let pods: Vec<Pod> = list_scoped(ctx, &sc, &ListParams::default(), "pods", &mut notes).await?;
     let mut warnings: Vec<Event> = soft(
         list_scoped(
@@ -122,14 +123,22 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
         .await,
         "warning events",
         &mut notes,
-    )
+    )?
     .unwrap_or_default();
     retain_recent(&mut warnings, now, SignedDuration::from_hours(1));
     // One request: full discovery walks every API group, and broken aggregated APIs stall it.
-    let metrics = client
-        .list_api_groups()
-        .await
-        .is_ok_and(|g| g.groups.iter().any(|g| g.name == "metrics.k8s.io"));
+    let metrics = match apiservice(&client, METRICS_APISERVICE).await {
+        Some(m) => m,
+        // APIServices not readable: is the group registered at all?
+        None if client
+            .list_api_groups()
+            .await
+            .is_ok_and(|g| g.groups.iter().any(|g| g.name == "metrics.k8s.io")) =>
+        {
+            Aggregated::Available
+        }
+        None => Aggregated::Missing,
+    };
 
     let mut phases: BTreeMap<String, usize> = BTreeMap::new();
     for p in &pods {
@@ -241,10 +250,11 @@ pub async fn cluster_overview(ctx: &Ctx, input: ClusterOverviewInput) -> Result<
             namespaces.map_or_else(|| "?".into(), |n| n.to_string()),
             bad.len(),
             warnings.len(),
-            if metrics {
-                "present"
-            } else {
-                "not installed (top will not work)"
+            match &metrics {
+                Aggregated::Available => "present".into(),
+                Aggregated::Missing => "not installed (top will not work)".into(),
+                Aggregated::Unavailable(why) =>
+                    format!("installed but unavailable ({why}; top will not work)"),
             },
         ),
     );
@@ -367,6 +377,24 @@ pub async fn api_resources(ctx: &Ctx, input: ApiResourcesInput) -> Result<Envelo
         })
         .collect();
     let mut summary = format!("{} resource kinds.", items.len());
+    // An aggregated API whose server is down is registered but serves no kinds (#76).
+    if let Some(g) = group.filter(|g| items.is_empty() && !g.is_empty())
+        && let Ok(groups) = sc.target.client.list_api_groups().await
+        && let Some(registered) = groups.groups.iter().find(|r| r.name == g)
+    {
+        let why = match registered.preferred_version.as_ref() {
+            Some(v) => match apiservice(&sc.target.client, &format!("{}.{g}", v.version)).await {
+                Some(Aggregated::Unavailable(why)) => {
+                    format!(" (APIService {}.{g}: {why})", v.version)
+                }
+                _ => String::new(),
+            },
+            None => String::new(),
+        };
+        summary = format!(
+            "0 resource kinds: API group {g} is registered but its server is unavailable{why}."
+        );
+    }
     if group.is_none() {
         // Name every group, so a truncated table can always be narrowed with `group`.
         let groups: BTreeSet<&str> = shown
@@ -1418,6 +1446,48 @@ pub struct TopInput {
     pub context: Option<String>,
 }
 
+/// The APIService that serves `metrics.k8s.io`.
+const METRICS_APISERVICE: &str = "v1beta1.metrics.k8s.io";
+const CHECK_METRICS_SERVER: &str =
+    "Check it with diagnose_workload kind=Deployment name=metrics-server namespace=kube-system.";
+
+/// An aggregated API, by its APIService's `Available` condition (riseno/k8s-mcp#76).
+enum Aggregated {
+    Missing,
+    Available,
+    /// `reason: message` of the condition.
+    Unavailable(String),
+}
+
+/// The state of APIService `name`; `None` when it cannot be read (RBAC).
+async fn apiservice(client: &kube::Client, name: &str) -> Option<Aggregated> {
+    let svc = Api::<APIService>::all(client.clone())
+        .get_opt(name)
+        .await
+        .ok()?;
+    let Some(svc) = svc else {
+        return Some(Aggregated::Missing);
+    };
+    let available = svc
+        .status
+        .and_then(|s| s.conditions)
+        .into_iter()
+        .flatten()
+        .find(|c| c.type_ == "Available");
+    Some(match available {
+        Some(c) if c.status == "True" => Aggregated::Available,
+        Some(c) => Aggregated::Unavailable(truncate(
+            &format!(
+                "{}: {}",
+                c.reason.as_deref().unwrap_or("-"),
+                c.message.as_deref().unwrap_or("")
+            ),
+            200,
+        )),
+        None => Aggregated::Unavailable("no Available condition yet".into()),
+    })
+}
+
 /// Resource usage vs requests/limits (needs metrics-server).
 pub async fn top(ctx: &Ctx, input: TopInput) -> Result<Envelope> {
     let nodes_mode = input.target == TopTarget::Nodes;
@@ -1432,7 +1502,18 @@ pub async fn top(ctx: &Ctx, input: TopInput) -> Result<Envelope> {
     let Some(info) = all.iter().find(|r| {
         r.group == "metrics.k8s.io" && r.plural == if nodes_mode { "nodes" } else { "pods" }
     }) else {
-        return Err(Error::Unavailable("metrics.k8s.io is not available: metrics-server is not installed in this cluster, so live CPU/memory usage cannot be read. Install metrics-server, or use get_resource to see requests/limits.".into()));
+        return Err(Error::Unavailable(
+            match apiservice(&sc.target.client, METRICS_APISERVICE).await {
+                Some(Aggregated::Missing) => "metrics.k8s.io is not available: metrics-server is not installed in this cluster, so live CPU/memory usage cannot be read. Install metrics-server, or use get_resource to see requests/limits.".into(),
+                Some(Aggregated::Unavailable(why)) => format!("metrics-server is installed but unavailable (APIService {METRICS_APISERVICE}: {why}), so live CPU/memory usage cannot be read. {CHECK_METRICS_SERVER}"),
+                Some(Aggregated::Available) => {
+                    // Discovery was cached while it was down: the retry reads it afresh.
+                    ctx.clusters.forget_discovery(&sc.target.context);
+                    "metrics.k8s.io was not served when discovery last ran, and its APIService now reports Available; retry.".into()
+                }
+                None => format!("metrics.k8s.io is not available: metrics-server is not installed or not running (APIService {METRICS_APISERVICE} could not be read to tell which), so live CPU/memory usage cannot be read. {CHECK_METRICS_SERVER}"),
+            },
+        ));
     };
     let ar = api_resource(info);
     let mut notes = Vec::new();

@@ -18,6 +18,9 @@ The chart creates:
 - `get` on the API server's `/metrics`, for the deprecated-API metric `upgrade_readiness`
   reads. To also name who writes objects through a deprecated CRD version, add `list` on that
   custom resource to `rbac.extraRules` (`upgrade_readiness` names the exact rule).
+- `get` on APIServices, so `top`, `cluster_overview` and `api_resources` can tell an
+  aggregated API that is down (metrics-server crashed or without endpoints) from one that is
+  not installed.
 
 **Secret values in logs.** The ClusterRole includes `get` on Secrets (`rbac.secretsMetadata:
 true`, the default) so the server can mask the values of the Secrets a pod uses in that pod's

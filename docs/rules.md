@@ -131,7 +131,7 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 | `upgrade.single_replica_workloads` | Single-replica workloads go down while their node is drained | [link](https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/) |
 | `upgrade.target_skips_minor` | The target version skips a control-plane minor | [link](https://kubernetes.io/releases/version-skew-policy/) |
 | `upgrade.version_support_ending` | Standard support of the current version ends soon or has ended | [link](https://kubernetes.io/releases/) |
-| `workload.create_failed` | The controller cannot create pods (admission webhook, Pod Security, LimitRange) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
+| `workload.create_failed` | The controller cannot create pods (admission webhook or policy, Pod Security, LimitRange) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.replicas.unavailable` | Fewer replicas are available than desired | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.rollout.stuck` | Deployment rollout exceeded its progress deadline | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |
 | `workload.single_replica` | Workload runs a single replica (no redundancy) | [link](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) |

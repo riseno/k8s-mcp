@@ -108,6 +108,9 @@ pub mod docs {
         "https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/";
     /// Pod Security Admission.
     pub const PSA: &str = "https://kubernetes.io/docs/concepts/security/pod-security-admission/";
+    /// ValidatingAdmissionPolicy.
+    pub const VAP: &str =
+        "https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/";
     /// Debugging Services.
     pub const DEBUG_SERVICE: &str =
         "https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/";

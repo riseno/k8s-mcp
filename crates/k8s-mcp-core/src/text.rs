@@ -64,6 +64,24 @@ pub fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
     ANSI.replace_all(s, "")
 }
 
+/// Show control characters other than tab as visible symbols (`\0` → `␀`, a lone `\r` → `␍`,
+/// DEL → `␡`; C1 controls → `�`), so binary output in a log cannot reach the client raw.
+pub fn escape_controls(s: &str) -> std::borrow::Cow<'_, str> {
+    if !s.chars().any(|c| c.is_control() && c != '\t') {
+        return s.into();
+    }
+    s.chars()
+        .map(|c| match c {
+            '\t' => c,
+            '\0'..='\x1f' => char::from_u32(0x2400 + u32::from(c)).unwrap_or('\u{fffd}'),
+            '\x7f' => '\u{2421}',
+            c if c.is_control() => '\u{fffd}',
+            c => c,
+        })
+        .collect::<String>()
+        .into()
+}
+
 /// Cap a string at `max` bytes (on a char boundary), appending `…` when cut.
 pub fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
@@ -189,5 +207,14 @@ mod tests {
     fn truncate_respects_char_boundaries() {
         assert_eq!(truncate("héllo", 2), "h…");
         assert_eq!(truncate("abc", 5), "abc");
+    }
+
+    #[test]
+    fn control_characters_are_shown_not_sent() {
+        assert_eq!(escape_controls("a\tb"), "a\tb");
+        assert_eq!(
+            escape_controls("x\0\x01\x1b\ry\x7f\u{85}"),
+            "x␀␁␛␍y␡\u{fffd}"
+        );
     }
 }

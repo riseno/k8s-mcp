@@ -10,6 +10,39 @@ All notable changes are documented here. The format follows
   listed a context's nodes (`cluster_overview`, `doctor`, provider tools, startup), with
   `provider_conflict` when the nodes contradict the kubeconfig, still without an API call. New
   `provider_source` says which: `nodes`, or `kubeconfig (nodes not checked)` (#71).
+- Exec auth plugin failures no longer echo the plugin's output or the command's environment:
+  a malformed credential (whose parse error quoted stdout, tokens included) and a failing
+  plugin (whose message held every `env:` value and PATH) are reported as "the plugin's
+  output is not an ExecCredential" or "the plugin failed (exit status: N)" (#74).
+- A kubeconfig exec plugin that stalls fails the call after 20 s ("did not finish within
+  20s; run it yourself") instead of holding it indefinitely: kube-client runs the plugin with
+  a blocking call that stopped the 30 s call timeout from firing (#73).
+- When the API server cannot be reached or the credentials fail, tools that gather optional
+  evidence (`recent_changes`, `autoscaling_status`, `diagnose_dns` and others) return the
+  "could not reach the API server" error at the first failed request instead of noting each
+  one and running into the 30 s call timeout. The timeout message no longer assumes a large
+  request (#80).
+- `get_logs` and `diagnose_pod` show logs that contain invalid UTF-8 (binary output, Latin-1,
+  a cut multi-byte character) with `�` for the bad bytes instead of dropping the whole log
+  with a misleading network error. Control characters other than tab are shown as symbols
+  (`\0` as `␀`, a lone `\r` as `␍`), and a response that cannot be decoded gets its own
+  message (#75).
+- `top`, `cluster_overview` and `api_resources` tell a metrics-server that is installed but
+  unavailable (APIService `v1beta1.metrics.k8s.io` `Available=False`, for example
+  `MissingEndpoints`) from one that is not installed, quote the reason, and point to
+  `diagnose_workload` for metrics-server. `api_resources group=<g>` reports a registered
+  aggregated group whose server is down instead of "0 resource kinds." The chart's ClusterRole
+  gains `get` on `apiregistration.k8s.io` APIServices (#76).
+- `list_resources kind=pods` (or `nodes`) no longer says "Kind Pod is also served by
+  metrics.k8s.io/v1beta1" on clusters with metrics-server: only resources of the same kind
+  count as alternatives, not ones that share the plural (`PodMetrics`, `NodeMetrics`) (#77).
+- Finding evidence from object `status` (condition and container messages, which anything with
+  status write access chooses) is wrapped as untrusted like event and log evidence, in the JSON
+  as well as the text, and `untrusted_fields` lists it for every tool, `diagnose_node`
+  included. The envelope now adds the evidence path itself instead of each tool (#78).
+- `workload.create_failed` names a ValidatingAdmissionPolicy denial ("ValidatingAdmissionPolicy
+  "p" (binding "b") denies pod creation"), links its docs and suggests `get_resource` for the
+  policy, instead of the generic "the controller cannot create pods" (#79).
 
 ## [0.3.1] - 2026-11-16
 

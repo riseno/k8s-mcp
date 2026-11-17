@@ -78,7 +78,7 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
             .map_err(|e| Error::kube(format!("list networkpolicies in namespace {ns}"), &e)),
         "NetworkPolicies",
         &mut un,
-    );
+    )?;
     let mut ev = DnsEvidence {
         pod,
         namespace: ns.clone(),
@@ -96,7 +96,7 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
                 .map_err(|e| Error::kube("list the cluster DNS pods in kube-system", &e)),
             "cluster DNS pods",
             &mut un,
-        );
+        )?;
         ev.dns_service = soft(
             Api::<Service>::namespaced(client.clone(), DNS_NS)
                 .get_opt("kube-dns")
@@ -104,7 +104,7 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
                 .map_err(|e| Error::kube("get the kube-dns Service", &e)),
             "the kube-dns Service",
             &mut un,
-        );
+        )?;
         ev.dns_ready_endpoints = soft(
             Api::<EndpointSlice>::namespaced(client.clone(), DNS_NS)
                 .list(&ListParams::default().labels("kubernetes.io/service-name=kube-dns"))
@@ -119,7 +119,7 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
                 .map_err(|e| Error::kube("list the kube-dns EndpointSlices", &e)),
             "kube-dns EndpointSlices",
             &mut un,
-        );
+        )?;
         // Not-Ready pods first: their logs explain the failure.
         let mut dns_pods: Vec<&Pod> = ev.dns_pods.iter().flatten().collect();
         dns_pods.sort_by_key(|p| pod_ready(p));
@@ -205,10 +205,6 @@ pub async fn diagnose_dns(ctx: &Ctx, input: DiagnoseDnsInput) -> Result<Envelope
         });
     }
     e.findings = findings;
-    e.untrusted_fields = vec![
-        "findings[*].evidence[?(@.source=='log')].text".into(),
-        "sections[?(@.untrusted)].lines".into(),
-    ];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

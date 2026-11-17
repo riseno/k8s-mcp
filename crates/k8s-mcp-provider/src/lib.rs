@@ -362,6 +362,5 @@ pub fn logs_envelope(p: ProviderId, logs: CloudLogs) -> Envelope {
         lines: logs.lines,
         untrusted: Some(vec![("source".into(), "log".into())]),
     });
-    e.untrusted_fields = vec!["sections[?(@.untrusted)].lines".into()];
     e
 }

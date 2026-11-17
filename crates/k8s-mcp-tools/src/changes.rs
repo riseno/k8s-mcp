@@ -581,7 +581,7 @@ pub async fn recent_changes(ctx: &Ctx, input: RecentChangesInput) -> Result<Enve
                 .await,
             "ReplicaSets",
             &mut un,
-        )
+        )?
         .into_iter()
         .flatten()
         {
@@ -616,7 +616,7 @@ pub async fn recent_changes(ctx: &Ctx, input: RecentChangesInput) -> Result<Enve
             .await,
             "ControllerRevisions",
             &mut un,
-        )
+        )?
         .into_iter()
         .flatten()
         {
@@ -645,7 +645,7 @@ pub async fn recent_changes(ctx: &Ctx, input: RecentChangesInput) -> Result<Enve
         // Created or updated objects, metadata only.
         macro_rules! objects {
             ($($ty:ty => $kind:literal),* $(,)?) => {$(
-                let metas: Vec<PartialObjectMeta<$ty>> = soft(list_meta_scoped::<$ty>(ctx, &sc, &ListParams::default(), $kind, &mut un).await, $kind, &mut un).unwrap_or_default();
+                let metas: Vec<PartialObjectMeta<$ty>> = soft(list_meta_scoped::<$ty>(ctx, &sc, &ListParams::default(), $kind, &mut un).await, $kind, &mut un)?.unwrap_or_default();
                 for m in metas.iter().filter(|m| !is_noise($kind, &m.metadata)) {
                     // Helm's release records are reported as releases below.
                     if $kind == "Secret" && m.metadata.labels.as_ref().is_some_and(|l| l.get("owner").is_some_and(|o| o == "helm")) {
@@ -675,7 +675,7 @@ pub async fn recent_changes(ctx: &Ctx, input: RecentChangesInput) -> Result<Enve
             .await,
             "Helm release records",
             &mut un,
-        )
+        )?
         .unwrap_or_default();
         for r in releases {
             let (Some(at), Some(labels)) = (created(&r.metadata), r.metadata.labels.as_ref())

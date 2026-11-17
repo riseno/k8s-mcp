@@ -294,7 +294,7 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
             .map_err(|e| Error::kube("list CustomResourceDefinitions", &e)),
         "CustomResourceDefinitions",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     let crd_versions = deprecated_crd_versions(&crds);
     let targets = scan_targets(
@@ -312,23 +312,23 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
             .map_err(|e| Error::kube("list nodes", &e)),
         "nodes",
         &mut un,
-    );
+    )?;
     let lp = ListParams::default();
     let pdbs = soft(
         list_scoped::<PodDisruptionBudget>(ctx, &sc, &lp, "poddisruptionbudgets", &mut un).await,
         "PodDisruptionBudgets",
         &mut un,
-    );
+    )?;
     let deployments = soft(
         list_scoped::<Deployment>(ctx, &sc, &lp, "deployments", &mut un).await,
         "Deployments",
         &mut un,
-    );
+    )?;
     let statefulsets = soft(
         list_scoped::<StatefulSet>(ctx, &sc, &lp, "statefulsets", &mut un).await,
         "StatefulSets",
         &mut un,
-    );
+    )?;
     let cloud = provider(ctx, &sc, &format!("1.{target}"), &mut un).await;
 
     let ev = UpgradeEvidence {

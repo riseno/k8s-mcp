@@ -7,12 +7,12 @@ EKS 2 node pools. Top finding: Node group legacy is DEGRADED with 1 health issue
 FINDINGS
 1. [high/high] eks.nodegroup.unhealthy: Node group legacy is DEGRADED with 1 health issue(s)
    why: EKS cannot keep the node group at its desired size or manage its instances, usually because of the launch template, the node IAM role, subnets out of IP addresses, or EC2 capacity and quotas.
-   evidence (status): AsgInstanceLaunchFailures: Could not launch Spot Instances. InsufficientInstanceCapacity
+   evidence (status): <<untrusted source="status">> AsgInstanceLaunchFailures: Could not launch Spot Instances. InsufficientInstanceCapacity <</untrusted>>
    fix: Fix the cause named in each issue in the evidence (for example AsgInstanceLaunchFailures: read the Auto Scaling group's activity; NodeCreationFailure: nodes cannot join, check the node role and the subnet's route to the API server).
    docs: https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html
 2. [medium/high] eks.nodegroup.version_skew: Node group legacy runs Kubernetes 1.31, behind the control plane's 1.33
    why: Nodes may lag the control plane by a few minors, but each lagging minor must be upgraded before the next control-plane upgrade, and new features and fixes do not reach these nodes.
-   evidence (status): node group version 1.31, cluster version 1.33
+   evidence (status): <<untrusted source="status">> node group version 1.31, cluster version 1.33 <</untrusted>>
    fix: Update the node group to the cluster's version (a managed rolling update that respects PodDisruptionBudgets).
    docs: https://docs.aws.amazon.com/eks/latest/best-practices/introduction.html
 

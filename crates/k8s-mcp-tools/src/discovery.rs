@@ -158,9 +158,10 @@ fn find(all: &[ResourceInfo], kind: &str, api_version: Option<&str>) -> Option<R
     matches.sort_by(|a, b| (rank(a), &a.group).cmp(&(rank(b), &b.group)));
     let info = (*matches.first()?).clone();
     let alternatives = if api_version.is_none() && group.is_none() {
+        // Same kind only: metrics.k8s.io serves `pods` and `nodes`, as PodMetrics and NodeMetrics.
         matches[1..]
             .iter()
-            .filter(|r| r.group != info.group)
+            .filter(|r| r.group != info.group && r.kind == info.kind)
             .map(|r| (*r).clone())
             .collect()
     } else {
@@ -232,6 +233,22 @@ mod tests {
             "{:?}",
             w.note()
         );
+        // riseno/k8s-mcp#77: a shared plural with another kind is not an alternative.
+        let all = vec![
+            r("", "Pod", "pods", &["po"]),
+            r("metrics.k8s.io", "PodMetrics", "pods", &[]),
+            r("", "Node", "nodes", &["no"]),
+            r("metrics.k8s.io", "NodeMetrics", "nodes", &[]),
+        ];
+        for q in ["pods", "nodes", "Pod", "po"] {
+            let core = find(&all, q, None).unwrap();
+            assert_eq!(core.info.group, "", "{q}");
+            assert!(core.note().is_none(), "{q}: {:?}", core.note());
+        }
+        let all = vec![
+            r("bh.example.com", "Widget", "widgets", &[]),
+            r("other.example.com", "Widget", "widgets", &[]),
+        ];
         for q in ["widgets.other.example.com", "Widget.other.example.com"] {
             let w = find(&all, q, None).unwrap();
             assert_eq!(w.info.group, "other.example.com", "{q}");

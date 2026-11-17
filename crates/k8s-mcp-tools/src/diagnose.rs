@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use jiff::SignedDuration;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::finding::{Finding, ObjectRef, Severity, dedup, group_same_cause, rank};
-use k8s_mcp_core::text::{dedup_lines, is_marker_line, strip_ansi};
+use k8s_mcp_core::text::{dedup_lines, escape_controls, is_marker_line, strip_ansi};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_diagnose::{
     ContainerLog, NodeEvidence, PodEvidence, PvcEvidence, RefCheck, RefKind, ServiceEvidence,
@@ -87,7 +87,7 @@ pub async fn diagnose_pod(ctx: &Ctx, input: DiagnosePodInput) -> Result<Envelope
         input.include_logs.unwrap_or(true).then_some(tail),
         None,
     )
-    .await;
+    .await?;
     let findings = k8s_mcp_diagnose::diagnose_pod(&ev);
     Ok(render_pod(ctx, &sc, &ev, findings))
 }
@@ -99,7 +99,7 @@ async fn gather_pod(
     pod: Pod,
     log_tail: Option<i64>,
     events: Option<Vec<Event>>,
-) -> PodEvidence {
+) -> Result<PodEvidence> {
     let now = ctx.now();
     let client = sc.target.client.clone();
     let name = pod.metadata.name.clone().unwrap_or_default();
@@ -112,7 +112,7 @@ async fn gather_pod(
             events_for(&sc.target, &ns, "Pod", &name, now).await,
             "pod events",
             &mut un,
-        )
+        )?
         .unwrap_or_default(),
     };
     let node_name = pod.spec.as_ref().and_then(|s| s.node_name.clone());
@@ -124,7 +124,7 @@ async fn gather_pod(
                 .map_err(|e| Error::kube(format!("get node {n}"), &e)),
             "node",
             &mut un,
-        ),
+        )?,
         None => None,
     };
     let pending = pod.status.as_ref().and_then(|s| s.phase.as_deref()) == Some("Pending")
@@ -138,7 +138,7 @@ async fn gather_pod(
                 .map_err(|e| Error::kube("list nodes", &e)),
             "nodes (for scheduling checks)",
             &mut un,
-        )
+        )?
     } else {
         None
     };
@@ -232,7 +232,7 @@ async fn gather_pod(
         Some(tail) => container_logs(ctx, sc, &pod, tail, &secret_values, &mut un).await,
         None => Vec::new(),
     };
-    PodEvidence {
+    Ok(PodEvidence {
         pod,
         events,
         logs,
@@ -243,7 +243,7 @@ async fn gather_pod(
         service_account,
         unavailable: un,
         now,
-    }
+    })
 }
 
 /// Why logs of a container that crashed and was removed cannot be read.
@@ -301,7 +301,7 @@ pub(crate) async fn container_logs(
             "{}logs of container {container}",
             if previous { "previous " } else { "" }
         );
-        match api.logs(&name, &lp).await {
+        match pod_logs(&api, &name, &lp).await {
             Ok(raw) if raw.starts_with("unable to retrieve container logs") => {
                 un.push(Unavailable {
                     what,
@@ -340,8 +340,35 @@ fn note(
 
 /// Redact one container log: exact Secret values first (every level), then patterns, tracking
 /// multi-line PEM keys.
+/// A container's log as text. Read as bytes because `Api::logs` fails the whole read on one
+/// invalid UTF-8 byte (riseno/k8s-mcp#75): such bytes become `�` here.
+pub async fn pod_logs(api: &Api<Pod>, name: &str, lp: &LogParams) -> kube::Result<String> {
+    let req = kube::core::Request::new(api.resource_url())
+        .logs(name, lp)
+        .map_err(kube::Error::BuildRequest)?;
+    let res = api
+        .clone()
+        .into_client()
+        .send(req.map(kube::client::Body::from))
+        .await?;
+    let code = res.status();
+    let text = String::from_utf8_lossy(&res.into_body().collect_bytes().await?).into_owned();
+    if code.is_client_error() || code.is_server_error() {
+        // As kube-client does: a `Status` body, or else the body as the message.
+        let status = serde_json::from_str::<kube::core::Status>(&text).unwrap_or_else(|_| {
+            kube::core::Status::failure(text.trim(), "Failed to parse error data")
+                .with_code(code.as_u16())
+        });
+        return Err(kube::Error::Api(status.boxed()));
+    }
+    Ok(text)
+}
+
 pub fn redact_log(ctx: &Ctx, raw: &str, secret_values: &[String]) -> Vec<String> {
-    let mut lines: Vec<String> = raw.lines().map(|l| strip_ansi(l).into_owned()).collect();
+    let mut lines: Vec<String> = raw
+        .lines()
+        .map(|l| escape_controls(&strip_ansi(l)).into_owned())
+        .collect();
     k8s_mcp_core::redact::scrub_values(&mut lines, secret_values);
     ctx.redactor.lines(lines.iter().map(String::as_str))
 }
@@ -527,8 +554,6 @@ fn render_pod(ctx: &Ctx, sc: &Scope, ev: &PodEvidence, findings: Vec<Finding>) -
         });
     }
     e.findings = findings;
-    e.untrusted_fields =
-        vec!["findings[*].evidence[?(@.source=='event' || @.source=='log')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     e
 }
@@ -729,7 +754,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
             owned::<ReplicaSet>(&client, &ns, "Deployment", &input.name).await,
             "ReplicaSets",
             &mut un,
-        )
+        )?
         .unwrap_or_default()
     } else {
         Vec::new()
@@ -739,7 +764,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
             owned::<Job>(&client, &ns, "CronJob", &input.name).await,
             "Jobs",
             &mut un,
-        )
+        )?
         .unwrap_or_default()
     } else {
         Vec::new()
@@ -755,7 +780,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
             .map_err(|e| Error::kube(format!("list events in namespace {ns}"), &e)),
         "events",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     retain_recent(&mut ns_events, now, SignedDuration::from_hours(1));
     let events: Vec<Event> = ns_events
@@ -797,7 +822,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
             .cloned()
             .collect();
         let logs = unhealthy(p, now).is_some().then_some(100);
-        pod_evidence.push(gather_pod(ctx, &sc, (*p).clone(), logs, Some(pod_events)).await);
+        pod_evidence.push(gather_pod(ctx, &sc, (*p).clone(), logs, Some(pod_events)).await?);
     }
     let quotas = soft(
         Api::<ResourceQuota>::namespaced(client.clone(), &ns)
@@ -807,7 +832,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
             .map_err(|e| Error::kube("list resourcequotas", &e)),
         "ResourceQuotas",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     let hpa = soft(
         Api::<HorizontalPodAutoscaler>::namespaced(client.clone(), &ns)
@@ -817,7 +842,7 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
             .map_err(|e| Error::kube("list horizontalpodautoscalers", &e)),
         "HorizontalPodAutoscalers",
         &mut un,
-    )
+    )?
     .and_then(|hpas| {
         hpas.into_iter().find(|h| {
             h.spec.as_ref().is_some_and(|s| {
@@ -894,8 +919,6 @@ pub async fn diagnose_workload(ctx: &Ctx, input: DiagnoseWorkloadInput) -> Resul
         e.sections.push(events_section(ctx, &warnings, now));
     }
     e.findings = findings;
-    e.untrusted_fields =
-        vec!["findings[*].evidence[?(@.source=='event' || @.source=='log')].text".into()];
     let mut notes = ev.unavailable.clone();
     for p in &ev.pods {
         notes.extend(p.unavailable.iter().cloned());
@@ -932,7 +955,7 @@ pub async fn diagnose_node(ctx: &Ctx, input: DiagnoseNodeInput) -> Result<Envelo
         events_for(&sc.target, "", "Node", &input.name, now).await,
         "node events",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     let pods = soft(
         list_scoped::<Pod>(
@@ -945,7 +968,7 @@ pub async fn diagnose_node(ctx: &Ctx, input: DiagnoseNodeInput) -> Result<Envelo
         .await,
         "pods on the node",
         &mut un,
-    );
+    )?;
     if !ctx.policy.namespaces.is_empty() || !ctx.policy.deny_namespaces.is_empty() {
         un.push(Unavailable {
             what: "pods outside the allowed namespaces".into(),
@@ -1082,7 +1105,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
         .await,
         "warning events",
         &mut un,
-    )
+    )?
     .unwrap_or_default();
     retain_recent(&mut warnings, now, SignedDuration::from_hours(1));
     let events_about = |kind: &str, ns: &str, pred: &dyn Fn(&str) -> bool| -> Vec<Event> {
@@ -1186,7 +1209,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                 .map_err(|e| Error::kube("list nodes", &e)),
             "nodes",
             &mut un,
-        )
+        )?
     {
         let mut nodes = nodes;
         if only_namespace_nodes {
@@ -1224,7 +1247,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             list_scoped::<Pod>(ctx, &sc, &ListParams::default(), "pods", &mut un).await,
             "pods (for Services and PVCs)",
             &mut un,
-        )
+        )?
     } else {
         None
     };
@@ -1242,7 +1265,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             list_scoped::<Service>(ctx, &sc, &ListParams::default(), "services", &mut un).await,
             "services",
             &mut un,
-        )
+        )?
     {
         scanned.push(format!("{} services", services.len()));
         for svc in services {
@@ -1276,7 +1299,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
             .await,
             "PVCs",
             &mut un,
-        )
+        )?
     {
         scanned.push(format!("{} PVCs", pvcs.len()));
         let storage_classes = soft(
@@ -1287,7 +1310,7 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
                 .map_err(|e| Error::kube("list storageclasses", &e)),
             "StorageClasses",
             &mut un,
-        );
+        )?;
         for pvc in pvcs {
             let (name, ns) = (
                 pvc.metadata.name.clone().unwrap_or_default(),
@@ -1392,8 +1415,6 @@ pub async fn find_problems(ctx: &Ctx, input: FindProblemsInput) -> Result<Envelo
         e.omitted.findings = total - findings.len();
     }
     e.findings = findings;
-    e.untrusted_fields =
-        vec!["findings[*].evidence[?(@.source=='event' || @.source=='log')].text".into()];
     add_notes(&mut e, &un);
     Ok(e)
 }

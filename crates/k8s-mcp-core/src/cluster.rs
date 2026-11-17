@@ -5,10 +5,11 @@
 //! `PATH` (`--path-prepend`, plus Homebrew dirs on macOS) through their `env`.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use jiff::{SignedDuration, Timestamp};
 use kube::Client;
 use kube::config::{Config, ExecInteractiveMode, KubeConfigOptions, Kubeconfig, KubeconfigError};
 
@@ -26,8 +27,6 @@ const DISCOVERY_TTL: Duration = Duration::from_secs(300);
 
 /// Per-request timeout for API calls.
 pub const API_TIMEOUT: Duration = Duration::from_secs(20);
-/// Budget for a kubeconfig exec auth plugin to print its credential.
-const EXEC_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Options for [`ClusterManager::load`].
 #[derive(Debug, Clone, Default)]
@@ -121,6 +120,8 @@ pub struct Target {
 }
 
 type Discovered = Arc<Vec<ResourceInfo>>;
+/// Serialises client builds for one context and holds the last failure.
+type Gate = Arc<tokio::sync::Mutex<Option<(Instant, Error)>>>;
 
 /// Holds the kubeconfig, the default context and one lazily created client per context.
 pub struct ClusterManager {
@@ -131,7 +132,9 @@ pub struct ClusterManager {
     pub kubeconfig_paths: Vec<PathBuf>,
     /// Exec plugin commands referenced by the kubeconfig (for `doctor`).
     pub exec_plugins: Vec<String>,
-    clients: Mutex<HashMap<String, Client>>,
+    /// Clients per context, with when their exec credential expires.
+    clients: Mutex<HashMap<String, (Client, Option<Timestamp>)>>,
+    gates: Mutex<HashMap<String, Gate>>,
     discovery: Mutex<HashMap<String, (Instant, Discovered)>>,
     /// Node-backed detection per context, from tools that listed the nodes (#71).
     node_checks: Mutex<HashMap<String, NodeCheck>>,
@@ -187,6 +190,7 @@ impl ClusterManager {
             kubeconfig_paths: paths,
             exec_plugins,
             clients: Mutex::default(),
+            gates: Mutex::default(),
             discovery: Mutex::default(),
             node_checks: Mutex::default(),
         })
@@ -202,6 +206,7 @@ impl ClusterManager {
             kubeconfig_paths: Vec::new(),
             exec_plugins: Vec::new(),
             clients: Mutex::default(),
+            gates: Mutex::default(),
             discovery: Mutex::default(),
             node_checks: Mutex::default(),
         }
@@ -216,6 +221,7 @@ impl ClusterManager {
             kubeconfig_paths: Vec::new(),
             exec_plugins: Vec::new(),
             clients: Mutex::default(),
+            gates: Mutex::default(),
             discovery: Mutex::default(),
             node_checks: Mutex::default(),
         }
@@ -373,15 +379,33 @@ impl ClusterManager {
                 allowed: names(),
             });
         };
-        if let Some(c) = self.lock_clients().get(name) {
-            return Ok(Target {
-                context: name.into(),
-                namespace,
-                client: c.clone(),
-            });
-        }
-        let client = self.build_client(name).await?;
-        self.lock_clients().insert(name.into(), client.clone());
+        // One build (and exec plugin run) per context at a time: calls that waited for it reuse
+        // its client or its error instead of running the plugin again (#84).
+        let asked = Instant::now();
+        let gate = self
+            .gates
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(name.into())
+            .or_default()
+            .clone();
+        let mut failed = gate.lock().await;
+        let client = match (self.cached_client(name), failed.as_ref()) {
+            (Some(client), _) => client,
+            (None, Some((at, e))) if *at > asked => return Err(e.clone()),
+            (None, _) => match self.build_client(name).await {
+                Ok((client, expires)) => {
+                    *failed = None;
+                    self.lock_clients()
+                        .insert(name.into(), (client.clone(), expires));
+                    client
+                }
+                Err(e) => {
+                    *failed = Some((Instant::now(), e.clone()));
+                    return Err(e);
+                }
+            },
+        };
         Ok(Target {
             context: name.into(),
             namespace,
@@ -389,9 +413,10 @@ impl ClusterManager {
         })
     }
 
-    async fn build_client(&self, name: &str) -> Result<Client> {
+    /// A new client for `name`, and when its exec credential expires.
+    async fn build_client(&self, name: &str) -> Result<(Client, Option<Timestamp>)> {
         let mut config = match &self.source {
-            Source::Fixed(c) => return Ok(c.clone()),
+            Source::Fixed(c) => return Ok((c.clone(), None)),
             Source::InCluster => Config::incluster().map_err(|e| {
                 Error::Config(format!(
                     "in-cluster config failed: {e}. Is the ServiceAccount token mounted?"
@@ -414,35 +439,25 @@ impl ClusterManager {
         config.connect_timeout = Some(Duration::from_secs(10));
         config.read_timeout = Some(API_TIMEOUT);
         let what = format!("create a client for context {name:?}");
-        let Some(plugin) = config
-            .auth_info
-            .exec
-            .as_ref()
-            .and_then(|e| e.command.clone())
-        else {
-            return Client::try_from(config).map_err(|e| Error::kube(what, &e));
-        };
-        // `Client::try_from` runs the exec plugin with a blocking `Command::output`: on the
-        // async worker a stalled plugin would hold the call past every timeout (#73).
-        // ponytail: the stalled plugin keeps its blocking thread until it exits; kube-client
-        // owns the process, so it cannot be killed from here.
-        let build = tokio::task::spawn_blocking(move || Client::try_from(config));
-        match tokio::time::timeout(EXEC_TIMEOUT, build).await {
-            Ok(Ok(built)) => built.map_err(|e| Error::kube(what, &e)),
-            Ok(Err(e)) => Err(Error::Api(format!(
-                "cannot {what}: the exec auth plugin task failed ({e})"
-            ))),
-            Err(_) => Err(Error::Unreachable(format!(
-                "cannot {what}: the kubeconfig exec auth plugin `{}` did not finish within {}s. Run it yourself to see why (it may be waiting for a login or the network), then retry.",
-                Path::new(&plugin)
-                    .file_name()
-                    .map_or(plugin.as_str().into(), |f| f.to_string_lossy()),
-                EXEC_TIMEOUT.as_secs()
-            ))),
-        }
+        let expires = crate::exec::resolve(&mut config.auth_info, crate::exec::EXEC_TIMEOUT)
+            .await
+            .map_err(|e| Error::Unreachable(format!("cannot {what}: {e}")))?;
+        let client = Client::try_from(config).map_err(|e| Error::kube(what, &e))?;
+        Ok((client, expires))
     }
 
-    fn lock_clients(&self) -> std::sync::MutexGuard<'_, HashMap<String, Client>> {
+    /// The cached client for `context`, unless its exec credential expires within two minutes.
+    fn cached_client(&self, context: &str) -> Option<Client> {
+        let clients = self.lock_clients();
+        let (client, expires) = clients.get(context)?;
+        expires
+            .is_none_or(|t| t.duration_since(Timestamp::now()) > SignedDuration::from_mins(2))
+            .then(|| client.clone())
+    }
+
+    fn lock_clients(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<String, (Client, Option<Timestamp>)>> {
         self.clients
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -733,6 +748,63 @@ users:
                 && !err.contains("--contexts"),
             "{err}"
         );
+    }
+
+    /// riseno/k8s-mcp#84: exec credentials are cached until two minutes before they expire,
+    /// then the plugin runs again (kube-client refreshed them itself before).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn exec_credentials_are_refreshed_before_they_expire() {
+        use std::fmt::Write as _;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let runs = dir.path().join("runs");
+        let mut kc = String::from(
+            "apiVersion: v1\nkind: Config\ncurrent-context: soon\nclusters:\n- name: c\n  cluster: {server: 'https://127.0.0.1:1'}\ncontexts:\n",
+        );
+        let mut users = String::from("users:\n");
+        for (name, valid) in [("soon", 60), ("later", 3600)] {
+            let expiry = Timestamp::now()
+                .checked_add(SignedDuration::from_secs(valid))
+                .unwrap();
+            let plugin = dir.path().join(name);
+            std::fs::write(
+                &plugin,
+                format!(
+                    "#!/bin/sh\necho {name} >> {}\necho '{{\"status\":{{\"token\":\"t\",\"expirationTimestamp\":\"{expiry}\"}}}}'\n",
+                    runs.display()
+                ),
+            )
+            .unwrap();
+            std::fs::set_permissions(&plugin, std::fs::Permissions::from_mode(0o755)).unwrap();
+            write!(
+                kc,
+                "- name: {name}\n  context: {{cluster: c, user: {name}}}\n"
+            )
+            .unwrap();
+            write!(
+                users,
+                "- name: {name}\n  user:\n    exec: {{apiVersion: client.authentication.k8s.io/v1beta1, command: '{}'}}\n",
+                plugin.display()
+            )
+            .unwrap();
+        }
+        let path = dir.path().join("config");
+        std::fs::write(&path, kc + &users).unwrap();
+        let cm = ClusterManager::load(&LoadOptions {
+            kubeconfig: Some(path),
+            ..LoadOptions::default()
+        })
+        .unwrap();
+        let policy = Policy::new(&["*".into()], &[], &[], RedactLevel::Standard, 24_000).unwrap();
+        for _ in 0..2 {
+            for context in ["soon", "later"] {
+                cm.target(Some(context), &policy).await.unwrap();
+            }
+        }
+        let runs = std::fs::read_to_string(&runs).unwrap();
+        let count = |name: &str| runs.lines().filter(|l| *l == name).count();
+        assert_eq!((count("soon"), count("later")), (2, 1), "{runs}");
     }
 
     #[test]

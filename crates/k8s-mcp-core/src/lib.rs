@@ -6,6 +6,7 @@ pub mod audit;
 pub mod cluster;
 pub mod envelope;
 pub mod error;
+mod exec;
 pub mod finding;
 pub mod policy;
 pub mod provider;

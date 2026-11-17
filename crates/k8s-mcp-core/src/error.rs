@@ -4,11 +4,13 @@ use std::fmt::Display;
 
 use kube::client::AuthError;
 
+use crate::exec::{INSTALL_IT, RUN_IT};
+
 /// Result alias for k8s-mcp operations.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// A user-actionable error.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     /// The requested context is outside the allow-list.
     #[error(
@@ -104,13 +106,13 @@ impl Error {
 }
 
 /// What went wrong with the credentials, without any plugin output.
+/// (k8s-mcp runs exec plugins itself, in `crate::exec`; kube-client reports the exec variants
+/// only if a client is ever built with an exec section left in.)
 fn auth_failure(a: &AuthError) -> String {
-    const RUN_IT: &str =
-        "Run the plugin command yourself to see its error, re-authenticate if needed, then retry.";
     match a {
-        AuthError::AuthExecStart(e) => format!(
-            "the kubeconfig exec auth plugin could not be started ({e}). Is the plugin (for example `aws`, `gke-gcloud-auth-plugin` or `kubelogin`) installed and on PATH for this MCP client? Install it, or start k8s-mcp with --path-prepend <dir containing it>."
-        ),
+        AuthError::AuthExecStart(e) => {
+            format!("the kubeconfig exec auth plugin could not be started ({e}). {INSTALL_IT}")
+        }
         AuthError::AuthExecRun { out, .. } => {
             format!(
                 "the kubeconfig exec auth plugin failed ({}). {RUN_IT}",

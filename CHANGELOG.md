@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-17
+
 ### Fixed
 - `list_contexts` and `k8s-mcp://contexts` report the node-backed provider once a tool has
   listed a context's nodes (`cluster_overview`, `doctor`, provider tools, startup), with

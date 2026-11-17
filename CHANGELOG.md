@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-17
+
 ### Fixed
 - A kubeconfig exec plugin that stalls is now killed at the 20 s deadline instead of being left
   running: each retry used to start another plugin, and they outlived the server. k8s-mcp runs

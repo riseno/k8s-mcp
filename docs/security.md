@@ -13,8 +13,8 @@ This page summarises the threat model: what is enforced and how it is tested.
 | Credential leakage by the server | Kubeconfig never written or shown; exec plugin output never echoed; errors and audit args redacted; no telemetry | stdio tests |
 | Malicious arguments | Typed inputs with `deny_unknown_fields`; names validated; the kubeconfig path cannot be changed by the client; no shelling out | input tests |
 | Unauthorised HTTP access, DNS rebinding, CSRF (`--transport http`) | Bearer auth on `/mcp` (TokenReview, or a static token compared in constant time); TokenReview checks `--auth-audience` (the chart requires `k8s-mcp`, so default pod tokens do not work) and `--allowed-callers` (403, audited); `--auth none` refused unless the listen address is loopback; `Host` allow-list (loopback by default); any `Origin` not in `--allowed-origins` gets 403 (none by default, no CORS); 1 MiB request body cap; TLS terminates at an ingress or mesh | `http` unit tests (401, 403, TokenReview, loopback check), kind smoke test |
-| stdin hijack by exec plugins | Exec plugins forced to `interactiveMode: Never` | `cluster` unit test |
-| Stalled exec plugins | k8s-mcp runs exec plugins itself, kills them after 20 s and runs one per context at a time (ADR 0014) | `exec` unit tests, stdio test |
+| stdin hijack by exec plugins | Exec plugins get no stdin and run as `interactiveMode: Never`; `Always` is refused | `cluster` and `exec` unit tests |
+| Stalled exec plugins | k8s-mcp runs exec plugins itself, kills them and their process group after 20 s and runs one per context at a time (ADR 0014) | `exec` unit tests, stdio test |
 
 ## Redaction levels
 

@@ -5,6 +5,20 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The exec deadline kills the processes a plugin started as well (on Linux and macOS): a
+  wrapper such as `aws-vault exec … -- aws` or `sh -c` no longer leaves its stalled child
+  running. Plugins run in their own process group, killed at the deadline or when the call is
+  cancelled (#89).
+- An exec credential that expires within two minutes, or has already expired (a clock ahead
+  of the issuer's), is reused for at least 30 s instead of running the plugin on every client
+  lookup; short-lived credentials are refreshed at half their lifetime, and an expired one is
+  logged (#88).
+- Exec plugins are checked as client-go checks them: the output must be `kind:
+  ExecCredential` with the `apiVersion` the kubeconfig asks for (the error names both
+  versions), and `interactiveMode: Always` fails at once with the reason instead of running
+  the plugin without a terminal until the deadline (#90).
+
 ## [0.3.3] - 2026-11-17
 
 ### Fixed

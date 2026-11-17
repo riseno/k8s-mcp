@@ -1,5 +1,6 @@
 //! Workload-level rules (PROPOSAL §9.2): pod creation failures (ResourceQuota, admission
-//! webhooks, Pod Security, LimitRange, missing ServiceAccount), failed Jobs, CronJobs that do
+//! webhooks, ValidatingAdmissionPolicies, Pod Security, LimitRange, missing ServiceAccount),
+//! failed Jobs, CronJobs that do
 //! not run, stuck rollouts, unavailable replicas and single-replica workloads.
 //!
 //! Root causes come first and are `critical`; the symptoms (`workload.rollout.stuck`,
@@ -40,7 +41,7 @@ pub const RULES: &[RuleMeta] = &[
     },
     RuleMeta {
         id: "workload.create_failed",
-        title: "The controller cannot create pods (admission webhook, Pod Security, LimitRange)",
+        title: "The controller cannot create pods (admission webhook or policy, Pod Security, LimitRange)",
         docs: docs::DEPLOYMENT,
     },
     RuleMeta {
@@ -76,6 +77,9 @@ static PSA: LazyLock<Regex> =
 static WEBHOOK_DENIED: LazyLock<Regex> =
     LazyLock::new(|| re(r#"admission webhook "([^"]+)" denied the request"#));
 static WEBHOOK_DOWN: LazyLock<Regex> = LazyLock::new(|| re(r#"failed calling webhook "([^"]+)""#));
+static POLICY_DENIED: LazyLock<Regex> = LazyLock::new(|| {
+    re(r"ValidatingAdmissionPolicy '([^']+)' with binding '([^']+)' denied request")
+});
 
 /// CronJob controller event reasons that mean Jobs are not being started.
 const CRONJOB_TROUBLE: &[&str] = &[
@@ -125,11 +129,21 @@ fn create_failures(ev: &WorkloadEvidence, ns: &str, out: &mut Vec<Finding>) {
                 .fix("Set the securityContext fields the message lists (for `restricted`: runAsNonRoot: true, allowPrivilegeEscalation: false, capabilities.drop: [ALL], seccompProfile.type: RuntimeDefault). If the workload truly needs more privilege, label the namespace with a lower `pod-security.kubernetes.io/enforce` level.")
                 .docs(docs::PSA)
         } else if let Some(c) = WEBHOOK_DENIED.captures(m) {
-            Finding::new("workload.create_failed", Severity::Critical, Confidence::High, format!("admission webhook {} denies pod creation", webhook(&c[1])))
+            Finding::new("workload.create_failed", Severity::Critical, Confidence::High, format!("admission webhook {} denies pod creation", dns_quoted(&c[1])))
                 .explain("A validating admission webhook rejects the pod template, so no pod is created. Its message (quoted below) says which policy fired.")
                 .fix("Change the pod template to satisfy the policy, or the policy itself (Kyverno, Gatekeeper and similar tools name the rule in the message). `kubectl get validatingwebhookconfigurations` shows which webhooks apply.")
+        } else if let Some(c) = POLICY_DENIED.captures(m) {
+            let f = Finding::new("workload.create_failed", Severity::Critical, Confidence::High, format!("ValidatingAdmissionPolicy {} (binding {}) denies pod creation", dns_quoted(&c[1]), dns_quoted(&c[2])))
+                .explain("An in-tree CEL admission policy rejects the pod template, so no pod is created. Its message (quoted below) says which validation failed.")
+                .fix("Change the pod template to satisfy the policy's validation, or change the policy or the binding's match rules and parameters.")
+                .docs(docs::VAP);
+            if dns_name(&c[1]) {
+                f.next("get_resource", json!({"kind": "ValidatingAdmissionPolicy", "name": &c[1]}), "read the policy's validations")
+            } else {
+                f
+            }
         } else if let Some(c) = WEBHOOK_DOWN.captures(m) {
-            Finding::new("workload.create_failed", Severity::Critical, Confidence::High, format!("admission webhook {} cannot be reached, so pod creation fails", webhook(&c[1])))
+            Finding::new("workload.create_failed", Severity::Critical, Confidence::High, format!("admission webhook {} cannot be reached, so pod creation fails", dns_quoted(&c[1])))
                 .explain("The API server must call this webhook before creating pods and the call fails. With failurePolicy: Fail, every matching create is rejected while the webhook is down.")
                 .fix("Check the webhook's Service and pods (they may be crash-looping or have no endpoints). `kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations` shows it; failurePolicy Ignore trades safety for availability.")
         } else {
@@ -151,7 +165,7 @@ fn create_failures(ev: &WorkloadEvidence, ns: &str, out: &mut Vec<Finding>) {
     }
 }
 
-fn webhook(name: &str) -> String {
+fn dns_quoted(name: &str) -> String {
     if dns_name(name) {
         format!("{name:?}")
     } else {
@@ -514,6 +528,11 @@ mod tests {
                 "cannot be reached",
             ),
             (
+                "Error creating: pods \"denied-7c9d-\" is forbidden: ValidatingAdmissionPolicy 'v4-no-deny-label' with binding 'v4-no-deny-label' denied request: pods labelled deny are not allowed in this namespace",
+                "workload.create_failed",
+                "ValidatingAdmissionPolicy \"v4-no-deny-label\" (binding \"v4-no-deny-label\") denies pod creation",
+            ),
+            (
                 "pods \"api-6d9f-\" is forbidden: failed quota: compute: must specify limits.cpu for: api",
                 "pod.pending.quota",
                 "do not set resource",
@@ -526,6 +545,14 @@ mod tests {
             assert_eq!(f.id, id, "{message}");
             assert!(f.title.contains(title), "{}", f.title);
         }
+        // riseno/k8s-mcp#79: the policy is named for a follow-up read.
+        let mut ev = base.clone();
+        let vap = cases.iter().find(|c| c.0.contains("ValidatingAdmissionPolicy"));
+        ev.events[0].message = vap.map(|c| c.0.into());
+        let f = &run(&ev)[0];
+        assert_eq!(f.next[0].args["kind"], "ValidatingAdmissionPolicy");
+        assert_eq!(f.next[0].args["name"], "v4-no-deny-label");
+        assert!(f.evidence[0].text.contains("pods labelled deny"), "{:?}", f.evidence);
     }
 
     #[test]

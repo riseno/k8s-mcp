@@ -40,6 +40,9 @@ All notable changes are documented here. The format follows
   status write access chooses) is wrapped as untrusted like event and log evidence, in the JSON
   as well as the text, and `untrusted_fields` lists it for every tool, `diagnose_node`
   included. The envelope now adds the evidence path itself instead of each tool (#78).
+- `workload.create_failed` names a ValidatingAdmissionPolicy denial ("ValidatingAdmissionPolicy
+  "p" (binding "b") denies pod creation"), links its docs and suggests `get_resource` for the
+  policy, instead of the generic "the controller cannot create pods" (#79).
 
 ## [0.3.1] - 2026-11-16
 

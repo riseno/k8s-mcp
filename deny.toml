@@ -25,6 +25,13 @@ allow = [
 # Unpublished workspace crates (xtask, testkit) need no licence check.
 ignore = true
 
+[advisories]
+ignore = [
+    # chrono is unmaintained (a notice, not a vulnerability; no fixed version). It comes only
+    # through rmcp 3.10, which depends on it unconditionally. Remove with riseno/k8s-mcp#83.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained chrono via rmcp; tracked in riseno/k8s-mcp#83" },
+]
+
 [bans]
 deny = [
     { crate = "openssl", reason = "ADR 0001: rustls only, no OpenSSL" },

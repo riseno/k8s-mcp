@@ -27,6 +27,12 @@ All notable changes are documented here. The format follows
   with a misleading network error. Control characters other than tab are shown as symbols
   (`\0` as `␀`, a lone `\r` as `␍`), and a response that cannot be decoded gets its own
   message (#75).
+- `top`, `cluster_overview` and `api_resources` tell a metrics-server that is installed but
+  unavailable (APIService `v1beta1.metrics.k8s.io` `Available=False`, for example
+  `MissingEndpoints`) from one that is not installed, quote the reason, and point to
+  `diagnose_workload` for metrics-server. `api_resources group=<g>` reports a registered
+  aggregated group whose server is down instead of "0 resource kinds." The chart's ClusterRole
+  gains `get` on `apiregistration.k8s.io` APIServices (#76).
 
 ## [0.3.1] - 2026-11-16
 

@@ -2409,6 +2409,7 @@ dependencies = [
  "kube",
  "proptest",
  "regex",
+ "rustix",
  "schemars 1.2.3",
  "serde",
  "serde-saphyr",

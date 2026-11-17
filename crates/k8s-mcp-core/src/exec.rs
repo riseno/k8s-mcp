@@ -8,7 +8,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use jiff::Timestamp;
-use kube::config::{AuthInfo, ExecConfig};
+use kube::config::{AuthInfo, ExecConfig, ExecInteractiveMode};
 use serde::Deserialize;
 
 /// Budget for a plugin to print its credential.
@@ -19,8 +19,30 @@ pub(crate) const RUN_IT: &str =
 pub(crate) const INSTALL_IT: &str = "Is it installed and on PATH for this MCP client? Install it, or start k8s-mcp with --path-prepend <dir containing it>.";
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ExecCredential {
+    kind: Option<String>,
+    api_version: Option<String>,
     status: Option<Status>,
+}
+
+/// The plugin's process group, killed when dropped before the plugin exits: at the deadline,
+/// or when the call is cancelled, so processes it started (wrappers like `aws-vault exec`,
+/// `sh -c`) go too (#89). Windows kills only the plugin itself.
+#[cfg_attr(not(unix), allow(dead_code))]
+struct Group(Option<u32>);
+
+impl Drop for Group {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self
+            .0
+            .and_then(|p| i32::try_from(p).ok())
+            .and_then(rustix::process::Pid::from_raw)
+        {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -50,6 +72,12 @@ pub(crate) async fn resolve(
         .file_name()
         .map_or_else(|| command.clone(), |f| f.to_string_lossy().into_owned());
     let plugin = |what: &str| format!("the kubeconfig exec auth plugin `{name}` {what}");
+    // client-go fails such a plugin at once when stdin is not a terminal, and ours never is (#90).
+    if exec.interactive_mode == Some(ExecInteractiveMode::Always) {
+        return Err(plugin(
+            "needs an interactive terminal (interactiveMode: Always), which an MCP server does not have. Log in from a terminal first; if the plugin works without a prompt once you are logged in, set interactiveMode: IfAvailable.",
+        ));
+    }
     let mut cmd = tokio::process::Command::new(&command);
     cmd.args(exec.args.iter().flatten())
         .envs(
@@ -66,30 +94,44 @@ pub(crate) async fn resolve(
     for var in exec.drop_env.iter().flatten() {
         cmd.env_remove(var);
     }
+    #[cfg(unix)]
+    cmd.process_group(0);
     let child = cmd
         .spawn()
         .map_err(|e| plugin(&format!("could not be started ({e}). {INSTALL_IT}")))?;
-    // On the deadline the future, and with it the child, is dropped: kill_on_drop kills it.
-    // ponytail: processes the plugin itself started are not killed (that needs a process-group
-    // kill, which needs libc); the plugins in use (aws, gke-gcloud-auth-plugin, kubelogin) are
-    // one process.
+    // On the deadline (or a cancelled call) the future, and with it the child, is dropped:
+    // kill_on_drop kills the plugin and `group` the processes it started.
+    let mut group = Group(child.id());
     let out = tokio::time::timeout(deadline, child.wait_with_output())
         .await
         .map_err(|_| {
             plugin(&format!("did not finish within {}s. Run it yourself to see why (it may be waiting for a login or the network), then retry.", deadline.as_secs()))
         })?
         .map_err(|e| plugin(&format!("could not be read ({e})")))?;
+    // It exited: whatever it left running is its own business, as with client-go.
+    group.0 = None;
     if !out.status.success() {
         return Err(plugin(&format!("failed ({}). {RUN_IT}", out.status)));
     }
-    let status = serde_saphyr::from_slice::<ExecCredential>(&out.stdout)
+    let not_a_credential = || {
+        plugin(&format!(
+            "returned output that is not an ExecCredential. {RUN_IT}"
+        ))
+    };
+    let cred = serde_saphyr::from_slice::<ExecCredential>(&out.stdout)
         .ok()
-        .and_then(|c| c.status)
-        .ok_or_else(|| {
-            plugin(&format!(
-                "returned output that is not an ExecCredential. {RUN_IT}"
-            ))
-        })?;
+        .filter(|c| c.kind.as_deref() == Some("ExecCredential"))
+        .ok_or_else(not_a_credential)?;
+    // As client-go: the answer must use the API version the kubeconfig asked for (#90).
+    if let Some(want) = &exec.api_version
+        && cred.api_version.as_ref() != Some(want)
+    {
+        return Err(plugin(&format!(
+            "answered with apiVersion {}, but the kubeconfig asks for {want}. Update the plugin, or set the exec section's apiVersion to one it supports.",
+            cred.api_version.as_deref().unwrap_or("(none)")
+        )));
+    }
+    let status = cred.status.ok_or_else(not_a_credential)?;
     let expires = status
         .expiration_timestamp
         .as_deref()
@@ -169,6 +211,15 @@ mod tests {
         }
     }
 
+    const V1BETA1: &str = "client.authentication.k8s.io/v1beta1";
+
+    /// A script line that prints a v1beta1 ExecCredential with `status`.
+    fn answer(status: &str) -> String {
+        format!(
+            "echo '{{\"apiVersion\":\"{V1BETA1}\",\"kind\":\"ExecCredential\",\"status\":{status}}}'"
+        )
+    }
+
     fn json(auth: &AuthInfo) -> serde_json::Value {
         serde_json::to_value(auth).unwrap()
     }
@@ -180,7 +231,7 @@ mod tests {
             dir.path(),
             r#"[ "$1" = get-token ] && [ "$FROM_ENV" = tok-env ] || exit 3
 case "$KUBERNETES_EXEC_INFO" in *'"interactive":false'*) ;; *) exit 4 ;; esac
-echo '{"kind":"ExecCredential","status":{"token":"tok-123","expirationTimestamp":"2026-11-17T12:00:00Z"}}'"#,
+echo '{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{"token":"tok-123","expirationTimestamp":"2026-11-17T12:00:00Z"}}'"#,
         );
         let expires = resolve(&mut auth, EXEC_TIMEOUT).await.unwrap();
         assert_eq!(expires, Some("2026-11-17T12:00:00Z".parse().unwrap()));
@@ -190,7 +241,9 @@ echo '{"kind":"ExecCredential","status":{"token":"tok-123","expirationTimestamp"
         // YAML is accepted, and a client certificate wins over a token.
         let mut auth = with_plugin(
             dir.path(),
-            "echo 'status: {token: t, clientCertificateData: CERT, clientKeyData: KEY}'",
+            &format!(
+                "echo 'kind: ExecCredential\napiVersion: {V1BETA1}\nstatus: {{token: t, clientCertificateData: CERT, clientKeyData: KEY}}'"
+            ),
         );
         assert_eq!(resolve(&mut auth, EXEC_TIMEOUT).await.unwrap(), None);
         let v = json(&auth);
@@ -213,7 +266,16 @@ echo '{"kind":"ExecCredential","status":{"token":"tok-123","expirationTimestamp"
                 "failed (exit status: 1)",
             ),
             ("echo 'not json at all TOKEN-1'", "not an ExecCredential"),
-            ("echo '{\"status\":{}}'", "no token or client certificate"),
+            (&*answer("{}"), "no token or client certificate"),
+            // riseno/k8s-mcp#90: client-go rejects the wrong kind and another API version.
+            (
+                &answer("{\"token\":\"TOKEN-1\"}").replace("ExecCredential", "NotACredential"),
+                "not an ExecCredential",
+            ),
+            (
+                &answer("{\"token\":\"TOKEN-1\"}").replace("v1beta1", "v1"),
+                "answered with apiVersion client.authentication.k8s.io/v1, but the kubeconfig asks for client.authentication.k8s.io/v1beta1",
+            ),
         ] {
             let err = resolve(&mut with_plugin(dir.path(), body), EXEC_TIMEOUT)
                 .await
@@ -225,33 +287,53 @@ echo '{"kind":"ExecCredential","status":{"token":"tok-123","expirationTimestamp"
         }
     }
 
-    /// riseno/k8s-mcp#84: the deadline kills the plugin instead of leaving it running.
+    /// riseno/k8s-mcp#84, #89: the deadline kills the plugin and the processes it started.
     #[tokio::test]
-    async fn a_stalled_plugin_is_killed_at_the_deadline() {
+    async fn a_stalled_plugin_and_its_children_are_killed_at_the_deadline() {
         let dir = tempfile::tempdir().unwrap();
-        let pidfile = dir.path().join("pid");
+        let pids = dir.path().join("pids");
         let mut auth = with_plugin(
             dir.path(),
-            &format!("echo $$ > {}\nexec sleep 30", pidfile.display()),
+            &format!(
+                "echo $$ >> {p}\nsleep 30 &\necho $! >> {p}\nwait",
+                p = pids.display()
+            ),
         );
         let err = resolve(&mut auth, Duration::from_secs(1))
             .await
             .unwrap_err();
         assert!(err.contains("`plugin` did not finish within 1s"), "{err}");
-        let pid = std::fs::read_to_string(&pidfile).unwrap();
-        let alive = || {
+        let pids = std::fs::read_to_string(&pids).unwrap();
+        let alive = |pid: &str| {
             std::process::Command::new("kill")
-                .args(["-0", pid.trim()])
+                .args(["-0", pid])
                 .stderr(Stdio::null())
                 .status()
                 .is_ok_and(|s| s.success())
         };
         for _ in 0..50 {
-            if !alive() {
+            if !pids.lines().any(alive) {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        panic!("plugin {} still running after the deadline", pid.trim());
+        panic!("plugin or its child still running after the deadline: {pids:?}");
+    }
+
+    /// riseno/k8s-mcp#90: `interactiveMode: Always` needs a terminal; the plugin is not run.
+    #[tokio::test]
+    async fn a_plugin_that_needs_a_terminal_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let ran = dir.path().join("ran");
+        let mut auth = with_plugin(dir.path(), &format!("touch {}", ran.display()));
+        if let Some(exec) = auth.exec.as_mut() {
+            exec.interactive_mode = Some(ExecInteractiveMode::Always);
+        }
+        let err = resolve(&mut auth, EXEC_TIMEOUT).await.unwrap_err();
+        assert!(
+            err.contains("needs an interactive terminal (interactiveMode: Always)"),
+            "{err}"
+        );
+        assert!(!ran.exists());
     }
 }

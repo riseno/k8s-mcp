@@ -376,8 +376,9 @@ async fn exec_plugin_failures_never_echo_output_or_env() {
     }
 }
 
-/// riseno/k8s-mcp#73, #84: a stalled exec plugin fails the call after 20 s instead of hanging
-/// it, is killed at the deadline, and concurrent calls share one plugin run.
+/// riseno/k8s-mcp#73, #84, #89: a stalled exec plugin fails the call after 20 s instead of
+/// hanging it, is killed at the deadline with the process it started, and concurrent calls
+/// share one plugin run.
 #[cfg(unix)]
 #[tokio::test]
 async fn stalled_exec_plugin_fails_the_call_and_is_killed() {
@@ -386,7 +387,10 @@ async fn stalled_exec_plugin_fails_the_call_and_is_killed() {
     fake_plugin(
         dir.path(),
         "stalled-plugin",
-        &format!("echo $$ >> {}\nexec sleep 30", pids.display()),
+        &format!(
+            "echo \"run $$\" >> {p}\nsleep 30 &\necho \"child $!\" >> {p}\nwait",
+            p = pids.display()
+        ),
     );
     let client = spawn_with_plugin(dir.path(), "stalled-plugin").await;
     let start = std::time::Instant::now();
@@ -403,23 +407,24 @@ async fn stalled_exec_plugin_fails_the_call_and_is_killed() {
     }
     assert!(start.elapsed().as_secs() < 25, "{:?}", start.elapsed());
     let pids = std::fs::read_to_string(&pids).unwrap();
-    let pids: Vec<&str> = pids.lines().collect();
-    assert_eq!(pids.len(), 1, "one plugin run for both calls: {pids:?}");
-    let alive = || {
+    let runs = pids.lines().filter(|l| l.starts_with("run ")).count();
+    assert_eq!(runs, 1, "one plugin run for both calls: {pids:?}");
+    let alive = |line: &str| {
+        let pid = line.split_once(' ').map_or(line, |(_, p)| p);
         std::process::Command::new("kill")
-            .args(["-0", pids[0]])
+            .args(["-0", pid])
             .stderr(std::process::Stdio::null())
             .status()
             .is_ok_and(|s| s.success())
     };
     for _ in 0..50 {
-        if !alive() {
+        if !pids.lines().any(alive) {
             client.cancel().await.unwrap();
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    panic!("plugin {} still running while the server runs", pids[0]);
+    panic!("plugin or its child still running while the server runs: {pids:?}");
 }
 
 /// riseno/k8s-mcp#80: against an API server that accepts connections and never answers, tools

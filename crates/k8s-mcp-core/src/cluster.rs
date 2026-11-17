@@ -132,8 +132,8 @@ pub struct ClusterManager {
     pub kubeconfig_paths: Vec<PathBuf>,
     /// Exec plugin commands referenced by the kubeconfig (for `doctor`).
     pub exec_plugins: Vec<String>,
-    /// Clients per context, with when their exec credential expires.
-    clients: Mutex<HashMap<String, (Client, Option<Timestamp>)>>,
+    /// Clients per context, with when to fetch a new exec credential.
+    clients: Mutex<HashMap<String, (Client, Option<Instant>)>>,
     gates: Mutex<HashMap<String, Gate>>,
     discovery: Mutex<HashMap<String, (Instant, Discovered)>>,
     /// Node-backed detection per context, from tools that listed the nodes (#71).
@@ -394,10 +394,10 @@ impl ClusterManager {
             (Some(client), _) => client,
             (None, Some((at, e))) if *at > asked => return Err(e.clone()),
             (None, _) => match self.build_client(name).await {
-                Ok((client, expires)) => {
+                Ok((client, refresh_at)) => {
                     *failed = None;
                     self.lock_clients()
-                        .insert(name.into(), (client.clone(), expires));
+                        .insert(name.into(), (client.clone(), refresh_at));
                     client
                 }
                 Err(e) => {
@@ -413,8 +413,8 @@ impl ClusterManager {
         })
     }
 
-    /// A new client for `name`, and when its exec credential expires.
-    async fn build_client(&self, name: &str) -> Result<(Client, Option<Timestamp>)> {
+    /// A new client for `name`, and when to fetch a new exec credential for it.
+    async fn build_client(&self, name: &str) -> Result<(Client, Option<Instant>)> {
         let mut config = match &self.source {
             Source::Fixed(c) => return Ok((c.clone(), None)),
             Source::InCluster => Config::incluster().map_err(|e| {
@@ -443,21 +443,28 @@ impl ClusterManager {
             .await
             .map_err(|e| Error::Unreachable(format!("cannot {what}: {e}")))?;
         let client = Client::try_from(config).map_err(|e| Error::kube(what, &e))?;
-        Ok((client, expires))
+        let refresh_at = expires.map(|t| {
+            let left = t.duration_since(Timestamp::now());
+            if left.is_negative() {
+                tracing::warn!(context = name, "the exec auth plugin returned an already-expired credential; check this machine's clock");
+            }
+            Instant::now() + reuse_for(left)
+        });
+        Ok((client, refresh_at))
     }
 
-    /// The cached client for `context`, unless its exec credential expires within two minutes.
+    /// The cached client for `context`, until its exec credential is due for refresh.
     fn cached_client(&self, context: &str) -> Option<Client> {
         let clients = self.lock_clients();
-        let (client, expires) = clients.get(context)?;
-        expires
-            .is_none_or(|t| t.duration_since(Timestamp::now()) > SignedDuration::from_mins(2))
+        let (client, refresh_at) = clients.get(context)?;
+        refresh_at
+            .is_none_or(|t| Instant::now() < t)
             .then(|| client.clone())
     }
 
     fn lock_clients(
         &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<String, (Client, Option<Timestamp>)>> {
+    ) -> std::sync::MutexGuard<'_, HashMap<String, (Client, Option<Instant>)>> {
         self.clients
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -489,6 +496,16 @@ impl ClusterManager {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(context);
     }
+}
+
+/// How long to reuse an exec credential that expires in `left`: until two minutes before it
+/// expires, or half a shorter lifetime, and at least for one call (30 s) even when it has
+/// already expired, as when this clock runs ahead of the issuer's (#88).
+fn reuse_for(left: SignedDuration) -> Duration {
+    let keep = (left - SignedDuration::from_mins(2)).max(left / 2);
+    Duration::try_from(keep)
+        .unwrap_or(Duration::ZERO)
+        .max(Duration::from_secs(30))
 }
 
 fn default_paths() -> Vec<PathBuf> {
@@ -553,7 +570,10 @@ fn harden_exec_plugins(kc: &mut Kubeconfig, prepend: &[PathBuf]) -> Vec<String> 
         let Some(exec) = auth.exec.as_mut() else {
             continue;
         };
-        exec.interactive_mode = Some(ExecInteractiveMode::Never);
+        // `Always` stays, so the exec runner can refuse it with the reason (#90).
+        if exec.interactive_mode != Some(ExecInteractiveMode::Always) {
+            exec.interactive_mode = Some(ExecInteractiveMode::Never);
+        }
         if let Some(path) = &path {
             let env = exec.env.get_or_insert_with(Vec::new);
             if !env
@@ -750,11 +770,11 @@ users:
         );
     }
 
-    /// riseno/k8s-mcp#84: exec credentials are cached until two minutes before they expire,
-    /// then the plugin runs again (kube-client refreshed them itself before).
+    /// riseno/k8s-mcp#84, #88: a client is reused until its exec credential is due for refresh,
+    /// and at least for a call even when the credential is short-lived or already expired.
     #[cfg(unix)]
     #[tokio::test]
-    async fn exec_credentials_are_refreshed_before_they_expire() {
+    async fn exec_credentials_are_reused_for_at_least_a_call() {
         use std::fmt::Write as _;
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
@@ -763,7 +783,7 @@ users:
             "apiVersion: v1\nkind: Config\ncurrent-context: soon\nclusters:\n- name: c\n  cluster: {server: 'https://127.0.0.1:1'}\ncontexts:\n",
         );
         let mut users = String::from("users:\n");
-        for (name, valid) in [("soon", 60), ("later", 3600)] {
+        for (name, valid) in [("soon", 45), ("expired", -3600), ("later", 3600)] {
             let expiry = Timestamp::now()
                 .checked_add(SignedDuration::from_secs(valid))
                 .unwrap();
@@ -771,7 +791,7 @@ users:
             std::fs::write(
                 &plugin,
                 format!(
-                    "#!/bin/sh\necho {name} >> {}\necho '{{\"status\":{{\"token\":\"t\",\"expirationTimestamp\":\"{expiry}\"}}}}'\n",
+                    "#!/bin/sh\necho {name} >> {}\necho '{{\"apiVersion\":\"client.authentication.k8s.io/v1beta1\",\"kind\":\"ExecCredential\",\"status\":{{\"token\":\"t\",\"expirationTimestamp\":\"{expiry}\"}}}}'\n",
                     runs.display()
                 ),
             )
@@ -797,14 +817,27 @@ users:
         })
         .unwrap();
         let policy = Policy::new(&["*".into()], &[], &[], RedactLevel::Standard, 24_000).unwrap();
-        for _ in 0..2 {
-            for context in ["soon", "later"] {
+        for _ in 0..3 {
+            for context in ["soon", "expired", "later"] {
                 cm.target(Some(context), &policy).await.unwrap();
             }
         }
         let runs = std::fs::read_to_string(&runs).unwrap();
         let count = |name: &str| runs.lines().filter(|l| *l == name).count();
-        assert_eq!((count("soon"), count("later")), (2, 1), "{runs}");
+        assert_eq!(
+            (count("soon"), count("expired"), count("later")),
+            (1, 1, 1),
+            "{runs}"
+        );
+    }
+
+    #[test]
+    fn credentials_are_refreshed_two_minutes_early_or_at_half_life() {
+        let reuse = |secs| reuse_for(SignedDuration::from_secs(secs)).as_secs();
+        assert_eq!(reuse(15 * 60), 13 * 60);
+        assert_eq!(reuse(3 * 60), 90);
+        assert_eq!(reuse(45), 30);
+        assert_eq!(reuse(-3600), 30);
     }
 
     #[test]

@@ -4,7 +4,7 @@
 
 use k8s_mcp_core::Result;
 use k8s_mcp_core::confirm::{Binding, Confirmer};
-use kube::api::PatchParams;
+use kube::api::{DeleteParams, PatchParams, PostParams};
 
 /// Field manager of every k8s-mcp write (server-side apply, patches).
 pub const MANAGER: &str = "k8s-mcp";
@@ -18,6 +18,22 @@ pub struct Mode {
 impl Mode {
     /// A plan: every request is a dry run.
     pub const PLAN: Self = Self { dry_run: true };
+
+    /// Parameters for a replace (PUT), which checks the object's resourceVersion.
+    pub fn post(self) -> PostParams {
+        PostParams {
+            dry_run: self.dry_run,
+            field_manager: Some(MANAGER.into()),
+        }
+    }
+
+    /// Parameters for a delete.
+    pub fn delete(self) -> DeleteParams {
+        DeleteParams {
+            dry_run: self.dry_run,
+            ..DeleteParams::default()
+        }
+    }
 
     /// Parameters for a patch.
     pub fn patch(self) -> PatchParams {

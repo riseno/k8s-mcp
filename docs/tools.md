@@ -167,6 +167,78 @@ Rolling restart of a Deployment, StatefulSet or DaemonSet (like `kubectl rollout
 | `name` **(required)** | string | Workload name. |
 | `namespace` | string | Namespace (default: the context's namespace). |
 
+### `scale_workload`
+
+Tier: write (`--allow-write`).
+
+Set the replicas of a Deployment, StatefulSet or ReplicaSet. The plan says when an HPA manages the replicas and would undo the change. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).
+
+| Input | Type | Description |
+|---|---|---|
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry run that returns the plan and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
+| `kind` **(required)** | string | `Deployment`, `StatefulSet` or `ReplicaSet`. |
+| `name` **(required)** | string | Workload name. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+| `replicas` **(required)** | integer | The new replica count. |
+
+### `rollback_workload`
+
+Tier: write (`--allow-write`).
+
+Roll a Deployment back to an earlier revision's pod template (like `kubectl rollout undo`; `to_revision` defaults to the previous one, rollout_history lists them). The plan shows the template diff. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).
+
+| Input | Type | Description |
+|---|---|---|
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry run that returns the plan and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
+| `name` **(required)** | string | Deployment name. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+| `to_revision` | integer | Revision to go back to (default: the one before the current; rollout_history lists them). |
+
+### `delete_pod`
+
+Tier: write (`--allow-write`).
+
+Delete one pod so its controller replaces it (a stuck or misbehaving instance). Refuses pods without an owner unless allow_unowned=true, and static pods' mirrors. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).
+
+| Input | Type | Description |
+|---|---|---|
+| `allow_unowned` | boolean | Allow deleting a pod that no controller recreates (default false). |
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry run that returns the plan and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
+| `name` **(required)** | string | Pod name. |
+| `namespace` | string | Namespace (default: the context's namespace). |
+
+### `cordon_node`
+
+Tier: write (`--allow-write`).
+
+Mark a node unschedulable: its pods keep running, no new pod lands on it (drain_node evicts them). Refused while --namespaces limits the server. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).
+
+| Input | Type | Description |
+|---|---|---|
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry run that returns the plan and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
+| `name` **(required)** | string | Node name. |
+
+### `uncordon_node`
+
+Tier: write (`--allow-write`).
+
+Mark a node schedulable again. Refused while --namespaces limits the server. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).
+
+| Input | Type | Description |
+|---|---|---|
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry run that returns the plan and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
+| `name` **(required)** | string | Node name. |
+
 ### `check_permissions`
 
 What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.

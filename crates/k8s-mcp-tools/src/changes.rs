@@ -45,10 +45,10 @@ const DIFF_SUMMARY: usize = 3;
 const MAX_SINCE: SignedDuration = SignedDuration::from_hours(7 * 24);
 
 /// One revision of a workload's pod template.
-struct Revision {
-    number: i64,
+pub(crate) struct Revision {
+    pub(crate) number: i64,
     created: Option<Timestamp>,
-    template: PodTemplateSpec,
+    pub(crate) template: PodTemplateSpec,
     change_cause: Option<String>,
     /// `ready/desired` for a ReplicaSet.
     replicas: Option<String>,
@@ -98,7 +98,7 @@ fn created(meta: &ObjectMeta) -> Option<Timestamp> {
 
 /// The revisions of a Deployment, StatefulSet or DaemonSet, newest first. Fails with
 /// NotFound when the workload does not exist (an empty list would read as "never rolled out").
-async fn revisions(
+pub(crate) async fn revisions(
     client: &kube::Client,
     ns: &str,
     kind: &str,
@@ -151,7 +151,7 @@ fn images(t: &PodTemplateSpec) -> String {
 }
 
 /// What changed between two pod templates, one line per change. Env values are never shown.
-fn template_diff(old: &PodTemplateSpec, new: &PodTemplateSpec) -> Vec<String> {
+pub(crate) fn template_diff(old: &PodTemplateSpec, new: &PodTemplateSpec) -> Vec<String> {
     let empty = PodSpec::default();
     let (os, ns) = (
         old.spec.as_ref().unwrap_or(&empty),

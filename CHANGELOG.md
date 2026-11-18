@@ -20,6 +20,13 @@ All notable changes are documented here. The format follows
   with `dry_run: false` and that token, makes the change, with the object's resourceVersion
   as a precondition. Every write call is audited with its `dry_run`, and the server
   instructions tell the model to confirm only after the user agrees.
+- The rest of the write tier, all planned as server-side dry runs and confirmed with a token:
+  `scale_workload` (Deployment, StatefulSet, ReplicaSet; warns when an HPA would undo it),
+  `rollback_workload` (a Deployment to an earlier revision's template; the plan shows the
+  diff), `delete_pod` (refuses pods without an owner unless `allow_unowned`, mirror pods and
+  pods already terminating; resourceVersion and UID preconditions), `cordon_node` and
+  `uncordon_node` (refused while `--namespaces` limits the server). `scale_workload` and the
+  node tools are annotated idempotent.
 
 ## [0.3.4] - 2026-11-17
 

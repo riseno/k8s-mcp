@@ -79,7 +79,11 @@ pub use read::{
 pub use service::{DiagnoseServiceInput, diagnose_service};
 pub use storage::{DiagnosePvcInput, diagnose_pvc};
 pub use upgrade::{UpgradeReadinessInput, upgrade_readiness};
-pub use write::{RestartWorkloadInput, restart_workload};
+pub use write::{
+    DeletePodInput, NodeWriteInput, RestartWorkloadInput, RollbackWorkloadInput,
+    ScaleWorkloadInput, cordon_node, delete_pod, restart_workload, rollback_workload,
+    scale_workload, uncordon_node,
+};
 
 /// Source of "now", injected so tests and golden snapshots are deterministic.
 pub type Clock = Arc<dyn Fn() -> Timestamp + Send + Sync>;

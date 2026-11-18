@@ -8,7 +8,10 @@ use k8s_mcp_core::cluster::ClusterManager;
 use k8s_mcp_core::policy::Policy;
 use k8s_mcp_testkit::mock::{Mock, MockApi};
 use k8s_mcp_testkit::now;
-use k8s_mcp_tools::{Ctx, RestartWorkloadInput};
+use k8s_mcp_tools::{
+    Ctx, DeletePodInput, Envelope, NodeWriteInput, RestartWorkloadInput, RollbackWorkloadInput,
+    ScaleWorkloadInput,
+};
 use serde_json::{Value, json};
 
 fn ctx(mock: &Mock) -> Ctx {
@@ -47,6 +50,11 @@ fn writes(m: &Mock) -> Vec<String> {
         .filter(|r| !r.starts_with("GET "))
         .cloned()
         .collect()
+}
+
+/// A server-side dry run: `dryRun=All` in the query, or for a delete in its body.
+fn dry(request: &str) -> bool {
+    request.contains("dryRun=All") || request.contains(r#""dryRun":["All"]"#)
 }
 
 fn restart(dry_run: Option<bool>, token: Option<&str>) -> RestartWorkloadInput {
@@ -89,7 +97,7 @@ async fn a_restart_is_planned_as_a_dry_run_and_applied_only_with_its_token() {
     let sent = writes(&m);
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert!(
-        sent[0].starts_with(&format!("PATCH {WEB}?")) && sent[0].contains("dryRun=All"),
+        sent[0].starts_with(&format!("PATCH {WEB}?")) && dry(&sent[0]),
         "{sent:?}"
     );
 
@@ -119,7 +127,7 @@ async fn a_restart_is_planned_as_a_dry_run_and_applied_only_with_its_token() {
     );
     let sent = writes(&m);
     assert_eq!(sent.len(), 2, "{sent:?}");
-    assert!(!sent[1].contains("dryRun"), "{sent:?}");
+    assert!(!dry(&sent[1]), "{sent:?}");
     assert_eq!(done.next[0].tool, "diagnose_workload");
 }
 
@@ -159,6 +167,302 @@ async fn protected_namespaces_are_refused_before_any_request() {
         .unwrap_err();
     assert!(
         err.is_forbidden() && err.to_string().contains("protected from writes"),
+        "{err}"
+    );
+    assert!(m.requests.lock().unwrap().is_empty());
+}
+
+fn rs(revision: u32, image: &str) -> Value {
+    json!({"apiVersion": "apps/v1", "kind": "ReplicaSet",
+        "metadata": {"name": format!("web-{revision}"), "namespace": "shop",
+            "annotations": {"deployment.kubernetes.io/revision": revision.to_string()},
+            "ownerReferences": [{"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "uid": "u1", "controller": true}]},
+        "spec": {"replicas": 0, "selector": {"matchLabels": {"app": "web"}},
+            "template": {"metadata": {"labels": {"app": "web", "pod-template-hash": format!("h{revision}")}},
+                "spec": {"containers": [{"name": "app", "image": image}]}}}})
+}
+
+fn pod(owned: bool, mirror: bool) -> Value {
+    let mut meta =
+        json!({"name": "web-1", "namespace": "shop", "resourceVersion": "9", "uid": "p1"});
+    if owned {
+        meta["ownerReferences"] = json!([{"apiVersion": "apps/v1", "kind": "ReplicaSet", "name": "web-3", "uid": "r3", "controller": true}]);
+    }
+    if mirror {
+        meta["annotations"] = json!({"kubernetes.io/config.mirror": "x"});
+    }
+    json!({"apiVersion": "v1", "kind": "Pod", "metadata": meta,
+        "spec": {"containers": [{"name": "app", "image": "nginx"}], "terminationGracePeriodSeconds": 45}})
+}
+
+const POD: &str = "/api/v1/namespaces/shop/pods/web-1";
+const NODE: &str = "/api/v1/nodes/n1";
+
+/// A mock that serves every object the write-tier tools read and accepts their writes.
+fn cluster() -> Mock {
+    let mut dep = deployment("41");
+    dep["metadata"]["annotations"] = json!({"deployment.kubernetes.io/revision": "3"});
+    dep["spec"]["template"]["spec"]["containers"][0]["image"] = json!("nginx:1.27");
+    let scale = json!({"apiVersion": "autoscaling/v1", "kind": "Scale",
+        "metadata": {"name": "web", "namespace": "shop", "resourceVersion": "41"},
+        "spec": {"replicas": 3}, "status": {"replicas": 3}});
+    let node = json!({"apiVersion": "v1", "kind": "Node", "metadata": {"name": "n1", "resourceVersion": "5"}, "spec": {}});
+    MockApi::new()
+        .get(WEB, dep.clone())
+        .route("PATCH", WEB, 200, dep.clone())
+        .route("PUT", WEB, 200, dep)
+        .get(&format!("{WEB}/scale"), scale.clone())
+        .route("PATCH", &format!("{WEB}/scale"), 200, scale)
+        .list(
+            "/apis/autoscaling/v2/namespaces/shop/horizontalpodautoscalers",
+            vec![json!({"apiVersion": "autoscaling/v2", "kind": "HorizontalPodAutoscaler",
+                "metadata": {"name": "web", "namespace": "shop"},
+                "spec": {"scaleTargetRef": {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"}, "minReplicas": 2, "maxReplicas": 10}})],
+        )
+        .list(
+            "/apis/apps/v1/namespaces/shop/replicasets",
+            vec![rs(3, "nginx:1.27"), rs(2, "nginx:1.26")],
+        )
+        .get(POD, pod(true, false))
+        .route("DELETE", POD, 200, pod(true, false))
+        .get(NODE, node.clone())
+        .route("PATCH", NODE, 200, node)
+        .list("/api/v1/pods", vec![pod(true, false)])
+        .start()
+}
+
+async fn call(c: &Ctx, tool: &str, args: Value) -> k8s_mcp_core::Result<Envelope> {
+    let a = args;
+    match tool {
+        "restart_workload" => {
+            k8s_mcp_tools::restart_workload(
+                c,
+                serde_json::from_value::<RestartWorkloadInput>(a).unwrap(),
+            )
+            .await
+        }
+        "scale_workload" => {
+            k8s_mcp_tools::scale_workload(
+                c,
+                serde_json::from_value::<ScaleWorkloadInput>(a).unwrap(),
+            )
+            .await
+        }
+        "rollback_workload" => {
+            k8s_mcp_tools::rollback_workload(
+                c,
+                serde_json::from_value::<RollbackWorkloadInput>(a).unwrap(),
+            )
+            .await
+        }
+        "delete_pod" => {
+            k8s_mcp_tools::delete_pod(c, serde_json::from_value::<DeletePodInput>(a).unwrap()).await
+        }
+        "cordon_node" => {
+            k8s_mcp_tools::cordon_node(c, serde_json::from_value::<NodeWriteInput>(a).unwrap())
+                .await
+        }
+        "uncordon_node" => {
+            k8s_mcp_tools::uncordon_node(c, serde_json::from_value::<NodeWriteInput>(a).unwrap())
+                .await
+        }
+        other => panic!("{other}"),
+    }
+}
+
+/// v0.4 AC 2 for every write-tier tool: a plan sends only dry-run writes, and without the
+/// plan's token (or with another plan's) nothing else is sent; with it, the real write.
+#[tokio::test]
+async fn every_write_tool_mutates_only_with_its_plans_token() {
+    let cases = [
+        (
+            "restart_workload",
+            json!({"kind": "Deployment", "name": "web"}),
+            "PATCH",
+        ),
+        (
+            "scale_workload",
+            json!({"kind": "Deployment", "name": "web", "replicas": 5}),
+            "PATCH",
+        ),
+        ("rollback_workload", json!({"name": "web"}), "PUT"),
+        ("delete_pod", json!({"name": "web-1"}), "DELETE"),
+        ("cordon_node", json!({"name": "n1"}), "PATCH"),
+        ("uncordon_node", json!({"name": "n1"}), "PATCH"),
+    ];
+    let m = cluster();
+    let c = ctx(&m);
+    let mut tokens = Vec::new();
+    for (tool, args, verb) in &cases {
+        let plan = call(&c, tool, args.clone())
+            .await
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+        let sent = writes(&m);
+        let last = sent.last().unwrap();
+        assert!(last.starts_with(verb) && dry(last), "{tool}: {sent:?}");
+        assert!(sent.iter().all(|r| dry(r)), "{tool}: {sent:?}");
+        tokens.push(plan.next[0].args.clone());
+    }
+    let planned = writes(&m).len();
+    for (i, (tool, args, _)) in cases.iter().enumerate() {
+        let mut no_token = args.clone();
+        no_token["dry_run"] = json!(false);
+        assert!(call(&c, tool, no_token).await.is_err(), "{tool}");
+        // Another tool's token does not confirm this tool's plan.
+        let mut wrong = args.clone();
+        wrong["dry_run"] = json!(false);
+        wrong["confirm_token"] = tokens[(i + 1) % tokens.len()]["confirm_token"].clone();
+        assert!(call(&c, tool, wrong).await.is_err(), "{tool}");
+    }
+    assert_eq!(writes(&m).len(), planned, "no write without a valid token");
+    for ((tool, _, verb), confirm) in cases.iter().zip(tokens) {
+        call(&c, tool, confirm)
+            .await
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+        let last = writes(&m).pop().unwrap();
+        assert!(last.starts_with(verb) && !dry(&last), "{tool}: {last}");
+    }
+}
+
+#[tokio::test]
+async fn plans_show_the_change_and_its_impact() {
+    let m = cluster();
+    let c = ctx(&m);
+    let lines = |e: &Envelope| e.sections[0].lines.clone();
+
+    let scale = call(
+        &c,
+        "scale_workload",
+        json!({"kind": "deploy", "name": "web", "replicas": 0}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        lines(&scale)[..2],
+        [
+            "spec.replicas: 3 → 0",
+            "scaled to zero: it serves nothing until it is scaled up again"
+        ]
+    );
+    assert!(
+        lines(&scale)[2].starts_with("HorizontalPodAutoscaler web manages these replicas (2–10)"),
+        "{:?}",
+        lines(&scale)
+    );
+
+    let rollback = call(&c, "rollback_workload", json!({"name": "web"}))
+        .await
+        .unwrap();
+    assert!(
+        rollback
+            .summary
+            .contains("roll back Deployment shop/web from revision 3 to 2"),
+        "{}",
+        rollback.summary
+    );
+    assert!(
+        lines(&rollback)
+            .iter()
+            .any(|l| l.contains("nginx:1.27") && l.contains("nginx:1.26")),
+        "{:?}",
+        lines(&rollback)
+    );
+    assert_eq!(
+        rollback.next[0].args["to_revision"], 2,
+        "the default resolved into the confirm call"
+    );
+    for (args, expected) in [
+        (
+            json!({"name": "web", "to_revision": 3}),
+            "already at revision 3",
+        ),
+        (
+            json!({"name": "web", "to_revision": 7}),
+            "has no revision 7",
+        ),
+    ] {
+        let err = call(&c, "rollback_workload", args)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(expected), "{err}");
+    }
+
+    let delete = call(&c, "delete_pod", json!({"name": "web-1"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        lines(&delete),
+        [
+            "pod shop/web-1 stops (grace period 45s)",
+            "its ReplicaSet web-3 creates a replacement"
+        ]
+    );
+
+    let cordon = call(&c, "cordon_node", json!({"name": "n1"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        lines(&cordon),
+        [
+            "spec.unschedulable: false → true",
+            "its 1 pod(s) keep running; no new pod is scheduled on it (drain_node evicts them)"
+        ]
+    );
+    let uncordon = call(&c, "uncordon_node", json!({"name": "n1"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        lines(&uncordon)[0],
+        "spec.unschedulable: false (already; nothing changes)"
+    );
+}
+
+#[tokio::test]
+async fn unowned_and_mirror_pods_and_limited_servers_are_refused() {
+    let mut terminating = pod(true, false);
+    terminating["metadata"]["deletionTimestamp"] = json!("2026-11-14T11:59:00Z");
+    for (body, allow, expected) in [
+        (pod(false, false), false, "has no owner"),
+        (pod(true, true), false, "static pod's mirror"),
+        (terminating, false, "already being deleted"),
+    ] {
+        let m = MockApi::new().get(POD, body).start();
+        let err = call(
+            &ctx(&m),
+            "delete_pod",
+            json!({"name": "web-1", "allow_unowned": allow}),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains(expected), "{err}");
+        assert!(writes(&m).is_empty());
+    }
+    let m = MockApi::new()
+        .get(POD, pod(false, false))
+        .route("DELETE", POD, 200, pod(false, false))
+        .start();
+    let plan = call(
+        &ctx(&m),
+        "delete_pod",
+        json!({"name": "web-1", "allow_unowned": true}),
+    )
+    .await
+    .unwrap();
+    assert!(plan.sections[0].lines[1].contains("gone for good"));
+
+    // A server limited to some namespaces does not touch nodes.
+    let m = cluster();
+    let mut c = ctx(&m);
+    let mut limited = Policy::permissive();
+    limited.namespaces = k8s_mcp_core::policy::Patterns::new(&["shop".into()]).unwrap();
+    c.policy = Arc::new(limited);
+    let err = call(&c, "cordon_node", json!({"name": "n1"}))
+        .await
+        .unwrap_err();
+    assert!(
+        err.is_forbidden() && err.to_string().contains("--namespaces"),
         "{err}"
     );
     assert!(m.requests.lock().unwrap().is_empty());

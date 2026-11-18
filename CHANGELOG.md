@@ -40,6 +40,10 @@ All notable changes are documented here. The format follows
 - Write requests use a client that never retries: kube-client retries 429, 503 and 504 up to
   15 times with exponential backoff, which made every PodDisruptionBudget-blocked eviction
   hang the call and could send a mutation twice. Reads keep the retries.
+- `cargo xtask kind-up` creates the kind cluster with an API server audit log of the admin
+  user's writes (`.dev/audit/audit.log`), and CI runs the kind acceptance tests, which now
+  check against it that no write tool mutates anything without its plan's token. Recreate an
+  older local cluster with `cargo xtask kind-down && cargo xtask kind-up`.
 
 ## [0.3.4] - 2026-11-17
 

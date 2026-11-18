@@ -1,0 +1,15 @@
+# API server audit policy of the dev and CI kind clusters (v0.4 AC 2): every write by the kind
+# admin user (k8s-mcp and kubectl through .dev/kubeconfig), with its request body so a delete's
+# dryRun is visible; Secret bodies are never logged. Everything else is not recorded.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: Metadata
+    users: [kubernetes-admin]
+    verbs: [create, update, patch, delete, deletecollection]
+    resources: [{group: "", resources: [secrets]}]
+  - level: Request
+    users: [kubernetes-admin]
+    verbs: [create, update, patch, delete, deletecollection]
+  - level: None

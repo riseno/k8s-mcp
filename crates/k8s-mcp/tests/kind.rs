@@ -443,3 +443,217 @@ async fn renamed_context_never_reaches_a_cloud() {
     );
     client.cancel().await.unwrap();
 }
+
+/// One API server audit event (`.dev/audit/audit.log`, written by `cargo xtask kind-up`).
+fn audit_events(path: &Path, from: u64) -> Vec<Value> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).unwrap();
+    f.seek(SeekFrom::Start(from)).unwrap();
+    let mut s = String::new();
+    f.read_to_string(&mut s).unwrap();
+    s.lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect()
+}
+
+/// A server-side dry run: `dryRun=All` in the URI, or in a delete's body.
+fn is_dry(e: &Value) -> bool {
+    e["requestURI"]
+        .as_str()
+        .is_some_and(|u| u.contains("dryRun=All"))
+        || e["requestObject"]["dryRun"] == json!(["All"])
+}
+
+/// v0.4 AC 2, 4 and 5 against a real API server, checked with its own audit log: every write
+/// plan, every confirm without its plan's token, and a protected namespace reach the API
+/// server only as dry runs (or not at all); the one confirmed plan is the only real write, and
+/// every call is in k8s-mcp's audit log.
+#[tokio::test]
+#[ignore = "needs the local kind cluster (cargo xtask kind-up)"]
+async fn writes_mutate_only_with_their_plans_token() {
+    let audit = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.dev/audit/audit.log");
+    assert!(
+        audit.exists(),
+        "the kind cluster writes no API audit log: recreate it with `cargo xtask kind-down && cargo xtask kind-up`"
+    );
+    let admin = admin().await;
+    let ns = format!("k8s-mcp-writes-{}", suffix());
+    let web = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "web"},
+        "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "web"}},
+            "template": {"metadata": {"labels": {"app": "web"}},
+                "spec": {"containers": [{"name": "c", "image": "busybox:1.36", "command": ["sh", "-c", "sleep 3600"]}]}}}});
+    apply(&admin, &ns, &[web]).await;
+    let pods: Api<Pod> = Api::namespaced(admin.clone(), &ns);
+    let mut pod = String::new();
+    for _ in 0..90 {
+        if let Some(p) = pods
+            .list(&kube::api::ListParams::default())
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .next()
+        {
+            pod = p.metadata.name.unwrap();
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    assert!(!pod.is_empty(), "the Deployment created no pod");
+    // Plan only once the rollout settled: the controller's status updates change the
+    // Deployment's resourceVersion, which voids a plan's token (as it should).
+    let deployments: Api<k8s_openapi::api::apps::v1::Deployment> =
+        Api::namespaced(admin.clone(), &ns);
+    for _ in 0..120 {
+        let d = deployments.get("web").await.unwrap();
+        let st = d.status.unwrap_or_default();
+        if st.observed_generation == d.metadata.generation && st.available_replicas == Some(1) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let node = Api::<k8s_openapi::api::core::v1::Node>::all(admin.clone())
+        .list(&kube::api::ListParams::default())
+        .await
+        .unwrap()
+        .items[0]
+        .metadata
+        .name
+        .clone()
+        .unwrap();
+    let from = std::fs::metadata(&audit).unwrap().len();
+    let dir = tempfile::tempdir().unwrap();
+    let mcp_audit = dir.path().join("audit.jsonl");
+    let srv = spawn(
+        &kubeconfig_path(),
+        &[
+            "--context",
+            CONTEXT,
+            "--audit-log",
+            mcp_audit.to_str().unwrap(),
+            "--allow-write",
+            "--allow-destructive",
+        ],
+    )
+    .await;
+    let manifest = format!(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata: {{name: applied, namespace: {ns}}}\ndata: {{a: b}}\n"
+    );
+    let plans = [
+        (
+            "restart_workload",
+            json!({"kind": "Deployment", "name": "web", "namespace": ns}),
+        ),
+        (
+            "scale_workload",
+            json!({"kind": "Deployment", "name": "web", "namespace": ns, "replicas": 2}),
+        ),
+        ("delete_pod", json!({"name": pod, "namespace": ns})),
+        ("cordon_node", json!({"name": node})),
+        ("uncordon_node", json!({"name": node})),
+        ("drain_node", json!({"name": node})),
+        ("apply_manifest", json!({"manifest": manifest})),
+    ];
+    let mut confirms = Vec::new();
+    for (tool, args) in &plans {
+        let (text, r) = call(&srv, tool, args.clone()).await;
+        assert_ne!(r.is_error, Some(true), "{tool}: {text}");
+        let confirm = r.structured_content.unwrap()["next"][0]["args"].clone();
+        assert_eq!(confirm["dry_run"], false, "{tool}");
+        confirms.push(confirm);
+    }
+    for (i, (tool, args)) in plans.iter().enumerate() {
+        let mut no_token = args.clone();
+        no_token["dry_run"] = json!(false);
+        let (text, r) = call(&srv, tool, no_token).await;
+        assert_eq!(r.is_error, Some(true), "{tool}: {text}");
+        let mut wrong = args.clone();
+        wrong["dry_run"] = json!(false);
+        wrong["confirm_token"] = confirms[(i + 1) % confirms.len()]["confirm_token"].clone();
+        let (text, r) = call(&srv, tool, wrong).await;
+        assert_eq!(r.is_error, Some(true), "{tool}: {text}");
+    }
+    // AC 4: the default write deny-list protects kube-system.
+    let (text, r) = call(
+        &srv,
+        "restart_workload",
+        json!({"kind": "Deployment", "name": "coredns", "namespace": "kube-system"}),
+    )
+    .await;
+    assert!(
+        r.is_error == Some(true) && text.contains("protected from writes"),
+        "{text}"
+    );
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let ours = |e: &Value| {
+        !e["userAgent"].as_str().unwrap_or("").starts_with("kubectl")
+            && (e["objectRef"]["namespace"] == json!(ns)
+                || e["objectRef"]["namespace"] == "kube-system"
+                || (e["objectRef"]["resource"] == "nodes" && e["objectRef"]["name"] == json!(node)))
+    };
+    let events: Vec<Value> = audit_events(&audit, from)
+        .into_iter()
+        .filter(ours)
+        .collect();
+    let mutations: Vec<&Value> = events.iter().filter(|e| !is_dry(e)).collect();
+    assert!(
+        mutations.is_empty(),
+        "writes without a confirm token: {mutations:#?}"
+    );
+    for (resource, verb) in [
+        ("deployments", "patch"),
+        ("pods", "delete"),
+        ("nodes", "patch"),
+        ("pods", "create"),
+        ("configmaps", "patch"),
+    ] {
+        assert!(
+            events
+                .iter()
+                .any(|e| e["objectRef"]["resource"] == resource && e["verb"] == verb),
+            "no dry-run {verb} of {resource} in the API audit log: {events:#?}"
+        );
+    }
+    // The refused restart of kube-system/coredns never reached the API server (the drain
+    // plan's dry-run evictions of kube-system pods are expected: drains reach every namespace).
+    assert!(
+        !events
+            .iter()
+            .any(|e| e["objectRef"]["resource"] == "deployments"
+                && e["objectRef"]["name"] == "coredns"),
+        "{events:#?}"
+    );
+
+    // The positive control: the restart's own token makes the one real write.
+    let from = std::fs::metadata(&audit).unwrap().len();
+    let (text, r) = call(&srv, "restart_workload", confirms[0].clone()).await;
+    assert_ne!(r.is_error, Some(true), "{text}");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let real: Vec<Value> = audit_events(&audit, from)
+        .into_iter()
+        .filter(ours)
+        .filter(|e| !is_dry(e))
+        .collect();
+    assert_eq!(real.len(), 1, "{real:#?}");
+    assert_eq!(
+        (&real[0]["verb"], &real[0]["objectRef"]["name"]),
+        (&json!("patch"), &json!("web"))
+    );
+    srv.cancel().await.unwrap();
+
+    // AC 5: every write call, plans and refused confirms included, is in k8s-mcp's audit log.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let log = std::fs::read_to_string(&mcp_audit).unwrap();
+    let writes: Vec<Value> = log
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|r| r["tier"] != "read")
+        .collect();
+    assert_eq!(writes.len(), plans.len() * 3 + 2, "{log}");
+    assert_eq!(
+        writes.iter().filter(|r| r["dry_run"] == true).count(),
+        plans.len() + 1
+    );
+    cleanup(&admin, &ns).await;
+}

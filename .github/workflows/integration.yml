@@ -44,10 +44,16 @@ jobs:
       - uses: helm/kind-action@v1.15.2
         with:
           version: v0.33.0
-          cluster_name: k8s-mcp-dev
-          node_image: ${{ matrix.image }}
-      # Reuses the cluster above: writes .dev/kubeconfig and installs metrics-server.
+          install_only: true
+      # Creates the cluster with its audit log (xtask/kind/audit-policy.yaml), writes
+      # .dev/kubeconfig and installs metrics-server.
       - run: cargo xtask kind-up
+        env:
+          K8S_MCP_KIND_IMAGE: ${{ matrix.image }}
+      # The kind acceptance tests, including the write-safety check against the API server's
+      # audit log (written by root inside the node container).
+      - run: sudo chmod a+rx .dev/audit && sudo chmod a+r .dev/audit/audit.log
+      - run: cargo test -p k8s-mcp-server --all-features --test kind --test stdio -- --ignored
       - run: cargo xtask eval
       - uses: actions/upload-artifact@v7
         if: always()

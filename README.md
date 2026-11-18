@@ -164,7 +164,7 @@ k8s-mcp is deterministic first: tested rules turn container states, events, logs
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo xtask kind-up            # local kind cluster k8s-mcp-dev, kubeconfig in ./.dev/kubeconfig
+cargo xtask kind-up            # local kind cluster k8s-mcp-dev, kubeconfig in ./.dev/kubeconfig, API audit log in ./.dev/audit/
 cargo xtask eval               # diagnosis eval scenarios against kind
 cargo run -- doctor --kubeconfig ./.dev/kubeconfig
 ```

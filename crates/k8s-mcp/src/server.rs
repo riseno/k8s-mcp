@@ -373,7 +373,7 @@ impl K8sMcp {
         };
         let bytes = serde_json::to_string(&call).map_or(0, |s| s.len());
         let mut audit_args = args.clone();
-        self.ctx.redactor.json(&mut audit_args);
+        self.ctx.redactor.args(&mut audit_args);
         self.audit.record(&Record {
             ts: jiff::Timestamp::now().to_string(),
             session: self.session.clone(),

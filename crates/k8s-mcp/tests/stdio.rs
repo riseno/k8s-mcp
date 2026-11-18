@@ -500,11 +500,15 @@ async fn write_tools_need_allow_write_and_every_call_is_audited() {
     let _ = call(&client, "restart_workload", restart.clone()).await;
     let mut confirm = restart;
     confirm["dry_run"] = json!(false);
-    let r = call(&client, "restart_workload", confirm).await;
+    let r = call(&client, "restart_workload", confirm.clone()).await;
     assert!(text(&r).contains("needs the confirm_token"), "{}", text(&r));
+    // riseno/k8s-mcp#105: a token in the arguments is masked in the audit record.
+    confirm["confirm_token"] = json!("1795041384.6ec538eefeedface");
+    let _ = call(&client, "restart_workload", confirm).await;
     client.cancel().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let log = std::fs::read_to_string(&audit).unwrap();
+    assert!(!log.contains("6ec538eefeedface"), "{log}");
     let recs: Vec<Value> = log
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
@@ -515,10 +519,12 @@ async fn write_tools_need_allow_write_and_every_call_is_audited() {
         got,
         [
             (&json!("write"), &json!(true)),
+            (&json!("write"), &json!(false)),
             (&json!("write"), &json!(false))
         ],
         "{log}"
     );
+    assert_eq!(recs[2]["args"]["confirm_token"], "«redacted»", "{log}");
 }
 
 /// v0.4: write tiers need explicit flags; destructive needs write; writes over HTTP need a

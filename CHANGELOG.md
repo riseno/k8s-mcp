@@ -5,6 +5,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The audit log masks a write call's `confirm_token`, as documented, and any other argument
+  under a sensitive key name; before, it was only pattern-redacted, which a token does not
+  match, so every confirm stored its token in clear (#105).
+
 ## [0.4.0] - 2026-11-18
 
 ### Fixed

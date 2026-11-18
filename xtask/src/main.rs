@@ -106,7 +106,20 @@ nodes:
       - {{hostPath: "{policy}", containerPath: /etc/kubernetes/audit/policy.yaml, readOnly: true}}
       - {{hostPath: "{log}", containerPath: /var/log/kubernetes/audit}}
     kubeadmConfigPatches:
+      # kind renders kubeadm v1beta3 (extraArgs a map) for older node images and v1beta4
+      # (extraArgs a list) for newer ones; each patch applies to its own version.
       - |
+        apiVersion: kubeadm.k8s.io/v1beta3
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            audit-policy-file: /etc/kubernetes/audit/policy.yaml
+            audit-log-path: /var/log/kubernetes/audit/audit.log
+            audit-log-maxsize: "50"
+            audit-log-maxbackup: "1"
+{volumes}
+      - |
+        apiVersion: kubeadm.k8s.io/v1beta4
         kind: ClusterConfiguration
         apiServer:
           extraArgs:
@@ -114,12 +127,13 @@ nodes:
             - {{name: audit-log-path, value: /var/log/kubernetes/audit/audit.log}}
             - {{name: audit-log-maxsize, value: "50"}}
             - {{name: audit-log-maxbackup, value: "1"}}
-          extraVolumes:
-            - {{name: audit-policy, hostPath: /etc/kubernetes/audit, mountPath: /etc/kubernetes/audit, readOnly: true, pathType: DirectoryOrCreate}}
-            - {{name: audit-log, hostPath: /var/log/kubernetes/audit, mountPath: /var/log/kubernetes/audit, pathType: DirectoryOrCreate}}
+{volumes}
 "#,
         policy = policy.display(),
         log = audit_dir().display(),
+        volumes = "          extraVolumes:
+            - {name: audit-policy, hostPath: /etc/kubernetes/audit, mountPath: /etc/kubernetes/audit, readOnly: true, pathType: DirectoryOrCreate}
+            - {name: audit-log, hostPath: /var/log/kubernetes/audit, mountPath: /var/log/kubernetes/audit, pathType: DirectoryOrCreate}",
     )
 }
 

@@ -169,6 +169,49 @@ the v0.3 acceptance criterion it serves.
   `azure_identity`; dev: `wiremock`, `async-trait`. To verify when built: the musl cross-build and
   the binary size (AC 4).
 
+## v0.3 follow-ups (released in 0.3.1 to 0.3.4)
+
+- 0.3.1: #64–#68 (nodes outrank the kubeconfig in provider detection, served-version check for the deprecated-API metric, object counts in the upgrade summary, namespace checks).
+- 0.3.2: #71 and #73–#80 (node-backed provider in `list_contexts`, exec plugin errors and stalls, unreachable API servers, binary logs, metrics-server availability, false kind ambiguity, untrusted status evidence, ValidatingAdmissionPolicy denials); RUSTSEC-2026-0543 (chrono, via rmcp) is ignored until #83.
+- 0.3.3: #84, k8s-mcp runs exec plugins itself and kills a stalled one at the deadline (ADR 0014).
+- 0.3.4: #88–#90 (process-group kill with `rustix`, reuse of short-lived credentials, client-go checks of the plugin's answer).
+- Open: #86 (probe-killed pods misdiagnosed once their probe events are throttled), #83.
+
+## v0.4: Guarded writes (plan)
+
+Order follows PROPOSAL §5/§16, §8.3 and §12.4: the gates first (flags, policy, confirm token,
+plan/execute framework, audit), then the write tier, then the destructive tier, then chart,
+kind tests and docs. Each row ends with the v0.4 acceptance criterion it serves.
+
+| # | Task | Status | Notes / criterion |
+|---|---|---|---|
+| 1 | Flags and policy: `--allow-write`, `--allow-destructive` (refused without `--allow-write`); `Policy::tier_enabled` follows them; a write deny-list `--write-deny-namespaces` (default `kube-system,kube-public,kube-node-lease`, `""` clears it) checked for every object a write tool targets directly, in addition to `--namespaces`/`--deny-namespaces`; with `--transport http`, `--allow-write` needs `--allowed-callers` (decision 5); tool annotations per tool (`destructiveHint` on writes, `idempotentHint` for scale and cordon) | ⬜ | Unregistered tiers stay out of `tools/list`, and the router check returns "not found" for them. Tests: registration per flag set, call-by-name refusal, deny-list per tool. AC 1, 4 |
+| 2 | Confirm tokens `k8s-mcp-core::confirm` (`ring`, decision 1): HMAC-SHA256 over the canonical JSON of (tool, args without `dry_run`/`confirm_token`, context, the target objects' `resourceVersion`s or "absent", expiry), with a per-process random key and a 120 s expiry; token = base64url(expiry ‖ MAC), verified in constant time | ⬜ | Unit tests and proptest: any change to args, context or a resourceVersion, a token from another process, or one older than 120 s is rejected. ADR for the token design. AC 3 |
+| 3 | Plan/execute framework in `k8s-mcp-tools::write`: the first call (default `dry_run: true`) sends the request with `dryRun=All`, renders the diff or impact and returns `confirm_token` with a `next` call; the second call (`dry_run: false` + token) re-reads the targets, checks the token, then mutates; every write request goes through one helper that adds `dryRun=All` unless the token was verified | ⬜ | MockApi records the verb and query of every request: a test asserts that no POST/PUT/PATCH/DELETE without `dryRun=All` is sent before a valid token. AC 2 |
+| 4 | Write tier (§8.3): `restart_workload` (Deployment, StatefulSet, DaemonSet; `restartedAt` template annotation), `scale_workload` (scale subresource), `rollback_workload` (Deployment: replace `spec.template` with the target ReplicaSet's template, `to_revision` default previous; diff via `template_diff`), `delete_pod` (refuses pods without an owner unless `allow_unowned: true`), `cordon_node`/`uncordon_node` | ⬜ | kube feature `jsonpatch` for the rollback's JSON patch (listed in §7.2). Result after confirm: the applied change and the rollout or node status read once (no waiting). Mock-API tests, goldens and a namespace-policy test per tool. AC 2, 3 |
+| 5 | Destructive tier: `drain_node` (cordon, then evict through the Eviction API; the plan dry-runs every eviction and lists evictable pods, pods a PDB blocks, and skipped ones: DaemonSet, mirror, unowned; it returns after issuing the evictions, decision 3), `apply_manifest` (multi-document YAML, kinds resolved through discovery, server-side apply with field manager `k8s-mcp` and no force, so conflicts are reported; Secrets, RBAC, admission webhook configurations and CRDs refused, decision 2; the plan diffs the live object against the dry-run result, noise stripped and values redacted) | ⬜ | Verified on kind 1.37: a dry-run eviction is checked against the PDB (429 "would violate the pod's disruption budget" when blocked, 201 when allowed) and changes nothing, so the plan names the exact pods a drain would leave. AC 4 |
+| 6 | Audit: plans, executions and rejected tokens recorded with `dry_run`, the targets and the outcome (`planned`, `applied`, `rejected: <why>`); write args redacted like read args | ⬜ | A test reads the audit log after plan, execute and a stale token. AC 5 |
+| 7 | Chart: `server.allowWrite`/`server.allowDestructive` values (default off) and an opt-in `rbac.writes` ClusterRole with only what the write tier needs (patch on deployments, statefulsets, daemonsets and their scale; delete pods; create pods/eviction; patch nodes); `apply_manifest` permissions only through `rbac.extraRules` | ⬜ | kubeconform on the new value set; the chart smoke test plans and confirms a restart on kind. |
+| 8 | Kind tests: plan → confirm → verify for every tool against the kind cluster, and the AC 2 check against the API server's own audit log (no mutating request without `dryRun` while planning) | ⬜ | Needs an audit policy in the kind cluster config (decision 4); the local cluster is recreated on the maintainer's go-ahead. AC 2, 4 |
+| 9 | Docs: `docs/writes.md` (the §12.4 model, flags, the deny-list, tokens, client approval prompts), security.md T10 row, regenerated tool reference, README flags, server instructions for the write flow, CHANGELOG | ⬜ | MCP elicitation stays optional (§12.4 item 4): not in v0.4, since the confirm token is the gate. |
+
+## v0.4 acceptance criteria (PROPOSAL §16)
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Without `--allow-write`, write tools are absent from `tools/list` and calling them by name returns "tool not found" | ⬜ | |
+| 2 | With `--allow-write`, every write call without a valid `confirm_token` performs no mutation (mock verifier and kind audit) | ⬜ | |
+| 3 | A token is rejected if the args, context or resourceVersion change, or after 120 seconds | ⬜ | |
+| 4 | `drain_node` respects PDBs (reports the blocked pods), and the default write deny-list protects `kube-system` | ⬜ | |
+| 5 | Every write plan and execution appears in the audit log | ⬜ | |
+
+**Decisions (resolved 2026-11-18)**
+1. Confirm tokens use `ring` (already in the build as the TLS crypto provider, ADR 0001) as a direct dependency of `k8s-mcp-core`, for HMAC-SHA256 and the random key.
+2. `apply_manifest` always refuses Secrets, and by default refuses RBAC (Role, ClusterRole, bindings), admission webhook configurations and CRDs.
+3. `drain_node` cordons the node, issues the evictions and returns per-pod outcomes within the 30 s call budget, without waiting for pods to terminate; calling it again retries blocked pods. Like `kubectl drain`, it evicts pods in every namespace, protected ones included (PDBs respected, DaemonSet and mirror pods skipped): the write deny-list applies to the objects the other write tools target directly.
+4. `cargo xtask kind-up` and CI's kind clusters get an API server audit policy for AC 2. The local `k8s-mcp-dev` cluster is recreated only on the maintainer's go-ahead, since other sessions use it.
+5. With `--transport http`, k8s-mcp refuses to start with `--allow-write` unless `--allowed-callers` is set.
+
 ## Releasing
 
 `riseno/k8s-mcp` and `riseno/homebrew-tap` are public from v0.1.0. To release: bump the

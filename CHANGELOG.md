@@ -14,6 +14,12 @@ All notable changes are documented here. The format follows
     resourceVersions, valid for 120 s (ADR 0015).
   - Write tools are annotated `destructiveHint: true`, and audit records carry the tool's real
     tier.
+- `restart_workload` (write tier, `--allow-write`): a rolling restart of a Deployment,
+  StatefulSet or DaemonSet. The first call is a server-side dry run that returns the plan
+  (the changed field and the impact of the update strategy) and a confirm token; the second,
+  with `dry_run: false` and that token, makes the change, with the object's resourceVersion
+  as a precondition. Every write call is audited with its `dry_run`, and the server
+  instructions tell the model to confirm only after the user agrees.
 
 ## [0.3.4] - 2026-11-17
 

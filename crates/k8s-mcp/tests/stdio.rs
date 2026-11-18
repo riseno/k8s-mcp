@@ -457,6 +457,70 @@ async fn silent_api_server_fails_with_the_network_error() {
     client.cancel().await.unwrap();
 }
 
+/// v0.4 AC 1 and 5: write tools are registered only with --allow-write (annotated as
+/// destructive), are refused by name without it, and every write call is audited with its tier
+/// and `dry_run`.
+#[tokio::test]
+async fn write_tools_need_allow_write_and_every_call_is_audited() {
+    let dir = tempfile::tempdir().unwrap();
+    let kc = offline_kubeconfig(dir.path(), "https://127.0.0.1:1", "    token: t");
+    let kc = kc.to_str().unwrap();
+    let restart = json!({"kind": "Deployment", "name": "web"});
+
+    let client = spawn(&["--kubeconfig", kc, "--audit-log", "off"]).await;
+    let tools = client.list_all_tools().await.unwrap();
+    assert!(tools.iter().all(|t| t.name != "restart_workload"));
+    // rmcp answers a call to an unregistered tool with a protocol error.
+    let params = CallToolRequestParams::new("restart_workload")
+        .with_arguments(restart.as_object().unwrap().clone());
+    let err = client.call_tool(params).await.unwrap_err().to_string();
+    assert!(err.contains("tool \"restart_workload\" not found"), "{err}");
+    client.cancel().await.unwrap();
+
+    let audit = dir.path().join("audit.jsonl");
+    let client = spawn(&[
+        "--kubeconfig",
+        kc,
+        "--audit-log",
+        audit.to_str().unwrap(),
+        "--allow-write",
+    ])
+    .await;
+    let tools = client.list_all_tools().await.unwrap();
+    let t = tools.iter().find(|t| t.name == "restart_workload").unwrap();
+    let a = t.annotations.as_ref().unwrap();
+    assert_eq!(
+        (a.read_only_hint, a.destructive_hint),
+        (Some(false), Some(true))
+    );
+    assert!(
+        tools.iter().all(|t| t.name != "drain_node"),
+        "destructive tools need --allow-destructive"
+    );
+    let _ = call(&client, "restart_workload", restart.clone()).await;
+    let mut confirm = restart;
+    confirm["dry_run"] = json!(false);
+    let r = call(&client, "restart_workload", confirm).await;
+    assert!(text(&r).contains("needs the confirm_token"), "{}", text(&r));
+    client.cancel().await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let log = std::fs::read_to_string(&audit).unwrap();
+    let recs: Vec<Value> = log
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .filter(|r: &Value| r["tool"] == "restart_workload")
+        .collect();
+    let got: Vec<(&Value, &Value)> = recs.iter().map(|r| (&r["tier"], &r["dry_run"])).collect();
+    assert_eq!(
+        got,
+        [
+            (&json!("write"), &json!(true)),
+            (&json!("write"), &json!(false))
+        ],
+        "{log}"
+    );
+}
+
 /// v0.4: write tiers need explicit flags; destructive needs write; writes over HTTP need a
 /// caller allow-list.
 #[test]

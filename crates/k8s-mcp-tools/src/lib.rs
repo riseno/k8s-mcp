@@ -26,6 +26,7 @@ mod rows;
 mod service;
 mod storage;
 mod upgrade;
+mod write;
 
 use std::sync::Arc;
 
@@ -78,6 +79,7 @@ pub use read::{
 pub use service::{DiagnoseServiceInput, diagnose_service};
 pub use storage::{DiagnosePvcInput, diagnose_pvc};
 pub use upgrade::{UpgradeReadinessInput, upgrade_readiness};
+pub use write::{RestartWorkloadInput, restart_workload};
 
 /// Source of "now", injected so tests and golden snapshots are deterministic.
 pub type Clock = Arc<dyn Fn() -> Timestamp + Send + Sync>;
@@ -98,6 +100,8 @@ pub struct Ctx {
     pub cloud: CloudOverride,
     /// Providers whose toolsets are registered: `upgrade_readiness` adds their upgrade checks.
     pub providers: Vec<k8s_mcp_core::provider::ProviderId>,
+    /// Issues and checks the confirm tokens of write plans (one key per process).
+    pub confirm: Arc<k8s_mcp_core::confirm::Confirmer>,
 }
 
 /// Cloud cluster identity from flags, for when detection cannot tell (in-cluster, aliases).
@@ -143,6 +147,7 @@ impl Ctx {
             clock: Arc::new(Timestamp::now),
             cloud: CloudOverride::default(),
             providers: Vec::new(),
+            confirm: Arc::default(),
         }
     }
 

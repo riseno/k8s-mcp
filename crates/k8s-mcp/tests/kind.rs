@@ -500,6 +500,19 @@ async fn writes_mutate_only_with_their_plans_token() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     assert!(!pod.is_empty(), "the Deployment created no pod");
+    // Plan only once the rollout settled: the controller's status updates change the
+    // Deployment's resourceVersion, which voids a plan's token (as it should).
+    let deployments: Api<k8s_openapi::api::apps::v1::Deployment> =
+        Api::namespaced(admin.clone(), &ns);
+    for _ in 0..120 {
+        let d = deployments.get("web").await.unwrap();
+        let st = d.status.unwrap_or_default();
+        if st.observed_generation == d.metadata.generation && st.available_replicas == Some(1) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
     let node = Api::<k8s_openapi::api::core::v1::Node>::all(admin.clone())
         .list(&kube::api::ListParams::default())
         .await

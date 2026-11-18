@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Change, check_confirm, run};
+use super::{Change, check_confirm, run, writable_kind};
 use crate::common::{check_name, scope};
 use crate::{Ctx, Envelope};
 
@@ -31,18 +31,6 @@ pub struct RestartWorkloadInput {
     pub dry_run: Option<bool>,
     /// The token from the plan, with `dry_run: false`.
     pub confirm_token: Option<String>,
-}
-
-/// Canonical kind name of a restartable workload.
-fn workload_kind(kind: &str) -> Result<&'static str> {
-    match kind.to_ascii_lowercase().as_str() {
-        "deployment" | "deployments" | "deploy" => Ok("Deployment"),
-        "statefulset" | "statefulsets" | "sts" => Ok("StatefulSet"),
-        "daemonset" | "daemonsets" | "ds" => Ok("DaemonSet"),
-        _ => Err(Error::InvalidInput(format!(
-            "kind {kind:?} cannot be restarted: use Deployment, StatefulSet or DaemonSet (for a single pod, delete_pod lets its controller recreate it)"
-        ))),
-    }
 }
 
 /// How the controller replaces the pods once the template changes.
@@ -81,7 +69,11 @@ pub async fn restart_workload(ctx: &Ctx, input: RestartWorkloadInput) -> Result<
         input.confirm_token.as_deref(),
     )?;
     check_name("workload", &input.name)?;
-    let kind = workload_kind(&input.kind)?;
+    let kind = writable_kind(
+        "restart_workload",
+        &input.kind,
+        &["Deployment", "StatefulSet", "DaemonSet"],
+    )?;
     let sc = scope(
         ctx,
         input.context.as_deref(),

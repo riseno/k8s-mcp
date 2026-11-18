@@ -28,7 +28,7 @@ pub struct MockApi {
 pub struct Mock {
     /// Client whose requests the mock answers.
     pub client: kube::Client,
-    /// `METHOD path?query` of every request, in order.
+    /// `METHOD path?query` of every request, in order, followed by ` <body>` for writes.
     pub requests: Arc<Mutex<Vec<String>>>,
 }
 
@@ -123,7 +123,16 @@ impl MockApi {
                     .query()
                     .map(|q| format!("?{q}"))
                     .unwrap_or_default();
-                log.lock().unwrap().push(format!("{method} {path}{query}"));
+                // Writes also record their body: a delete's dryRun travels there.
+                let body = if method == "GET" {
+                    String::new()
+                } else {
+                    let bytes = req.into_body().collect_bytes().await.unwrap_or_default();
+                    format!(" {}", String::from_utf8_lossy(&bytes))
+                };
+                log.lock()
+                    .unwrap()
+                    .push(format!("{method} {path}{query}{body}"));
                 let matches = |r: &&Route| r.method == method && r.path == path;
                 let route = self
                     .routes

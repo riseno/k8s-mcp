@@ -42,6 +42,9 @@ struct ToolDef {
     input_schema: Arc<JsonObject>,
 }
 
+/// Write tools that leave the same state however often they are confirmed.
+const IDEMPOTENT_WRITES: &[&str] = &["scale_workload", "cordon_node", "uncordon_node"];
+
 /// A tool's tier: `Read` unless the entry starts with `[Write]` or `[Destructive]`.
 macro_rules! tier {
     () => {
@@ -122,6 +125,21 @@ tools! {
     [Write] "restart_workload", "core", t::RestartWorkloadInput,
         "Rolling restart of a Deployment, StatefulSet or DaemonSet (like `kubectl rollout restart`). Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token. Show the plan to the user, and only once they agree call again with dry_run=false and that confirm_token (valid 120 s, void if the workload changes). Next: diagnose_workload to follow the rollout.",
         |c, i| t::restart_workload(c, i).await;
+    [Write] "scale_workload", "core", t::ScaleWorkloadInput,
+        "Set the replicas of a Deployment, StatefulSet or ReplicaSet. The plan says when an HPA manages the replicas and would undo the change. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).",
+        |c, i| t::scale_workload(c, i).await;
+    [Write] "rollback_workload", "core", t::RollbackWorkloadInput,
+        "Roll a Deployment back to an earlier revision's pod template (like `kubectl rollout undo`; `to_revision` defaults to the previous one, rollout_history lists them). The plan shows the template diff. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).",
+        |c, i| t::rollback_workload(c, i).await;
+    [Write] "delete_pod", "core", t::DeletePodInput,
+        "Delete one pod so its controller replaces it (a stuck or misbehaving instance). Refuses pods without an owner unless allow_unowned=true, and static pods' mirrors. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).",
+        |c, i| t::delete_pod(c, i).await;
+    [Write] "cordon_node", "core", t::NodeWriteInput,
+        "Mark a node unschedulable: its pods keep running, no new pod lands on it (drain_node evicts them). Refused while --namespaces limits the server. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).",
+        |c, i| t::cordon_node(c, i).await;
+    [Write] "uncordon_node", "core", t::NodeWriteInput,
+        "Mark a node schedulable again. Refused while --namespaces limits the server. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).",
+        |c, i| t::uncordon_node(c, i).await;
     "check_permissions", "core", t::CheckPermissionsInput,
         "What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.",
         |c, i| t::check_permissions(c, i).await;
@@ -292,7 +310,7 @@ impl K8sMcp {
             .read_only(def.tier == Tier::Read)
             // Every write may change what the cluster runs, so clients ask before calling it.
             .destructive(def.tier != Tier::Read)
-            .idempotent(def.tier == Tier::Read)
+            .idempotent(def.tier == Tier::Read || IDEMPOTENT_WRITES.contains(&def.name))
             // Provider tools call the cloud's API.
             .open_world(matches!(def.toolset, "eks" | "gke" | "aks"));
         Tool::new(def.name, def.description, def.input_schema.clone())

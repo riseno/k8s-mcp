@@ -3,7 +3,11 @@
 //! token. Only [`gate::confirmed`] yields a request that is not a dry run.
 
 mod gate;
+mod node;
+mod pod;
 mod restart;
+mod rollback;
+mod scale;
 
 use std::future::Future;
 
@@ -14,7 +18,11 @@ use k8s_mcp_core::{Error, Result};
 use serde_json::{Value, json};
 
 pub use gate::Mode;
+pub use node::{NodeWriteInput, cordon_node, uncordon_node};
+pub use pod::{DeletePodInput, delete_pod};
 pub use restart::{RestartWorkloadInput, restart_workload};
+pub use rollback::{RollbackWorkloadInput, rollback_workload};
+pub use scale::{ScaleWorkloadInput, scale_workload};
 
 use crate::common::{Scope, envelope};
 use crate::{Ctx, Envelope};
@@ -27,6 +35,19 @@ pub(crate) struct Change {
     pub lines: Vec<String>,
     /// Follow-ups once it is applied.
     pub next: Vec<NextCall>,
+}
+
+/// The canonical kind if `tool` accepts it.
+pub(crate) fn writable_kind(tool: &str, kind: &str, allowed: &[&str]) -> Result<&'static str> {
+    let k = crate::diagnose::workload_kind(kind)?;
+    if allowed.contains(&k) {
+        Ok(k)
+    } else {
+        Err(Error::InvalidInput(format!(
+            "{tool} works on {}, not {k}",
+            allowed.join(", ")
+        )))
+    }
 }
 
 /// Refuse `dry_run: false` without a token before any request is made.

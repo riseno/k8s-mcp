@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-18
+
 ### Fixed
 - The audit log masks a write call's `confirm_token`, as documented, and any other argument
   under a sensitive key name; before, it was only pattern-redacted, which a token does not

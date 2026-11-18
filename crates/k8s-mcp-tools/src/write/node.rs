@@ -60,7 +60,7 @@ async fn set_unschedulable(ctx: &Ctx, input: NodeWriteInput, cordon: bool) -> Re
     check_node_write(ctx, tool)?;
     let sc = scope(ctx, input.context.as_deref(), None, true).await?;
     let name = input.name.as_str();
-    let api: Api<Node> = Api::all(sc.target.client.clone());
+    let api: Api<Node> = Api::all(sc.target.writer.clone());
     let node = api
         .get(name)
         .await
@@ -77,7 +77,7 @@ async fn set_unschedulable(ctx: &Ctx, input: NodeWriteInput, cordon: bool) -> Re
         format!("spec.unschedulable: {was} → {cordon}")
     }];
     if cordon {
-        let pods = Api::<Pod>::all(sc.target.client.clone())
+        let pods = Api::<Pod>::all(sc.target.writer.clone())
             .list_metadata(&ListParams::default().fields(&format!("spec.nodeName={name}")))
             .await
             .map(|l| l.items.len());

@@ -4,13 +4,13 @@
 
 use k8s_mcp_core::Result;
 use k8s_mcp_core::confirm::{Binding, Confirmer};
-use kube::api::{DeleteParams, PatchParams, PostParams};
+use kube::api::{DeleteParams, EvictParams, PatchParams, PostParams};
 
 /// Field manager of every k8s-mcp write (server-side apply, patches).
 pub const MANAGER: &str = "k8s-mcp";
 
 /// Whether write requests are server-side dry runs (`dryRun=All`).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mode {
     dry_run: bool,
 }
@@ -33,6 +33,21 @@ impl Mode {
             dry_run: self.dry_run,
             ..DeleteParams::default()
         }
+    }
+
+    /// Parameters for an eviction (a create of the pod's `eviction` subresource).
+    pub fn evict(self) -> EvictParams {
+        EvictParams {
+            post_options: self.post(),
+            delete_options: None,
+        }
+    }
+
+    /// Parameters for a server-side apply, never forced: fields another manager owns come back
+    /// as conflicts.
+    pub fn apply(self) -> PatchParams {
+        let p = PatchParams::apply(MANAGER);
+        if self.dry_run { p.dry_run() } else { p }
     }
 
     /// Parameters for a patch.

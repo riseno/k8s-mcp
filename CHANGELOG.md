@@ -27,6 +27,19 @@ All notable changes are documented here. The format follows
   pods already terminating; resourceVersion and UID preconditions), `cordon_node` and
   `uncordon_node` (refused while `--namespaces` limits the server). `scale_workload` and the
   node tools are annotated idempotent.
+- The destructive tier (`--allow-write --allow-destructive`):
+  - `drain_node` cordons a node and evicts its pods through the Eviction API. The plan dry-runs
+    every eviction, so it names the pods a PodDisruptionBudget blocks; DaemonSet, static and
+    finished pods stay, pods without an owner are skipped, and pods with `emptyDir` data are
+    flagged. It reports each pod's outcome without waiting for termination, and is refused
+    while `--namespaces` or `--deny-namespaces` limits what k8s-mcp sees.
+  - `apply_manifest` server-side applies up to 20 YAML documents with field manager `k8s-mcp`,
+    never forced, so another manager's fields come back as conflicts. The plan shows each
+    object's field diff (noise stripped, values redacted). It refuses Secrets, RBAC, admission
+    webhooks and policies, and CRDs.
+- Write requests use a client that never retries: kube-client retries 429, 503 and 504 up to
+  15 times with exponential backoff, which made every PodDisruptionBudget-blocked eviction
+  hang the call and could send a mutation twice. Reads keep the retries.
 
 ## [0.3.4] - 2026-11-17
 

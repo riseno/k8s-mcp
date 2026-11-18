@@ -239,6 +239,34 @@ Mark a node schedulable again. Refused while --namespaces limits the server. Two
 | `dry_run` | boolean | `true` (default): a server-side dry run that returns the plan and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
 | `name` **(required)** | string | Node name. |
 
+### `drain_node`
+
+Tier: destructive (`--allow-write --allow-destructive`).
+
+Cordon a node and evict its pods through the Eviction API, which respects PodDisruptionBudgets (like `kubectl drain`). DaemonSet, static and finished pods stay, pods without an owner are skipped (they would be lost); it reports each pod's outcome and does not wait for pods to terminate. Two calls: the first (dry_run=true, the default) dry-runs the cordon and every eviction, so the plan names the pods a PodDisruptionBudget blocks, and returns a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s, void if the node's pods change).
+
+| Input | Type | Description |
+|---|---|---|
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry run of the cordon and every eviction, returning the plan (which pods a PodDisruptionBudget blocks) and a `confirm_token`. `false`: make the change; needs that `confirm_token`. |
+| `ignore_daemonsets` | boolean | Leave DaemonSet pods in place (default true); with false, a node running any refuses. |
+| `name` **(required)** | string | Node name. |
+
+### `apply_manifest`
+
+Tier: destructive (`--allow-write --allow-destructive`).
+
+Server-side apply of YAML documents (field manager k8s-mcp, never forced: fields another manager owns come back as conflicts). Refuses Secrets, RBAC, admission webhooks and policies, and CRDs; namespaced objects without a namespace go to `namespace` (default: the context's). Two calls: the first (dry_run=true, the default) is a server-side dry-run apply that returns each object's field diff and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s, void if any object changes).
+
+| Input | Type | Description |
+|---|---|---|
+| `confirm_token` | string | The token from the plan, with `dry_run: false`. |
+| `context` | string | Kubeconfig context. |
+| `dry_run` | boolean | `true` (default): a server-side dry-run apply that returns each object's diff and a `confirm_token`. `false`: apply; needs that `confirm_token`. |
+| `manifest` **(required)** | string | One or more YAML (or JSON) documents, separated by `---`. |
+| `namespace` | string | Namespace for namespaced objects that name none (default: the context's namespace). |
+
 ### `check_permissions`
 
 What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.

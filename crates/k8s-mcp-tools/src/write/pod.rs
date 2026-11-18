@@ -45,7 +45,7 @@ pub async fn delete_pod(ctx: &Ctx, input: DeletePodInput) -> Result<Envelope> {
     let ns = sc.namespace.clone().unwrap_or_default();
     ctx.policy.check_write_namespace(&ns)?;
     let name = input.name.as_str();
-    let api: Api<Pod> = Api::namespaced(sc.target.client.clone(), &ns);
+    let api: Api<Pod> = Api::namespaced(sc.target.writer.clone(), &ns);
     let pod = api
         .get(name)
         .await

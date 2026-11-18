@@ -115,8 +115,18 @@ pub struct Target {
     pub context: String,
     /// The context's default namespace.
     pub namespace: String,
-    /// API client.
+    /// API client. It retries throttled and unavailable answers (kube-client's default).
     pub client: Client,
+    /// Client for write requests: it never retries, so a change is sent at most once and a
+    /// PodDisruptionBudget's 429 for an eviction comes back at once.
+    pub writer: Client,
+}
+
+/// A context's clients, as in [`Target`].
+#[derive(Clone)]
+struct Clients {
+    read: Client,
+    write: Client,
 }
 
 type Discovered = Arc<Vec<ResourceInfo>>;
@@ -133,7 +143,7 @@ pub struct ClusterManager {
     /// Exec plugin commands referenced by the kubeconfig (for `doctor`).
     pub exec_plugins: Vec<String>,
     /// Clients per context, with when to fetch a new exec credential.
-    clients: Mutex<HashMap<String, (Client, Option<Instant>)>>,
+    clients: Mutex<HashMap<String, (Clients, Option<Instant>)>>,
     gates: Mutex<HashMap<String, Gate>>,
     discovery: Mutex<HashMap<String, (Instant, Discovered)>>,
     /// Node-backed detection per context, from tools that listed the nodes (#71).
@@ -390,15 +400,15 @@ impl ClusterManager {
             .or_default()
             .clone();
         let mut failed = gate.lock().await;
-        let client = match (self.cached_client(name), failed.as_ref()) {
-            (Some(client), _) => client,
+        let clients = match (self.cached_client(name), failed.as_ref()) {
+            (Some(clients), _) => clients,
             (None, Some((at, e))) if *at > asked => return Err(e.clone()),
             (None, _) => match self.build_client(name).await {
-                Ok((client, refresh_at)) => {
+                Ok((clients, refresh_at)) => {
                     *failed = None;
                     self.lock_clients()
-                        .insert(name.into(), (client.clone(), refresh_at));
-                    client
+                        .insert(name.into(), (clients.clone(), refresh_at));
+                    clients
                 }
                 Err(e) => {
                     *failed = Some((Instant::now(), e.clone()));
@@ -409,14 +419,21 @@ impl ClusterManager {
         Ok(Target {
             context: name.into(),
             namespace,
-            client,
+            client: clients.read,
+            writer: clients.write,
         })
     }
 
-    /// A new client for `name`, and when to fetch a new exec credential for it.
-    async fn build_client(&self, name: &str) -> Result<(Client, Option<Instant>)> {
+    /// New clients for `name`, and when to fetch a new exec credential for them.
+    async fn build_client(&self, name: &str) -> Result<(Clients, Option<Instant>)> {
         let mut config = match &self.source {
-            Source::Fixed(c) => return Ok((c.clone(), None)),
+            Source::Fixed(c) => {
+                let clients = Clients {
+                    read: c.clone(),
+                    write: c.clone(),
+                };
+                return Ok((clients, None));
+            }
             Source::InCluster => Config::incluster().map_err(|e| {
                 Error::Config(format!(
                     "in-cluster config failed: {e}. Is the ServiceAccount token mounted?"
@@ -442,7 +459,12 @@ impl ClusterManager {
         let expires = crate::exec::resolve(&mut config.auth_info, crate::exec::EXEC_TIMEOUT)
             .await
             .map_err(|e| Error::Unreachable(format!("cannot {what}: {e}")))?;
-        let client = Client::try_from(config).map_err(|e| Error::kube(what, &e))?;
+        let mut write_config = config.clone();
+        write_config.default_retry = false;
+        let clients = Clients {
+            read: Client::try_from(config).map_err(|e| Error::kube(&what, &e))?,
+            write: Client::try_from(write_config).map_err(|e| Error::kube(&what, &e))?,
+        };
         let refresh_at = expires.map(|t| {
             let left = t.duration_since(Timestamp::now());
             if left.is_negative() {
@@ -450,21 +472,21 @@ impl ClusterManager {
             }
             Instant::now() + reuse_for(left)
         });
-        Ok((client, refresh_at))
+        Ok((clients, refresh_at))
     }
 
-    /// The cached client for `context`, until its exec credential is due for refresh.
-    fn cached_client(&self, context: &str) -> Option<Client> {
-        let clients = self.lock_clients();
-        let (client, refresh_at) = clients.get(context)?;
+    /// The cached clients for `context`, until their exec credential is due for refresh.
+    fn cached_client(&self, context: &str) -> Option<Clients> {
+        let cache = self.lock_clients();
+        let (clients, refresh_at) = cache.get(context)?;
         refresh_at
             .is_none_or(|t| Instant::now() < t)
-            .then(|| client.clone())
+            .then(|| clients.clone())
     }
 
     fn lock_clients(
         &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<String, (Client, Option<Instant>)>> {
+    ) -> std::sync::MutexGuard<'_, HashMap<String, (Clients, Option<Instant>)>> {
         self.clients
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

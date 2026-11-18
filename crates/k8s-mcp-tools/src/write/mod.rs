@@ -2,6 +2,8 @@
 //! returns the plan and a `confirm_token`, then the same call with `dry_run: false` and that
 //! token. Only [`gate::confirmed`] yields a request that is not a dry run.
 
+mod apply;
+mod drain;
 mod gate;
 mod node;
 mod pod;
@@ -17,6 +19,8 @@ use k8s_mcp_core::finding::NextCall;
 use k8s_mcp_core::{Error, Result};
 use serde_json::{Value, json};
 
+pub use apply::{ApplyManifestInput, apply_manifest};
+pub use drain::{DrainNodeInput, drain_node};
 pub use gate::Mode;
 pub use node::{NodeWriteInput, cordon_node, uncordon_node};
 pub use pod::{DeletePodInput, delete_pod};

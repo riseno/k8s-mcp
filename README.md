@@ -143,6 +143,9 @@ No config file is needed; every flag also reads `K8S_MCP_<FLAG>` (for example `K
 | `--contexts <glob,...>` | default only | Other contexts the AI may target (`*` = all) |
 | `--namespaces <glob,...>` | all | Namespace allow-list |
 | `--deny-namespaces <glob,...>` | none | Deny-list (wins over allow) |
+| `--allow-write` | off | Register the write tools: each change is a server-side dry-run plan first and needs the plan's confirm token |
+| `--allow-destructive` | off | Also register `drain_node` and `apply_manifest`; needs `--allow-write` |
+| `--write-deny-namespaces <glob,...>` | `kube-system,kube-public,kube-node-lease` | Namespaces no write tool changes objects in (`''` clears the list) |
 | `--redact strict\|standard\|off` | `standard` | Redaction level |
 | `--max-output-bytes` | `24000` | Hard cap per tool response |
 | `--audit-log <path>\|stderr\|off` | state dir (stderr in-cluster) | Audit sink |

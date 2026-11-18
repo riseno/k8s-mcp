@@ -5,6 +5,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- v0.4 groundwork for guarded writes (no write tools are registered yet):
+  - `--allow-write`, `--allow-destructive` (which needs `--allow-write`) and
+    `--write-deny-namespaces` (default `kube-system,kube-public,kube-node-lease`). Over HTTP,
+    `--allow-write` needs `--allowed-callers`.
+  - Confirm tokens bound to the tool, its arguments, the context and the objects'
+    resourceVersions, valid for 120 s (ADR 0015).
+  - Write tools are annotated `destructiveHint: true`, and audit records carry the tool's real
+    tier.
+
 ## [0.3.4] - 2026-11-17
 
 ### Fixed

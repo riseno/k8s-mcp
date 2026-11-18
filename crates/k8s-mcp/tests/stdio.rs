@@ -457,6 +457,40 @@ async fn silent_api_server_fails_with_the_network_error() {
     client.cancel().await.unwrap();
 }
 
+/// v0.4: write tiers need explicit flags; destructive needs write; writes over HTTP need a
+/// caller allow-list.
+#[test]
+fn write_flags_are_checked_at_startup() {
+    let dir = tempfile::tempdir().unwrap();
+    let kc = offline_kubeconfig(
+        dir.path(),
+        "https://127.0.0.1:1",
+        "    token: not-a-real-token",
+    );
+    for (args, expected) in [
+        (
+            &["--allow-destructive"][..],
+            "--allow-destructive needs --allow-write",
+        ),
+        (
+            &["--allow-write", "--transport", "http", "--auth", "none"][..],
+            "--allow-write over HTTP needs --allowed-callers",
+        ),
+    ] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_k8s-mcp"))
+            .args(["--kubeconfig", kc.to_str().unwrap(), "--audit-log", "off"])
+            .args(args)
+            .env_remove("KUBECONFIG")
+            .env("HOME", dir.path())
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?} started");
+        assert!(stderr.contains(expected), "{args:?}: {stderr}");
+    }
+}
+
 fn kind_kubeconfig() -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.dev/kubeconfig");
     assert!(p.exists(), "run `cargo xtask kind-up` first");

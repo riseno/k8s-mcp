@@ -4,6 +4,7 @@
 
 pub mod audit;
 pub mod cluster;
+pub mod confirm;
 pub mod envelope;
 pub mod error;
 mod exec;

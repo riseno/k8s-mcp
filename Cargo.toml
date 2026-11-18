@@ -30,6 +30,8 @@ clap_complete = "4.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde-saphyr = "2.1"
+# HMAC-SHA256 confirm tokens for write tools (v0.4, decision 1); already the TLS crypto provider.
+ring = "0.17"
 # Kills a stalled exec plugin's process group (ADR 0014, riseno/k8s-mcp#89); Unix only.
 rustix = { version = "1.1", default-features = false, features = ["process", "std"] }
 schemars = "1.2"

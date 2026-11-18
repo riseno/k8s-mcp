@@ -13,10 +13,21 @@ use crate::error::{Error, Result};
 pub enum Tier {
     /// Reads only.
     Read,
-    /// Mutations (v0.4).
+    /// Mutations: dry-run plans first, then a confirmed change (`--allow-write`).
     Write,
-    /// Destructive mutations (v0.4).
+    /// Destructive mutations: drains and manifest applies (`--allow-destructive`).
     Destructive,
+}
+
+impl Tier {
+    /// Lower-case name, as in the audit log.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Destructive => "destructive",
+        }
+    }
 }
 
 /// Redaction level.
@@ -93,7 +104,16 @@ pub struct Policy {
     pub redact: RedactLevel,
     /// Hard cap on each tool response, in bytes.
     pub max_output_bytes: usize,
+    /// Write-tier tools are registered (`--allow-write`).
+    pub allow_write: bool,
+    /// Destructive-tier tools are registered too (`--allow-destructive`, needs `allow_write`).
+    pub allow_destructive: bool,
+    /// Namespaces no write tool may change objects in (`--write-deny-namespaces`).
+    pub write_deny_namespaces: Patterns,
 }
+
+/// Default for `--write-deny-namespaces` (PROPOSAL §10, T10).
+pub const WRITE_DENY_NAMESPACES: &str = "kube-system,kube-public,kube-node-lease";
 
 impl Policy {
     /// Build a policy from CLI values.
@@ -110,7 +130,28 @@ impl Policy {
             deny_namespaces: Patterns::new(deny_namespaces)?,
             redact,
             max_output_bytes,
+            allow_write: false,
+            allow_destructive: false,
+            write_deny_namespaces: default_write_deny(),
         })
+    }
+
+    /// Enable the write tiers. `--allow-destructive` needs `--allow-write`.
+    pub fn with_writes(
+        mut self,
+        allow_write: bool,
+        allow_destructive: bool,
+        write_deny_namespaces: &[String],
+    ) -> Result<Self> {
+        if allow_destructive && !allow_write {
+            return Err(Error::Config(
+                "--allow-destructive needs --allow-write as well".into(),
+            ));
+        }
+        self.allow_write = allow_write;
+        self.allow_destructive = allow_destructive;
+        self.write_deny_namespaces = Patterns::new(write_deny_namespaces)?;
+        Ok(self)
     }
 
     /// Permissive defaults for tests: all namespaces, standard redaction.
@@ -121,6 +162,9 @@ impl Policy {
             deny_namespaces: Patterns::none(),
             redact: RedactLevel::Standard,
             max_output_bytes: 24_000,
+            allow_write: false,
+            allow_destructive: false,
+            write_deny_namespaces: default_write_deny(),
         }
     }
 
@@ -128,8 +172,22 @@ impl Policy {
     pub fn tier_enabled(&self, tier: Tier) -> bool {
         match tier {
             Tier::Read => true,
-            Tier::Write | Tier::Destructive => false,
+            Tier::Write => self.allow_write,
+            Tier::Destructive => self.allow_write && self.allow_destructive,
         }
+    }
+
+    /// Fail unless a write tool may change objects in `ns`: the namespace policy, then the
+    /// write deny-list.
+    pub fn check_write_namespace(&self, ns: &str) -> Result<()> {
+        self.check_namespace(ns)?;
+        if self.write_deny_namespaces.is_match(ns) {
+            return Err(Error::Forbidden(format!(
+                "namespace {ns:?} is protected from writes (--write-deny-namespaces {}); k8s-mcp changes nothing there. If this change is intended, make it with kubectl, or restart k8s-mcp with a narrower --write-deny-namespaces.",
+                self.write_deny_namespaces.raw().join(",")
+            )));
+        }
+        Ok(())
     }
 
     /// Whether `context` may be targeted, given the default context.
@@ -184,8 +242,12 @@ impl Policy {
     /// The policy as JSON, for `check_permissions` and the `k8s-mcp://policy` resource.
     pub fn to_json(&self) -> Value {
         json!({
-            "tiers": { "read": true, "write": false, "destructive": false },
-            "write_tools": "not available in this version",
+            "tiers": {
+                "read": true,
+                "write": self.tier_enabled(Tier::Write),
+                "destructive": self.tier_enabled(Tier::Destructive),
+            },
+            "write_deny_namespaces": self.write_deny_namespaces.raw(),
             "extra_contexts": self.contexts.raw(),
             "namespaces": if self.namespaces.is_empty() { json!("all") } else { json!(self.namespaces.raw()) },
             "deny_namespaces": self.deny_namespaces.raw(),
@@ -194,6 +256,14 @@ impl Policy {
             "secret_values": "never returned by object reads; in pod logs, masked only where k8s-mcp may read the Secrets the pod references (otherwise pattern redaction only, and the summary says so)",
         })
     }
+}
+
+fn default_write_deny() -> Patterns {
+    let defaults: Vec<String> = WRITE_DENY_NAMESPACES
+        .split(',')
+        .map(str::to_owned)
+        .collect();
+    Patterns::new(&defaults).unwrap_or_else(|_| Patterns::none())
 }
 
 #[cfg(test)]
@@ -238,6 +308,31 @@ mod tests {
         assert!(!pol.context_allowed("prod", "dev"));
         let wide = Policy::new(&["*".into()], &[], &[], RedactLevel::Standard, 1).unwrap();
         assert!(wide.context_allowed("prod", "dev"));
+    }
+
+    #[test]
+    fn write_tiers_follow_the_flags_and_the_deny_list() {
+        let pol = p(&[], &["blocked"]);
+        assert!(
+            pol.clone().with_writes(false, true, &[]).is_err(),
+            "destructive alone"
+        );
+        let w = pol.clone().with_writes(true, false, &[]).unwrap();
+        assert!(w.tier_enabled(Tier::Write) && !w.tier_enabled(Tier::Destructive));
+        let d = pol.with_writes(true, true, &["kube-*".into()]).unwrap();
+        assert!(d.tier_enabled(Tier::Destructive));
+        assert!(d.check_write_namespace("shop").is_ok());
+        let protected = d.check_write_namespace("kube-system").unwrap_err();
+        assert!(protected.is_forbidden() && protected.to_string().contains("kube-*"));
+        assert!(matches!(
+            d.check_write_namespace("blocked"),
+            Err(Error::NamespaceNotAllowed { .. })
+        ));
+        // The default deny-list, and `--write-deny-namespaces ''` to clear it.
+        let default = p(&[], &[]);
+        assert!(default.check_write_namespace("kube-node-lease").is_err());
+        let cleared = default.with_writes(true, false, &[String::new()]).unwrap();
+        assert!(cleared.check_write_namespace("kube-system").is_ok());
     }
 
     #[test]

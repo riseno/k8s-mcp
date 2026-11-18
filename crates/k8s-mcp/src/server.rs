@@ -42,15 +42,25 @@ struct ToolDef {
     input_schema: Arc<JsonObject>,
 }
 
+/// A tool's tier: `Read` unless the entry says `tier = Write` or `tier = Destructive`.
+macro_rules! tier {
+    () => {
+        Tier::Read
+    };
+    ($t:ident) => {
+        Tier::$t
+    };
+}
+
 macro_rules! tools {
-    ($( $(#[$m:meta])* $name:literal, $toolset:literal, $input:ty, $desc:expr, |$c:ident, $i:ident| $call:expr; )*) => {
+    ($( $(#[$m:meta])* $name:literal, $toolset:literal, $(tier = $tier:ident,)? $input:ty, $desc:expr, |$c:ident, $i:ident| $call:expr; )*) => {
         #[allow(clippy::vec_init_then_push)] // one push per entry, so entries can be cfg-gated
         fn all_tools() -> Vec<ToolDef> {
             let mut v = Vec::new();
             $( $(#[$m])* v.push(ToolDef {
                 name: $name,
                 toolset: $toolset,
-                tier: Tier::Read,
+                tier: tier!($($tier)?),
                 description: $desc,
                 input_schema: schema_for_type::<$input>(),
             }); )*
@@ -277,7 +287,8 @@ impl K8sMcp {
     fn tool(def: &ToolDef) -> Tool {
         let annotations = ToolAnnotations::new()
             .read_only(def.tier == Tier::Read)
-            .destructive(def.tier == Tier::Destructive)
+            // Every write may change what the cluster runs, so clients ask before calling it.
+            .destructive(def.tier != Tier::Read)
             .idempotent(def.tier == Tier::Read)
             // Provider tools call the cloud's API.
             .open_world(matches!(def.toolset, "eks" | "gke" | "aks"));
@@ -295,23 +306,23 @@ impl K8sMcp {
         cancelled: impl Future<Output = ()>,
     ) -> CallToolResult {
         let start = Instant::now();
-        let def = self.tools.iter().find(|t| t.name == name);
-        let result = match def {
-            None => Err(k8s_mcp_core::Error::NotFound(format!(
+        // Tools of a disabled tier are not registered; checking the tier again here means a
+        // call by name gets the same "not found" as an unknown tool (v0.4 AC 1).
+        let def = self
+            .tools
+            .iter()
+            .find(|t| t.name == name && self.ctx.policy.tier_enabled(t.tier));
+        let tier = def.map_or("-", |d| d.tier.as_str());
+        let result = if def.is_some() {
+            let _permit = self.permits.acquire().await;
+            tokio::select! {
+                r = tokio::time::timeout(CALL_TIMEOUT, dispatch(&self.ctx, name, args.clone())) => r.unwrap_or_else(|_| Err(k8s_mcp_core::Error::Api(format!("{name} timed out after {}s. If other calls on this context answer, narrow the request (namespace, selector, limit) and retry; if none do, the API server or the context's exec auth plugin is not answering: check network or VPN access, and `k8s-mcp doctor` shows details.", CALL_TIMEOUT.as_secs())))),
+                () = cancelled => Err(k8s_mcp_core::Error::Api("cancelled by the client".into())),
+            }
+        } else {
+            Err(k8s_mcp_core::Error::NotFound(format!(
                 "tool {name:?} is not available on this server"
-            ))),
-            Some(d) if !self.ctx.policy.tier_enabled(d.tier) => {
-                Err(k8s_mcp_core::Error::Forbidden(format!(
-                    "tool {name:?} needs a tier that is not enabled"
-                )))
-            }
-            Some(_) => {
-                let _permit = self.permits.acquire().await;
-                tokio::select! {
-                    r = tokio::time::timeout(CALL_TIMEOUT, dispatch(&self.ctx, name, args.clone())) => r.unwrap_or_else(|_| Err(k8s_mcp_core::Error::Api(format!("{name} timed out after {}s. If other calls on this context answer, narrow the request (namespace, selector, limit) and retry; if none do, the API server or the context's exec auth plugin is not answering: check network or VPN access, and `k8s-mcp doctor` shows details.", CALL_TIMEOUT.as_secs())))),
-                    () = cancelled => Err(k8s_mcp_core::Error::Api("cancelled by the client".into())),
-                }
-            }
+            )))
         };
         let (call, findings, truncated, error) = match result {
             Ok(mut env) => {
@@ -342,7 +353,7 @@ impl K8sMcp {
             client,
             caller,
             tool: name.to_owned(),
-            tier: "read",
+            tier,
             context: Some(
                 args.get("context")
                     .and_then(Value::as_str)

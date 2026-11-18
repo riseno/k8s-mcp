@@ -146,6 +146,21 @@ pub struct Opts {
         value_delimiter = ','
     )]
     deny_namespaces: Vec<String>,
+    /// Register the write tools (restart, scale, rollback, delete pod, cordon). Each change is a dry-run plan first and needs the plan's confirm token.
+    #[arg(long, global = true, env = "K8S_MCP_ALLOW_WRITE")]
+    allow_write: bool,
+    /// Also register the destructive tools (drain_node, apply_manifest); needs --allow-write.
+    #[arg(long, global = true, env = "K8S_MCP_ALLOW_DESTRUCTIVE")]
+    allow_destructive: bool,
+    /// Namespaces no write tool changes objects in (globs, comma separated; '' clears the list).
+    #[arg(
+        long,
+        global = true,
+        env = "K8S_MCP_WRITE_DENY_NAMESPACES",
+        value_delimiter = ',',
+        default_value = k8s_mcp_core::policy::WRITE_DENY_NAMESPACES
+    )]
+    write_deny_namespaces: Vec<String>,
     /// Redaction level; `off` prints a warning on every response.
     #[arg(
         long,
@@ -229,12 +244,23 @@ impl Opts {
         if self.max_output_bytes < 2_000 {
             bail!("--max-output-bytes must be at least 2000");
         }
+        if self.allow_write && self.transport == Transport::Http && self.allowed_callers.is_empty()
+        {
+            bail!(
+                "--allow-write over HTTP needs --allowed-callers: name the users or groups that may change the cluster (for example --allowed-callers 'group:platform-admins')"
+            );
+        }
         Ok(Policy::new(
             &self.contexts,
             &self.namespaces,
             &self.deny_namespaces,
             redact,
             self.max_output_bytes,
+        )?
+        .with_writes(
+            self.allow_write,
+            self.allow_destructive,
+            &self.write_deny_namespaces,
         )?)
     }
 

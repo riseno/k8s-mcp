@@ -1,6 +1,6 @@
 # k8s-mcp
 
-**Safe, zero-setup Kubernetes troubleshooting for AI assistants.** One static binary that lets Claude Code, Claude Desktop, Cursor, Grok Build and other MCP clients investigate any conformant cluster (EKS, GKE, AKS, k3s, kind, on-prem). It is read-only, needs no config file, and returns diagnoses with evidence instead of raw YAML.
+**Safe, zero-setup Kubernetes troubleshooting for AI assistants.** One static binary that lets Claude Code, Claude Desktop, Cursor, Grok Build and other MCP clients investigate any conformant cluster (EKS, GKE, AKS, k3s, kind, on-prem). It is read-only by default, needs no config file, and returns diagnoses with evidence instead of raw YAML.
 
 ## Quickstart
 
@@ -99,6 +99,7 @@ NEXT
 | `eks` (when the cluster is EKS) | `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check`, `eks_logs` ([docs/providers/eks.md](docs/providers/eks.md)) |
 | `gke` (when the cluster is GKE) | `gke_cluster_info`, `gke_node_pools`, `gke_addons`, `gke_identity_check`, `gke_logs` ([docs/providers/gke.md](docs/providers/gke.md)) |
 | `aks` (when the cluster is AKS) | `aks_cluster_info`, `aks_node_pools`, `aks_addons`, `aks_identity_check`, `aks_logs` ([docs/providers/aks.md](docs/providers/aks.md)) |
+| write (`--allow-write`) | `restart_workload`, `scale_workload`, `rollback_workload`, `delete_pod`, `cordon_node`, `uncordon_node`; with `--allow-destructive` also `drain_node`, `apply_manifest` ([docs/writes.md](docs/writes.md)) |
 
 Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `access-review`, `upgrade-readiness`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules` and the template `k8s-mcp://cluster/{context}/overview`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
 
@@ -110,7 +111,7 @@ and acts with a read-only ServiceAccount. See [docs/in-cluster.md](docs/in-clust
 
 ## Safety model
 
-- **Read-only.** There are no write tools yet (they arrive, opt-in, in v0.4); every tool carries `readOnlyHint: true`.
+- **Read-only by default.** Write tools exist only with `--allow-write`; each change is a server-side dry-run plan first and needs that plan's confirm token, bound to the exact request and object versions ([docs/writes.md](docs/writes.md)).
 - **Secret values are never returned**: only key names and sizes, in every mode.
 - **Redaction** of credentials in logs, env values, annotations, ConfigMaps, args and the audit log (`--redact strict|standard|off`).
 - **Scoping**: only the default context unless `--contexts` widens it; `--namespaces` / `--deny-namespaces` globs.

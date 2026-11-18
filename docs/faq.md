@@ -8,8 +8,9 @@ bounded call and returns ranked findings with evidence and a fix.
 **Does it call an LLM or need an API key?** No. Rules are deterministic; your MCP client
 is the agent.
 
-**Can it change my cluster?** Not in v0.1: no write tools exist. A guarded write tier
-(dry-run plus confirm tokens) is planned for v0.4 behind `--allow-write`.
+**Can it change my cluster?** Only if you start it with `--allow-write`, and even then every
+change is a server-side dry run first and needs the token that plan returned
+([writes.md](writes.md)).
 
 **Can it read my Secrets?** If your kubeconfig can, k8s-mcp checks existence and key names
 for diagnosis, but values are never returned. Use a read-only identity without Secrets

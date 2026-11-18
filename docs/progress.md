@@ -177,7 +177,7 @@ the v0.3 acceptance criterion it serves.
 - 0.3.4: #88–#90 (process-group kill with `rustix`, reuse of short-lived credentials, client-go checks of the plugin's answer).
 - Open: #86 (probe-killed pods misdiagnosed once their probe events are throttled), #83.
 
-## v0.4: Guarded writes (plan)
+## v0.4: Guarded writes
 
 Order follows PROPOSAL §5/§16, §8.3 and §12.4: the gates first (flags, policy, confirm token,
 plan/execute framework, audit), then the write tier, then the destructive tier, then chart,
@@ -193,17 +193,17 @@ kind tests and docs. Each row ends with the v0.4 acceptance criterion it serves.
 | 6 | Audit: plans, executions and rejected tokens recorded with `dry_run`, the targets and the outcome (`planned`, `applied`, `rejected: <why>`); write args redacted like read args | ✅ | Done: records carry the tool's tier and `dry_run` (true unless the call says `false`), `result` ok or error with the rejection; `confirm_token` is masked like any token argument. Stdio test `write_tools_need_allow_write_and_every_call_is_audited`. AC 5 |
 | 7 | Chart: `server.allowWrite`/`server.allowDestructive` values (default off) and an opt-in `rbac.writes` ClusterRole with only what the write tier needs (patch on deployments, statefulsets, daemonsets and their scale; delete pods; create pods/eviction; patch nodes); `apply_manifest` permissions only through `rbac.extraRules` | ✅ | Done: `writes.enabled`/`writes.destructive`/`writes.denyNamespaces` (one value instead of a separate `rbac.writes`: the role comes with the flag), schema, and a template `fail` unless `auth.mode` is `tokenreview` with `auth.allowedCallers`. CI: kubeconform on a writes value set; after the default install's smoke test (which now checks that no write tool is registered), a `helm upgrade` enables writes and `WRITES=1 smoke.sh` plans and confirms a restart of a scratch Deployment through the write ClusterRole and finds both calls in the pod's audit log, on kind and k3s. |
 | 8 | Kind tests: plan → confirm → verify for every tool against the kind cluster, and the AC 2 check against the API server's own audit log (no mutating request without `dryRun` while planning) | ✅ | Done: `cargo xtask kind-up` creates the cluster with an API server audit policy (`xtask/kind/audit-policy.yaml`: the kind admin's writes, with request bodies except Secrets) logging to `.dev/audit/audit.log`; CI creates its clusters the same way (`K8S_MCP_KIND_IMAGE`) and now runs the `--ignored` kind and stdio tests. `writes_mutate_only_with_their_plans_token`: plans of all seven write tools, confirms without a token or with another tool's, and a kube-system target leave only dry runs in the API audit log; the confirmed restart is the one real write; k8s-mcp's audit log has every call. The local cluster was recreated with the go-ahead (2026-11-18). AC 2, 4, 5 |
-| 9 | Docs: `docs/writes.md` (the §12.4 model, flags, the deny-list, tokens, client approval prompts), security.md T10 row, regenerated tool reference, README flags, server instructions for the write flow, CHANGELOG | ⬜ | MCP elicitation stays optional (§12.4 item 4): not in v0.4, since the confirm token is the gate. |
+| 9 | Docs: `docs/writes.md` (the §12.4 model, flags, the deny-list, tokens, client approval prompts), security.md T10 row, regenerated tool reference, README flags, server instructions for the write flow, CHANGELOG | ✅ | MCP elicitation stays optional (§12.4 item 4): not in v0.4, since the confirm token is the gate. |
 
 ## v0.4 acceptance criteria (PROPOSAL §16)
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | Without `--allow-write`, write tools are absent from `tools/list` and calling them by name returns "tool not found" | ⬜ | |
-| 2 | With `--allow-write`, every write call without a valid `confirm_token` performs no mutation (mock verifier and kind audit) | ⬜ | |
-| 3 | A token is rejected if the args, context or resourceVersion change, or after 120 seconds | ⬜ | |
-| 4 | `drain_node` respects PDBs (reports the blocked pods), and the default write deny-list protects `kube-system` | ⬜ | |
-| 5 | Every write plan and execution appears in the audit log | ⬜ | |
+| 1 | Without `--allow-write`, write tools are absent from `tools/list` and calling them by name returns "tool not found" | ✅ | stdio `write_tools_need_allow_write_and_every_call_is_audited` (rmcp answers `tool "restart_workload" not found`; destructive tools need `--allow-destructive`); the router checks the tier again; chart smoke "no write tools by default" |
+| 2 | With `--allow-write`, every write call without a valid `confirm_token` performs no mutation (mock verifier and kind audit) | ✅ | `tests/write.rs` `every_write_tool_mutates_only_with_its_plans_token` (mock verifier, all tools); kind `writes_mutate_only_with_their_plans_token` against the API server's audit log |
+| 3 | A token is rejected if the args, context or resourceVersion change, or after 120 seconds | ✅ | `confirm::tests` (args, context, tool, resourceVersion, absent object, expiry, another process, malformed; proptest), `a_token_is_void_once_the_object_changed`, live reuse checks on kind |
+| 4 | `drain_node` respects PDBs (reports the blocked pods), and the default write deny-list protects `kube-system` | ✅ | `drain_plans_each_pod_and_reports_the_ones_a_pdb_blocks`; the live drain plan on kind named the PDB-blocked pods; `protected_namespaces_are_refused_before_any_request` and the kind test's refused kube-system restart |
+| 5 | Every write plan and execution appears in the audit log | ✅ | stdio and kind tests count the records (tier and `dry_run`), the chart smoke test finds the in-cluster plan and confirm |
 
 **Decisions (resolved 2026-11-18)**
 1. Confirm tokens use `ring` (already in the build as the TLS crypto provider, ADR 0001) as a direct dependency of `k8s-mcp-core`, for HMAC-SHA256 and the random key.

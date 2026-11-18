@@ -123,7 +123,18 @@ fn failing(
         reason(e) == "Killing" && msg(e).contains(&format!("failed {} probe", kind.name()))
     });
     let recovered = kind == Kind::Readiness && st.ready;
-    if (fails.is_empty() && kill.is_none()) || recovered {
+    // Without probe events, a port the container does not expose still explains the failures
+    // from the spec alone: the kubelet throttles a crash-looping pod's events and they expire
+    // after an hour, so an old crash loop keeps only its exit codes (riseno/k8s-mcp#86).
+    let no_events = fails.is_empty() && kill.is_none();
+    let from_spec = no_events
+        && mismatched_port(c, probe).is_some()
+        && if kind == Kind::Readiness {
+            !st.ready
+        } else {
+            st.restart_count > 0
+        };
+    if (no_events && !from_spec) || recovered {
         return;
     }
     let name = &c.name;
@@ -203,7 +214,17 @@ fn failing(
     } else {
         Severity::High
     };
-    let mut f = Finding::new(id, severity, Confidence::High, title)
+    let (confidence, explanation) = if from_spec {
+        (
+            Confidence::Medium,
+            format!(
+                "{explanation} No probe events remain to confirm it (they stop being recorded for a pod that keeps crashing), but the spec alone means the probe cannot pass."
+            ),
+        )
+    } else {
+        (Confidence::High, explanation)
+    };
+    let mut f = Finding::new(id, severity, confidence, title)
         .explain(explanation)
         .evidence(
             Source::Spec,
@@ -256,6 +277,15 @@ fn failing(
 
 /// The probe's port if no `containerPort` matches it: a number when the container declares
 /// ports, or a name when no port has that name.
+/// True when a liveness or startup probe targets a port the container does not expose: the
+/// kubelet keeps killing it, whatever exit code that leaves.
+pub(crate) fn kills_by_spec(c: &Container) -> bool {
+    [Kind::Liveness, Kind::Startup]
+        .into_iter()
+        .filter_map(|k| k.probe(c))
+        .any(|p| mismatched_port(c, p).is_some())
+}
+
 fn mismatched_port(c: &Container, probe: &Probe) -> Option<String> {
     let port = probe
         .http_get

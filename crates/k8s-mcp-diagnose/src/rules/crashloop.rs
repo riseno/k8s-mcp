@@ -120,7 +120,10 @@ pub fn is_crashlooping(st: &ContainerStatus) -> bool {
 pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option<Finding> {
     let t = last_termination(st)?;
     let term_reason = t.reason.as_deref().unwrap_or("");
-    if super::oom::oom_kind(ev, c, t).is_some() || probe_killed(&ev.events, &c.name) {
+    if super::oom::oom_kind(ev, c, t).is_some()
+        || probe_killed(&ev.events, &c.name)
+        || (st.restart_count > 0 && super::probe::kills_by_spec(c))
+    {
         return None;
     }
     let message = t.message.as_deref().unwrap_or("");
@@ -218,6 +221,25 @@ pub fn classify(ev: &PodEvidence, c: &Container, st: &ContainerStatus) -> Option
         )
     };
 
+    // A liveness or startup probe can end a container with these codes too (a process that
+    // stops cleanly on the kubelet's SIGTERM), and an old crash loop's probe events may be gone,
+    // so the exit code alone is not conclusive (riseno/k8s-mcp#86).
+    let probed = c.liveness_probe.is_some() || c.startup_probe.is_some();
+    let (explanation, fix, confidence) = if probed
+        && matches!(id, "pod.crashloop.exit_zero" | "pod.crashloop.sigterm")
+    {
+        (
+            format!(
+                "{explanation} The container also has a liveness or startup probe: when it fails, the kubelet stops the container the same way, and a pod that has crashed for a while no longer records the probe's events."
+            ),
+            format!(
+                "{fix} Check the probe first: run its command or request from inside the pod while it is up."
+            ),
+            Confidence::Medium,
+        )
+    } else {
+        (explanation, fix, confidence)
+    };
     let mut f = Finding::new(id, Severity::Critical, confidence, title)
         .explain(explanation)
         .evidence(
@@ -346,6 +368,45 @@ mod tests {
             out.iter().all(|f| !f.id.starts_with("pod.crashloop.")),
             "{:?}",
             out.iter().map(|f| &f.id).collect::<Vec<_>>()
+        );
+    }
+
+    /// riseno/k8s-mcp#86: once a long crash loop's probe events are throttled or expired, the
+    /// probe's port mismatch still owns the diagnosis (from the spec), not the clean exit code.
+    #[test]
+    fn an_old_crash_loop_without_probe_events_is_still_a_probe_port_mismatch() {
+        let mut ev = pod_fixture("pods/probe-port-mismatch.yaml");
+        ev.events.clear();
+        let findings = crate::diagnose_pod(&ev);
+        let ids: Vec<&str> = findings.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids.first(), Some(&"pod.probe.port_mismatch"), "{ids:?}");
+        assert!(
+            !ids.iter().any(|i| i.starts_with("pod.crashloop.")),
+            "{ids:?}"
+        );
+        assert_eq!(findings[0].confidence, Confidence::Medium);
+        assert!(findings[0].explanation.contains("No probe events remain"));
+    }
+
+    /// riseno/k8s-mcp#86: a clean exit with a (well-formed) liveness probe and no probe events
+    /// is not conclusive: exit_zero stays, at medium confidence, naming the probe.
+    #[test]
+    fn exit_zero_with_a_liveness_probe_is_medium_confidence() {
+        let mut ev = pod_fixture("pods/crashloop-exit0.yaml");
+        let c = &mut ev.pod.spec.as_mut().unwrap().containers[0];
+        c.liveness_probe = Some(
+            serde_json::from_value(serde_json::json!({"exec": {"command": ["true"]}})).unwrap(),
+        );
+        let mut out = Vec::new();
+        check(&ev, &mut out);
+        let f = out
+            .iter()
+            .find(|f| f.id == "pod.crashloop.exit_zero")
+            .unwrap();
+        assert_eq!(f.confidence, Confidence::Medium);
+        assert!(
+            f.explanation.contains("liveness or startup probe")
+                && f.fix.contains("Check the probe")
         );
     }
 

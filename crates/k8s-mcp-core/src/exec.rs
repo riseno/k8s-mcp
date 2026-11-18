@@ -185,21 +185,21 @@ fn base64(pem: String) -> String {
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
-
     use super::*;
 
     /// An `AuthInfo` whose exec plugin is the shell script `body`, run with arg `get-token` and
     /// `env` FROM_ENV=tok-env.
+    ///
+    /// The plugin is `/bin/sh <script>`: executing a script this process just wrote can fail
+    /// with ETXTBSY on Linux while a parallel test forks and briefly holds its write handle.
     fn with_plugin(dir: &Path, body: &str) -> AuthInfo {
         let p = dir.join("plugin");
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(&p, format!("{body}\n")).unwrap();
         AuthInfo {
             exec: Some(ExecConfig {
                 api_version: Some("client.authentication.k8s.io/v1beta1".into()),
-                command: Some(p.display().to_string()),
-                args: Some(vec!["get-token".into()]),
+                command: Some("/bin/sh".into()),
+                args: Some(vec![p.display().to_string(), "get-token".into()]),
                 env: Some(vec![
                     [("name", "FROM_ENV"), ("value", "tok-env")]
                         .map(|(k, v)| (k.to_owned(), v.to_owned()))
@@ -302,7 +302,7 @@ echo '{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredentia
         let err = resolve(&mut auth, Duration::from_secs(1))
             .await
             .unwrap_err();
-        assert!(err.contains("`plugin` did not finish within 1s"), "{err}");
+        assert!(err.contains("`sh` did not finish within 1s"), "{err}");
         let pids = std::fs::read_to_string(&pids).unwrap();
         let alive = |pid: &str| {
             std::process::Command::new("kill")

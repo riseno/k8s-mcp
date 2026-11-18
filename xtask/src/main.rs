@@ -88,24 +88,65 @@ fn verify_context() -> Result<()> {
     Ok(())
 }
 
+/// Where the API server's audit log lands on this machine (`.dev/audit/audit.log`).
+fn audit_dir() -> PathBuf {
+    root().join(".dev/audit")
+}
+
+/// The kind cluster: one node whose API server writes an audit log of the kind admin's writes
+/// (`xtask/kind/audit-policy.yaml`) to [`audit_dir`], so tests can check what was sent.
+fn kind_config() -> String {
+    let policy = root().join("xtask/kind/audit-policy.yaml");
+    format!(
+        r#"kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      - {{hostPath: "{policy}", containerPath: /etc/kubernetes/audit/policy.yaml, readOnly: true}}
+      - {{hostPath: "{log}", containerPath: /var/log/kubernetes/audit}}
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            - {{name: audit-policy-file, value: /etc/kubernetes/audit/policy.yaml}}
+            - {{name: audit-log-path, value: /var/log/kubernetes/audit/audit.log}}
+            - {{name: audit-log-maxsize, value: "50"}}
+            - {{name: audit-log-maxbackup, value: "1"}}
+          extraVolumes:
+            - {{name: audit-policy, hostPath: /etc/kubernetes/audit, mountPath: /etc/kubernetes/audit, readOnly: true, pathType: DirectoryOrCreate}}
+            - {{name: audit-log, hostPath: /var/log/kubernetes/audit, mountPath: /var/log/kubernetes/audit, pathType: DirectoryOrCreate}}
+"#,
+        policy = policy.display(),
+        log = audit_dir().display(),
+    )
+}
+
 fn kind_up() -> Result<()> {
-    std::fs::create_dir_all(root().join(".dev"))?;
+    std::fs::create_dir_all(audit_dir())?;
     let clusters = output(Command::new("kind").args(["get", "clusters"]))?;
     if clusters.lines().any(|c| c == CLUSTER) {
         println!("reusing kind cluster {CLUSTER}");
         let config = output(Command::new("kind").args(["get", "kubeconfig", "--name", CLUSTER]))?;
         std::fs::write(kubeconfig(), config)?;
+        if !audit_dir().join("audit.log").exists() {
+            println!(
+                "warning: this cluster writes no audit log to {}; the write-safety kind test needs it: `cargo xtask kind-down && cargo xtask kind-up` recreates the cluster",
+                audit_dir().display()
+            );
+        }
     } else {
+        let config = root().join(".dev/kind-config.yaml");
+        std::fs::write(&config, kind_config())?;
+        // CI passes each matrix image; the default is the newest.
+        let image = std::env::var("K8S_MCP_KIND_IMAGE").unwrap_or_else(|_| NODE_IMAGE.into());
         run(Command::new("kind")
             .args([
-                "create",
-                "cluster",
-                "--name",
-                CLUSTER,
-                "--image",
-                NODE_IMAGE,
-                "--kubeconfig",
+                "create", "cluster", "--name", CLUSTER, "--image", &image, "--config",
             ])
+            .arg(&config)
+            .arg("--kubeconfig")
             .arg(kubeconfig()))?;
     }
     verify_context()?;

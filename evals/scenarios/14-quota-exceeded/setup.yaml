@@ -1,0 +1,11 @@
+# Applied, and processed by the quota controller, before manifest.yaml (riseno/k8s-mcp#102):
+# otherwise admission can let both pods in before it enforces the quota.
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-quota-exceeded}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: compute, namespace: eval-quota-exceeded}
+spec:
+  hard: {requests.cpu: 250m}

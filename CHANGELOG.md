@@ -5,8 +5,18 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- A pod that has crash-looped for a while because of a liveness or startup probe on a port the
+  container does not expose is diagnosed as `pod.probe.port_mismatch` (from the spec, at medium
+  confidence) once its probe events are gone, instead of `pod.crashloop.exit_zero`: the kubelet
+  throttles such a pod's events and they expire after an hour. With a probe configured, a clean
+  exit (`exit_zero`) or exit 143 (`sigterm`) is now medium confidence and names the probe as a
+  possible cause (#86).
+- Eval scenarios may ship a `setup.yaml` that the runner applies and waits on first; scenario 14
+  uses it so its ResourceQuota is enforced before its Deployment exists (#102).
+
 ### Added
-- v0.4 groundwork for guarded writes (no write tools are registered yet):
+- Guarded writes ([docs/writes.md](docs/writes.md)), off unless enabled:
   - `--allow-write`, `--allow-destructive` (which needs `--allow-write`) and
     `--write-deny-namespaces` (default `kube-system,kube-public,kube-node-lease`). Over HTTP,
     `--allow-write` needs `--allowed-callers`.

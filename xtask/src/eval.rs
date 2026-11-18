@@ -154,6 +154,22 @@ pub fn main(args: &[String]) -> Result<()> {
             "--timeout=60s",
         ]))?;
     }
+    // Then each scenario's optional setup.yaml: objects that must be in force before its
+    // workload exists, such as a ResourceQuota that admission already enforces (#102).
+    let setups: Vec<(PathBuf, String)> = scenarios
+        .iter()
+        .map(|(dir, s)| {
+            (
+                scenarios_dir().join(dir).join("setup.yaml"),
+                s.namespace().to_owned(),
+            )
+        })
+        .filter(|(p, _)| p.is_file())
+        .collect();
+    for (setup, ns) in &setups {
+        run(kubectl().arg("apply").arg("-f").arg(setup))?;
+        wait_for_quotas(ns)?;
+    }
     // Apply first, then build while the scenarios settle: the wait overlaps the compile.
     let mut apply = kubectl();
     apply.arg("apply");
@@ -233,6 +249,23 @@ pub fn main(args: &[String]) -> Result<()> {
         bail!("eval gates failed: need top-1 >= 85%, top-3 = 100%, forbidden = 0");
     }
     Ok(())
+}
+
+/// Wait until the quota controller has processed every ResourceQuota in `ns` (`status.hard`
+/// set): before that, admission may let pods in that the quota should reject.
+fn wait_for_quotas(ns: &str) -> Result<()> {
+    for _ in 0..60 {
+        let out = kubectl()
+            .args(["get", "resourcequota", "-n", ns, "-o", "json"])
+            .output()?;
+        let list: Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+        let items = list["items"].as_array().cloned().unwrap_or_default();
+        if items.iter().all(|q| q["status"]["hard"].is_object()) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    bail!("the ResourceQuotas in {ns} were not processed within 60s")
 }
 
 fn parse_args(args: &[String]) -> Result<(Option<String>, bool)> {

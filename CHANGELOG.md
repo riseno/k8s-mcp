@@ -44,6 +44,10 @@ All notable changes are documented here. The format follows
   user's writes (`.dev/audit/audit.log`), and CI runs the kind acceptance tests, which now
   check against it that no write tool mutates anything without its plan's token. Recreate an
   older local cluster with `cargo xtask kind-down && cargo xtask kind-up`.
+- Chart: `writes.enabled` (with `writes.destructive` and `writes.denyNamespaces`) adds the write
+  flags and a `<release>-write` ClusterRole with only what the write tools need. It requires
+  `auth.mode: tokenreview` with `auth.allowedCallers`. Over HTTP, `--allow-write` now says it
+  needs both.
 
 ## [0.3.4] - 2026-11-17
 

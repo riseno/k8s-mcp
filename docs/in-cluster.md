@@ -29,6 +29,15 @@ logs. It never returns them, but its ServiceAccount can read every Secret. With
 clear, with only pattern redaction (tokens, keys, passwords) applied, and responses say so in
 the summary (`Secret values could not be masked ...`).
 
+**Writes.** The chart is read-only unless `writes.enabled: true`. That adds `--allow-write` and
+a second ClusterRole (`<release>-write`) with what the write tools need: `patch` and `update`
+on Deployments, StatefulSets, DaemonSets, ReplicaSets and their `scale`, `delete` on pods,
+`create` on `pods/eviction`, and `patch` on nodes. It needs `auth.mode: tokenreview` and
+`auth.allowedCallers`, so only the users or groups named there can change the cluster (the
+server refuses to start otherwise). `writes.destructive: true` also registers `drain_node` and
+`apply_manifest`; `apply_manifest` can only apply kinds `rbac.extraRules` grants. Every change
+is a dry-run plan first and needs the plan's confirm token; see [writes.md](writes.md).
+
 The pod runs as non-root (UID 65532) with a read-only root filesystem, all capabilities
 dropped and the `RuntimeDefault` seccomp profile. `/healthz` is the liveness probe, and
 `/readyz` (the API server answers within 3 s) is the readiness probe.
@@ -111,6 +120,9 @@ kubernetes.io/service-name=kubernetes`). Provider tools also need egress to the 
 | `extraArgs` | `[]` | Extra flags, e.g. `--namespaces=shop,payments` |
 | `clusterDomain` | `cluster.local` | For the accepted Service DNS names |
 | `serviceAccount.create`, `.name`, `.annotations`, `.labels` | `true`, release name, `{}`, `{}` | ServiceAccount and cloud identity |
+| `writes.enabled` | `false` | Register the write tools (`--allow-write`) and bind the `<release>-write` ClusterRole; needs `auth.mode: tokenreview` and `auth.allowedCallers` |
+| `writes.destructive` | `false` | Also register `drain_node` and `apply_manifest` (`--allow-destructive`) |
+| `writes.denyNamespaces` | `[kube-system, kube-public, kube-node-lease]` | Namespaces no write tool changes (`--write-deny-namespaces`) |
 | `rbac.create` | `true` | Read-only ClusterRole and bindings |
 | `rbac.secretsMetadata` | `true` | `get` on Secrets, for existence checks and masking Secret values in logs. Values are never returned, but the grant allows reading them. With `false`, logs may contain the values of Secrets a pod uses (see Install) |
 | `rbac.extraRules` | `[]` | Extra ClusterRole rules |

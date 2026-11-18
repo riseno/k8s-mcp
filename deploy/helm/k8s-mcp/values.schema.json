@@ -41,6 +41,15 @@
         "labels": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
+    "writes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "destructive": { "type": "boolean" },
+        "denyNamespaces": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "rbac": {
       "type": "object",
       "additionalProperties": false,

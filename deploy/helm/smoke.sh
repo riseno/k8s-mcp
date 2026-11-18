@@ -4,7 +4,11 @@
 # the token. A token without the chart's audience (k8s-mcp) must get 401. Only kind and k3d
 # clusters are allowed.
 #
-# Usage: deploy/helm/smoke.sh <kubeconfig> <context> <namespace> <release>
+# With WRITES=1 (a release with writes.enabled and the caller below in auth.allowedCallers), the
+# client also plans and confirms a restart of a scratch Deployment through the chart's write
+# ClusterRole; otherwise it checks that no write tool is registered.
+#
+# Usage: [WRITES=1] deploy/helm/smoke.sh <kubeconfig> <context> <namespace> <release>
 set -euo pipefail
 KC=$1 CTX=$2 NS=$3 REL=$4
 case "$CTX" in kind-* | k3d-*) ;; *) echo "refusing context $CTX: only kind-* and k3d-* clusters" >&2; exit 2 ;; esac
@@ -41,6 +45,23 @@ SID=$(curl -s -D - -o /dev/null "${H[@]}" "${A[@]}" -d "$INIT" "$URL/mcp" | tr -
 check "session" yes "${SID:+yes}"
 curl -s -o /dev/null "${H[@]}" "${A[@]}" -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$URL/mcp"
 check "tools/list has diagnose_pod" true "$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jq '[.result.tools[].name] | index("diagnose_pod") != null')"
+HAS_WRITE=$(rpc '{"jsonrpc":"2.0","id":4,"method":"tools/list"}' | jq '[.result.tools[].name] | index("restart_workload") != null')
+if [ "${WRITES:-0}" = 1 ]; then
+  check "tools/list has restart_workload" true "$HAS_WRITE"
+  k create namespace smoke-writes --dry-run=client -o yaml | k apply -f - >/dev/null
+  k -n smoke-writes create deployment web --image=busybox:1.36 --dry-run=client -o yaml -- sleep 3600 | k apply -f - >/dev/null
+  k -n smoke-writes rollout status deploy/web --timeout=120s >/dev/null
+  GEN=$(k -n smoke-writes get deploy web -o jsonpath='{.metadata.generation}')
+  P=$(rpc '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"restart_workload","arguments":{"kind":"Deployment","name":"web","namespace":"smoke-writes"}}}')
+  check "restart plan" false "$(jq '.result.isError' <<<"$P")"
+  check "plan changed nothing" "$GEN" "$(k -n smoke-writes get deploy web -o jsonpath='{.metadata.generation}')"
+  CONFIRM=$(jq -c '.result.structuredContent.next[0].args' <<<"$P")
+  C=$(rpc "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"restart_workload\",\"arguments\":$CONFIRM}}")
+  check "restart confirmed" false "$(jq '.result.isError' <<<"$C")"
+  check "generation after confirm" "$((GEN + 1))" "$(k -n smoke-writes get deploy web -o jsonpath='{.metadata.generation}')"
+else
+  check "no write tools by default" false "$HAS_WRITE"
+fi
 POD=$(k -n "$NS" get pod -l "app.kubernetes.io/instance=$REL" -o jsonpath='{.items[0].metadata.name}')
 R=$(rpc "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"diagnose_pod\",\"arguments\":{\"namespace\":\"$NS\",\"name\":\"$POD\"}}}")
 check "diagnose_pod" false "$(jq '.result.isError' <<<"$R")"
@@ -49,4 +70,8 @@ sleep 1
 LOGS=$(k -n "$NS" logs "deploy/$REL")
 check "audit caller" found "$(grep -q -F '"caller":"system:serviceaccount:default:mcp-caller"' <<<"$LOGS" && echo found || echo missing)"
 check "token in pod log" 0 "$(grep -c -F -e "$TOKEN" -e "$DEFAULT_TOKEN" <<<"$LOGS" || true)"
+if [ "${WRITES:-0}" = 1 ]; then
+  check "audit: restart plan and confirm" 2 "$(grep -F '"tool":"restart_workload"' <<<"$LOGS" | grep -c -e '"dry_run":true' -e '"dry_run":false' || true)"
+  k delete namespace smoke-writes --wait=false >/dev/null
+fi
 exit $fail

@@ -55,6 +55,20 @@ serviceAccount:
   annotations: {}
   labels: {}
 
+# Write tools (off by default). Every change is a server-side dry-run plan first and needs the
+# plan's confirm token; see docs/writes.md. Writes need auth.mode tokenreview and
+# auth.allowedCallers: only the callers named there may change the cluster.
+writes:
+  # Register the write tools (--allow-write) and bind a ClusterRole with what they need:
+  # patch and update Deployments, StatefulSets, DaemonSets and ReplicaSets and their scale,
+  # delete pods, create pods/eviction, patch nodes.
+  enabled: false
+  # Also register drain_node and apply_manifest (--allow-destructive). apply_manifest needs
+  # permissions on whatever it applies: grant them with rbac.extraRules.
+  destructive: false
+  # Namespaces no write tool changes objects in (--write-deny-namespaces).
+  denyNamespaces: [kube-system, kube-public, kube-node-lease]
+
 rbac:
   # Read-only ClusterRole bound to the ServiceAccount.
   create: true

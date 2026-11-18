@@ -69,6 +69,45 @@ rules:
   {{- with .Values.rbac.extraRules }}
   {{- toYaml . | nindent 2 }}
   {{- end }}
+{{- if .Values.writes.enabled }}
+---
+# What the write tools need (writes.enabled). drain_node uses pods/eviction and nodes;
+# apply_manifest's permissions come from rbac.extraRules.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "k8s-mcp.fullname" . }}-write
+  labels:
+    {{- include "k8s-mcp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets, deployments/scale, statefulsets/scale, replicasets/scale]
+    verbs: [patch, update]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "k8s-mcp.fullname" . }}-write
+  labels:
+    {{- include "k8s-mcp.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "k8s-mcp.fullname" . }}-write
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "k8s-mcp.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

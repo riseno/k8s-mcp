@@ -247,7 +247,7 @@ impl Opts {
         if self.allow_write && self.transport == Transport::Http && self.allowed_callers.is_empty()
         {
             bail!(
-                "--allow-write over HTTP needs --allowed-callers: name the users or groups that may change the cluster (for example --allowed-callers 'group:platform-admins')"
+                "--allow-write over HTTP needs --auth tokenreview with --allowed-callers: name the users or groups that may change the cluster (for example --allowed-callers 'group:platform-admins')"
             );
         }
         Ok(Policy::new(

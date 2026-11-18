@@ -58,6 +58,18 @@ spec:
             {{- with .Values.allowedOrigins }}
             - --allowed-origins={{ join "," . }}
             {{- end }}
+            {{- if .Values.writes.enabled }}
+            {{- if or (ne .Values.auth.mode "tokenreview") (empty .Values.auth.allowedCallers) }}
+            {{- fail "writes.enabled needs auth.mode=tokenreview and auth.allowedCallers: name the users or groups that may change the cluster" }}
+            {{- end }}
+            - --allow-write
+            {{- if .Values.writes.destructive }}
+            - --allow-destructive
+            {{- end }}
+            - --write-deny-namespaces={{ join "," .Values.writes.denyNamespaces }}
+            {{- else if .Values.writes.destructive }}
+            {{- fail "writes.destructive needs writes.enabled" }}
+            {{- end }}
             - --redact={{ .Values.redact }}
             - --log-level={{ .Values.logLevel }}
             {{- range .Values.extraArgs }}

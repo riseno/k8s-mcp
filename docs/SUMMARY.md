@@ -7,6 +7,7 @@
 - [Azure Kubernetes Service provider](providers/aks.md)
 - [MCP clients](clients.md)
 - [Tools](tools.md)
+- [Write tools](writes.md)
 - [Output format](output.md)
 - [Detection rules](rules.md)
 - [Security and threat model](security.md)
@@ -26,3 +27,5 @@
   - [0011 Upgrade readiness signals](adr/0011-upgrade-readiness-signals.md)
   - [0012 Google Cloud SDK on ring](adr/0012-google-cloud-sdk-on-ring.md)
   - [0013 Azure through ARM REST on ring](adr/0013-azure-arm-rest-on-ring.md)
+  - [0014 Exec plugins run by k8s-mcp](adr/0014-run-exec-plugins-in-k8s-mcp.md)
+  - [0015 Confirm tokens](adr/0015-confirm-tokens.md)

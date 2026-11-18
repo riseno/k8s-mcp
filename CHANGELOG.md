@@ -48,6 +48,8 @@ All notable changes are documented here. The format follows
   flags and a `<release>-write` ClusterRole with only what the write tools need. It requires
   `auth.mode: tokenreview` with `auth.allowedCallers`. Over HTTP, `--allow-write` now says it
   needs both.
+- `docs/writes.md`: enabling the write tools, the plan and confirm flow, what binds a token,
+  what each tool shows and refuses; the README, FAQ and threat model cover the write tier.
 
 ## [0.3.4] - 2026-11-17
 

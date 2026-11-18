@@ -206,6 +206,25 @@ impl Redactor {
         }
     }
 
+    /// Redact a tool call's arguments for the audit log: a string under a sensitive key name
+    /// (`confirm_token`, `*password*`, …) is masked whatever it looks like; everything else is
+    /// pattern-redacted as by [`Redactor::json`] (riseno/k8s-mcp#105). Object views use `json`
+    /// instead, where keys such as `secretName` or `sessionAffinity` are data.
+    pub fn args(self, v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                for (k, v) in m.iter_mut() {
+                    match v {
+                        Value::String(s) => *s = self.named(k, s),
+                        other => self.args(other),
+                    }
+                }
+            }
+            Value::Array(a) => a.iter_mut().for_each(|v| self.args(v)),
+            other => self.json(other),
+        }
+    }
+
     /// Redact every value of a string map by key name (annotations, ConfigMap data).
     pub fn map(self, m: &mut Map<String, Value>) {
         for (k, v) in m.iter_mut() {
@@ -306,5 +325,16 @@ mod tests {
         let mut m = json!({"my-api-key": "x", "team": "a"});
         r.map(m.as_object_mut().unwrap());
         assert_eq!(m, json!({"my-api-key": MASK, "team": "a"}));
+    }
+
+    #[test]
+    fn audit_args_mask_values_under_sensitive_keys() {
+        let r = Redactor::new(RedactLevel::Standard);
+        let mut v = json!({"name": "web", "confirm_token": "1795041384.6ec538ee", "nested": [{"api_key": "abc"}], "grep": "password=hunter2"});
+        r.args(&mut v);
+        assert_eq!(
+            v,
+            json!({"name": "web", "confirm_token": MASK, "nested": [{"api_key": MASK}], "grep": format!("password={MASK}")})
+        );
     }
 }

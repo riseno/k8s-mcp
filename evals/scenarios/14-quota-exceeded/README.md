@@ -1,7 +1,8 @@
 # 14 ResourceQuota exceeded
 
 A ResourceQuota caps `requests.cpu` at 250m, and a Deployment with 2 replicas requests 200m per pod. The first pod
-runs. The second is never created.
+runs. The second is never created. The quota is in `setup.yaml`, which the runner applies and waits on before the
+Deployment: created together, admission could let both pods in before the quota controller processed it (#102).
 
 Observed:
 - The Deployment has `availableReplicas: 1` and the condition `ReplicaFailure=True reason=FailedCreate`.

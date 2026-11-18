@@ -26,7 +26,8 @@ cargo xtask eval --scenario oom-killed --keep
 ```
 
 The runner builds `k8s-mcp`, applies every manifest (a scenario's optional `crds.yaml` first,
-waiting until its CRDs are established), waits for the longest `settle_seconds`, then calls
+waiting until its CRDs are established, then its optional `setup.yaml`, waiting until its
+ResourceQuotas are in force), waits for the longest `settle_seconds`, then calls
 each scenario's tool over stdio MCP and reports:
 
 | Metric | v0.1 gate |

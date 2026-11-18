@@ -2,13 +2,8 @@ apiVersion: v1
 kind: Namespace
 metadata: {name: eval-quota-exceeded}
 ---
-apiVersion: v1
-kind: ResourceQuota
-metadata: {name: compute, namespace: eval-quota-exceeded}
-spec:
-  hard: {requests.cpu: 250m}
----
-# Two replicas of 200m each: the quota admits only the first pod.
+# The ResourceQuota (setup.yaml) allows 250m of CPU requests: of two replicas of 200m each,
+# it admits only the first pod.
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: web, namespace: eval-quota-exceeded}

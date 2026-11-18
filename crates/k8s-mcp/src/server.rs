@@ -140,6 +140,12 @@ tools! {
     [Write] "uncordon_node", "core", t::NodeWriteInput,
         "Mark a node schedulable again. Refused while --namespaces limits the server. Two calls: the first (dry_run=true, the default) is a server-side dry run that changes nothing and returns the plan and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s).",
         |c, i| t::uncordon_node(c, i).await;
+    [Destructive] "drain_node", "core", t::DrainNodeInput,
+        "Cordon a node and evict its pods through the Eviction API, which respects PodDisruptionBudgets (like `kubectl drain`). DaemonSet, static and finished pods stay, pods without an owner are skipped (they would be lost); it reports each pod's outcome and does not wait for pods to terminate. Two calls: the first (dry_run=true, the default) dry-runs the cordon and every eviction, so the plan names the pods a PodDisruptionBudget blocks, and returns a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s, void if the node's pods change).",
+        |c, i| t::drain_node(c, i).await;
+    [Destructive] "apply_manifest", "core", t::ApplyManifestInput,
+        "Server-side apply of YAML documents (field manager k8s-mcp, never forced: fields another manager owns come back as conflicts). Refuses Secrets, RBAC, admission webhooks and policies, and CRDs; namespaced objects without a namespace go to `namespace` (default: the context's). Two calls: the first (dry_run=true, the default) is a server-side dry-run apply that returns each object's field diff and a confirm_token; only once the user agrees, call again with dry_run=false and that token (valid 120 s, void if any object changes).",
+        |c, i| t::apply_manifest(c, i).await;
     "check_permissions", "core", t::CheckPermissionsInput,
         "What this server's identity may do in a namespace (pods, logs, events, nodes, metrics, secrets, cluster-admin) via SelfSubjectAccessReview, plus the effective k8s-mcp safety policy. Call when a tool reports Forbidden.",
         |c, i| t::check_permissions(c, i).await;

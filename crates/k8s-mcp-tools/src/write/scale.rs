@@ -58,7 +58,7 @@ pub async fn scale_workload(ctx: &Ctx, input: ScaleWorkloadInput) -> Result<Enve
     ctx.policy.check_write_namespace(&ns)?;
     let name = input.name.as_str();
     let ar = ApiResource::from_gvk(&GroupVersionKind::gvk("apps", "v1", kind));
-    let api: Api<DynamicObject> = Api::namespaced_with(sc.target.client.clone(), &ns, &ar);
+    let api: Api<DynamicObject> = Api::namespaced_with(sc.target.writer.clone(), &ns, &ar);
     let scale = api
         .get_scale(name)
         .await
@@ -70,7 +70,7 @@ pub async fn scale_workload(ctx: &Ctx, input: ScaleWorkloadInput) -> Result<Enve
         lines.push("scaled to zero: it serves nothing until it is scaled up again".into());
     }
     // An HPA owns the replica count and would undo the change on its next sync.
-    let hpas = Api::<HorizontalPodAutoscaler>::namespaced(sc.target.client.clone(), &ns)
+    let hpas = Api::<HorizontalPodAutoscaler>::namespaced(sc.target.writer.clone(), &ns)
         .list(&ListParams::default())
         .await
         .map(|l| l.items)

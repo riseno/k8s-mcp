@@ -9,8 +9,8 @@ use k8s_mcp_core::policy::Policy;
 use k8s_mcp_testkit::mock::{Mock, MockApi};
 use k8s_mcp_testkit::now;
 use k8s_mcp_tools::{
-    Ctx, DeletePodInput, Envelope, NodeWriteInput, RestartWorkloadInput, RollbackWorkloadInput,
-    ScaleWorkloadInput,
+    Ctx, DeletePodInput, DrainNodeInput, Envelope, NodeWriteInput, RestartWorkloadInput,
+    RollbackWorkloadInput, ScaleWorkloadInput,
 };
 use serde_json::{Value, json};
 
@@ -228,6 +228,7 @@ fn cluster() -> Mock {
         .get(NODE, node.clone())
         .route("PATCH", NODE, 200, node)
         .list("/api/v1/pods", vec![pod(true, false)])
+        .route("POST", &format!("{POD}/eviction"), 201, json!({"kind": "Status", "apiVersion": "v1", "status": "Success", "code": 201}))
         .start()
 }
 
@@ -266,6 +267,9 @@ async fn call(c: &Ctx, tool: &str, args: Value) -> k8s_mcp_core::Result<Envelope
             k8s_mcp_tools::uncordon_node(c, serde_json::from_value::<NodeWriteInput>(a).unwrap())
                 .await
         }
+        "drain_node" => {
+            k8s_mcp_tools::drain_node(c, serde_json::from_value::<DrainNodeInput>(a).unwrap()).await
+        }
         other => panic!("{other}"),
     }
 }
@@ -289,6 +293,7 @@ async fn every_write_tool_mutates_only_with_its_plans_token() {
         ("delete_pod", json!({"name": "web-1"}), "DELETE"),
         ("cordon_node", json!({"name": "n1"}), "PATCH"),
         ("uncordon_node", json!({"name": "n1"}), "PATCH"),
+        ("drain_node", json!({"name": "n1"}), "POST"),
     ];
     let m = cluster();
     let c = ctx(&m);
@@ -466,4 +471,206 @@ async fn unowned_and_mirror_pods_and_limited_servers_are_refused() {
         "{err}"
     );
     assert!(m.requests.lock().unwrap().is_empty());
+}
+
+/// v0.4 AC 4: the drain plan dry-runs every eviction and names the pods a PodDisruptionBudget
+/// blocks; DaemonSet, static, finished and unowned pods are left in place.
+#[tokio::test]
+async fn drain_plans_each_pod_and_reports_the_ones_a_pdb_blocks() {
+    let on_node = |name: &str, owner: Option<(&str, &str)>| {
+        let mut p = json!({"apiVersion": "v1", "kind": "Pod",
+            "metadata": {"name": name, "namespace": "shop", "resourceVersion": "1"},
+            "spec": {"nodeName": "n1", "containers": [{"name": "c", "image": "x"}]},
+            "status": {"phase": "Running"}});
+        if let Some((kind, owner)) = owner {
+            p["metadata"]["ownerReferences"] = json!([{"apiVersion": "apps/v1", "kind": kind, "name": owner, "uid": "u", "controller": true}]);
+        }
+        p
+    };
+    let mut api = on_node("api-1", Some(("ReplicaSet", "api-7")));
+    api["spec"]["volumes"] = json!([{"name": "tmp", "emptyDir": {}}]);
+    let mut mirror = on_node("etcd-n1", Some(("Node", "n1")));
+    mirror["metadata"]["annotations"] = json!({"kubernetes.io/config.mirror": "m"});
+    let mut done = on_node("job-done", Some(("Job", "once")));
+    done["status"]["phase"] = json!("Succeeded");
+    let pods = vec![
+        api,
+        on_node("db-0", Some(("StatefulSet", "db"))),
+        on_node("fluent-x", Some(("DaemonSet", "fluent"))),
+        mirror,
+        done,
+        on_node("loner", None),
+    ];
+    let node = json!({"apiVersion": "v1", "kind": "Node", "metadata": {"name": "n1", "resourceVersion": "5"}, "spec": {}});
+    let blocked = json!({"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "TooManyRequests",
+        "message": "Cannot evict pod as it would violate the pod's disruption budget.", "code": 429});
+    let ok = json!({"kind": "Status", "apiVersion": "v1", "status": "Success", "code": 201});
+    let m = MockApi::new()
+        .get(NODE, node.clone())
+        .route("PATCH", NODE, 200, node)
+        .list("/api/v1/pods", pods)
+        .route(
+            "POST",
+            "/api/v1/namespaces/shop/pods/api-1/eviction",
+            201,
+            ok,
+        )
+        .route(
+            "POST",
+            "/api/v1/namespaces/shop/pods/db-0/eviction",
+            429,
+            blocked,
+        )
+        .start();
+    let c = ctx(&m);
+    let plan = call(&c, "drain_node", json!({"name": "n1"})).await.unwrap();
+    assert!(
+        plan.summary
+            .contains("drain node n1: cordon it, evict 1 pod(s), 1 blocked, 4 left in place"),
+        "{}",
+        plan.summary
+    );
+    let lines = &plan.sections[0].lines;
+    for expected in [
+        "spec.unschedulable: false → true",
+        "evict shop/api-1 (ReplicaSet api-7; its emptyDir data is lost)",
+        "blocked shop/db-0 (StatefulSet db): a PodDisruptionBudget allows no disruption now (Cannot evict pod as it would violate the pod's disruption budget.)",
+        "skip shop/etcd-n1: static pod: the kubelet keeps it on the node",
+        "skip shop/fluent-x: DaemonSet fluent: it runs on every node, so it stays",
+        "skip shop/job-done: Succeeded: nothing to evict",
+    ] {
+        assert!(
+            lines.iter().any(|l| l == expected),
+            "{expected:?} not in {lines:?}"
+        );
+    }
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("skip shop/loner: no owner")),
+        "{lines:?}"
+    );
+    // The cordon and the two evictable pods, all dry runs; nothing else was written.
+    let sent = writes(&m);
+    assert_eq!(sent.len(), 3, "{sent:?}");
+    assert!(sent.iter().all(|r| dry(r)), "{sent:?}");
+    // ignore_daemonsets=false refuses a node that runs DaemonSet pods.
+    let err = call(
+        &c,
+        "drain_node",
+        json!({"name": "n1", "ignore_daemonsets": false}),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("ignore_daemonsets=true"), "{err}");
+}
+
+/// Discovery for core (configmaps, secrets), apps (deployments) and RBAC.
+fn discovery(m: MockApi) -> MockApi {
+    let res = |name: &str, kind: &str, namespaced: bool| json!({"name": name, "singularName": "", "kind": kind, "namespaced": namespaced, "verbs": ["get", "list", "patch"]});
+    let group = |g: &str| json!({"name": g, "versions": [{"groupVersion": format!("{g}/v1"), "version": "v1"}], "preferredVersion": {"groupVersion": format!("{g}/v1"), "version": "v1"}});
+    m.get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [res("configmaps", "ConfigMap", true), res("secrets", "Secret", true), res("namespaces", "Namespace", false)]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [group("apps"), group("rbac.authorization.k8s.io")]}))
+        .get("/apis/apps/v1", json!({"kind": "APIResourceList", "groupVersion": "apps/v1", "resources": [res("deployments", "Deployment", true)]}))
+        .get("/apis/rbac.authorization.k8s.io/v1", json!({"kind": "APIResourceList", "groupVersion": "rbac.authorization.k8s.io/v1", "resources": [res("clusterrolebindings", "ClusterRoleBinding", false)]}))
+}
+
+const MANIFEST: &str = "apiVersion: v1
+kind: ConfigMap
+metadata: {name: app}
+data: {level: debug}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec: {containers: [{name: api, image: nginx}]}
+";
+
+async fn apply(c: &Ctx, manifest: &str) -> k8s_mcp_core::Result<Envelope> {
+    k8s_mcp_tools::apply_manifest(
+        c,
+        k8s_mcp_tools::ApplyManifestInput {
+            manifest: manifest.into(),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+/// v0.4: apply_manifest plans a server-side dry-run apply per object (never forced) and shows
+/// each object's diff; Secrets, RBAC and protected namespaces are refused before any write.
+#[tokio::test]
+async fn apply_manifest_plans_a_dry_run_apply_per_object() {
+    let cm = |level: &str, rv: &str| {
+        json!({"apiVersion": "v1", "kind": "ConfigMap",
+        "metadata": {"name": "app", "namespace": "shop", "resourceVersion": rv}, "data": {"level": level}})
+    };
+    let dep = json!({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "api", "namespace": "shop"}, "spec": {"replicas": 1}});
+    let m = discovery(MockApi::new())
+        .get("/api/v1/namespaces/shop/configmaps/app", cm("info", "7"))
+        .route(
+            "PATCH",
+            "/api/v1/namespaces/shop/configmaps/app",
+            200,
+            cm("debug", "8"),
+        )
+        .route(
+            "PATCH",
+            "/apis/apps/v1/namespaces/shop/deployments/api",
+            200,
+            dep,
+        )
+        .start();
+    let c = ctx(&m);
+    let plan = apply(&c, MANIFEST).await.unwrap();
+    assert!(
+        plan.summary.contains("server-side apply of 2 object(s)"),
+        "{}",
+        plan.summary
+    );
+    assert_eq!(
+        plan.sections[0].lines,
+        [
+            "update ConfigMap shop/app:",
+            "  data.level: \"info\" → \"debug\"",
+            "create Deployment shop/api"
+        ]
+    );
+    let sent = writes(&m);
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(
+        sent.iter()
+            .all(|r| dry(r) && r.contains("fieldManager=k8s-mcp") && !r.contains("force")),
+        "{sent:?}"
+    );
+
+    for (manifest, expected) in [
+        (
+            "apiVersion: v1\nkind: Secret\nmetadata: {name: s}\nstringData: {pw: hunter2}\n",
+            "does not apply Secret objects",
+        ),
+        (
+            "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata: {name: me-admin}\n",
+            "does not apply ClusterRoleBinding objects",
+        ),
+        (
+            "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x, namespace: kube-system}\n",
+            "protected from writes",
+        ),
+        (
+            "apiVersion: v1\nkind: ConfigMap\nmetadata: {generateName: x-}\n",
+            "needs metadata.name",
+        ),
+        ("kind: [unclosed", "not valid YAML"),
+    ] {
+        let err = apply(&c, manifest).await.unwrap_err().to_string();
+        assert!(err.contains(expected), "{manifest}: {err}");
+        assert!(!err.contains("hunter2"), "{err}");
+    }
+    assert_eq!(writes(&m).len(), 2, "refusals send nothing");
 }

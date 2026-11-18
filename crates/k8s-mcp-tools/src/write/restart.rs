@@ -84,7 +84,7 @@ pub async fn restart_workload(ctx: &Ctx, input: RestartWorkloadInput) -> Result<
     let ns = sc.namespace.clone().unwrap_or_default();
     ctx.policy.check_write_namespace(&ns)?;
     let ar = ApiResource::from_gvk(&GroupVersionKind::gvk("apps", "v1", kind));
-    let api: Api<DynamicObject> = Api::namespaced_with(sc.target.client.clone(), &ns, &ar);
+    let api: Api<DynamicObject> = Api::namespaced_with(sc.target.writer.clone(), &ns, &ar);
     let name = input.name.as_str();
     let obj = api
         .get(name)

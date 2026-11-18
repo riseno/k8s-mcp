@@ -53,7 +53,7 @@ pub async fn rollback_workload(ctx: &Ctx, input: RollbackWorkloadInput) -> Resul
     let ns = sc.namespace.clone().unwrap_or_default();
     ctx.policy.check_write_namespace(&ns)?;
     let name = input.name.as_str();
-    let client = sc.target.client.clone();
+    let client = sc.target.writer.clone();
     let api: Api<Deployment> = Api::namespaced(client.clone(), &ns);
     let mut dep = api
         .get(name)

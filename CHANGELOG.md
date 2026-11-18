@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-18
+
 ### Fixed
 - A pod that has crash-looped for a while because of a liveness or startup probe on a port the
   container does not expose is diagnosed as `pod.probe.port_mismatch` (from the spec, at medium

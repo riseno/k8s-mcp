@@ -776,7 +776,6 @@ users:
     #[tokio::test]
     async fn exec_credentials_are_reused_for_at_least_a_call() {
         use std::fmt::Write as _;
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let runs = dir.path().join("runs");
         let mut kc = String::from(
@@ -791,12 +790,11 @@ users:
             std::fs::write(
                 &plugin,
                 format!(
-                    "#!/bin/sh\necho {name} >> {}\necho '{{\"apiVersion\":\"client.authentication.k8s.io/v1beta1\",\"kind\":\"ExecCredential\",\"status\":{{\"token\":\"t\",\"expirationTimestamp\":\"{expiry}\"}}}}'\n",
+                    "echo {name} >> {}\necho '{{\"apiVersion\":\"client.authentication.k8s.io/v1beta1\",\"kind\":\"ExecCredential\",\"status\":{{\"token\":\"t\",\"expirationTimestamp\":\"{expiry}\"}}}}'\n",
                     runs.display()
                 ),
             )
             .unwrap();
-            std::fs::set_permissions(&plugin, std::fs::Permissions::from_mode(0o755)).unwrap();
             write!(
                 kc,
                 "- name: {name}\n  context: {{cluster: c, user: {name}}}\n"
@@ -804,7 +802,7 @@ users:
             .unwrap();
             write!(
                 users,
-                "- name: {name}\n  user:\n    exec: {{apiVersion: client.authentication.k8s.io/v1beta1, command: '{}'}}\n",
+                "- name: {name}\n  user:\n    exec: {{apiVersion: client.authentication.k8s.io/v1beta1, command: /bin/sh, args: ['{}']}}\n",
                 plugin.display()
             )
             .unwrap();

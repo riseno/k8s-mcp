@@ -212,6 +212,40 @@ kind tests and docs. Each row ends with the v0.4 acceptance criterion it serves.
 4. `cargo xtask kind-up` and CI's kind clusters get an API server audit policy for AC 2. The local `k8s-mcp-dev` cluster is recreated only on the maintainer's go-ahead, since other sessions use it.
 5. With `--transport http`, k8s-mcp refuses to start with `--allow-write` unless `--allowed-callers` is set.
 
+## v1.0: Stable (plan)
+
+Order follows PROPOSAL §16 (schema freeze, docs site, 40+ scenarios, performance pass, security
+review, Helm release inspection), then the v1.0 items of §8.4 and the open v0.1 follow-ups. Each
+row ends with the v1.0 acceptance criterion it serves.
+
+| # | Task | Status | Notes / criterion |
+|---|---|---|---|
+| 1 | Schema freeze: a golden snapshot of every tool's name, tier, toolset, annotations and input and output schemas, plus prompt and resource names and the Envelope shape, so any change fails CI unless it is deliberate; `docs/stability.md`: what is stable (tool and argument names, rule ids, the Envelope), what may change in 1.x (new tools, new optional arguments, new rule ids and fields), how deprecation works | ⬜ | AC 1 |
+| 2 | Docs site: `book.toml`, mdBook build in CI (also closes the v0.1 follow-up), published to GitHub Pages on every docs change on main | ⬜ | Decision 1 (resolved). |
+| 3 | Eval scenarios 28–40+: failure modes that have rules but no scenario yet (for example a startup probe too short, a readiness probe timeout, a missing ServiceAccount, Pod Security, LimitRange and ValidatingAdmissionPolicy rejections, an image that is not executable, an init container crash loop, a CronJob that never runs, a Service whose targetPort names no port, an HPA without metrics, a NetworkPolicy blocking a Service, an unbound PVC with a missing StorageClass), each with a negative check | ⬜ | AC 2 |
+| 4 | Performance pass: `cargo xtask eval` reports p50/p95 per tool and runs `diagnose_pod` 20 times for a p95 gate (< 2 s) in CI; profile the slowest tools (`find_problems` cluster-wide, `upgrade_readiness`, `recent_changes`) on kind and fix what the numbers show | ⬜ | The 0.4.1 eval already measured p95 121 ms across tools. AC 4 |
+| 5 | Security review: `docs/security-review.md`, a checklist completed against the code (input validation, prompt injection, redaction, Secrets, SSRF in cloud paging, resource limits, the write tier, HTTP auth, exec plugins, supply chain); the threat model in `security.md` revisited for writes, HTTP, providers and exec plugins; property-based fuzzing of every parser (durations, selectors, versions, the deprecated-API metric, ExecCredential, confirm tokens, manifests, log shaping, redaction) | ⬜ | Decisions 3, 4. AC 3 |
+| 6 | Helm release inspection (opt-in): `helm_releases` (releases in a namespace or the cluster: name, revision, status, chart and app version, updated) and `helm_release` (history with failure descriptions, notes), decoded from Helm's `sh.helm.release.v1` Secrets; registered only with an opt-in flag; chart value with the extra Secret permission; values never shown | ⬜ | Decision 2. |
+| 7 | Provider access mapping (§8.4, v1.0): `gke_access` (IAM vs RBAC, RBAC bindings to Google groups) and `aks_access` (Entra integration, local accounts, Azure RBAC for Kubernetes), replacing the "not available yet" default; parity test | ⬜ | |
+| 8 | Release check: `cargo xtask release-check` scripts the v0.1 quickstart test (a clean `ubuntu:24.04` container, install, `doctor` against kind) | ⬜ | v0.1 follow-up |
+| 9 | Docs and release: README stability statement, regenerated references, CHANGELOG, 1.0.0 | ⬜ | |
+
+## v1.0 acceptance criteria (PROPOSAL §16)
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Tool names and schemas are frozen, with a documented deprecation policy | ⬜ | |
+| 2 | 40 or more scenarios | ⬜ | |
+| 3 | An external security review checklist is completed (threat model revisited, fuzzing of parsers) | ⬜ | |
+| 4 | p95 latency for `diagnose_pod` is under 2 seconds on kind | ⬜ | |
+
+**Decisions (resolved 2026-11-19)**
+1. The docs site is the mdBook on GitHub Pages; the wiki workflow is retired. Pages needs a one-time switch in the repository settings (source: GitHub Actions).
+2. Helm release inspection is opt-in behind `--allow-helm-releases` and a chart value, shows metadata, status, history, failure descriptions and notes but never values, and decodes with `flate2` as a direct dependency (approved).
+3. Parsers are fuzzed with `proptest` in the regular CI (stable toolchain), not `cargo-fuzz`.
+4. I complete the security review checklist against the code; the external sign-off is the maintainer's.
+5. Deprecation: in 1.x no tool, argument, rule id or Envelope field is removed or renamed; a deprecated one is marked in its description and the CHANGELOG and keeps working until 2.0.
+
 ## Releasing
 
 `riseno/k8s-mcp` and `riseno/homebrew-tap` are public from v0.1.0. To release: bump the

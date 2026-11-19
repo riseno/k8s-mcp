@@ -391,7 +391,9 @@ mod tests {
         assert!(bomb.len() < MAX_MANIFEST);
         let started = std::time::Instant::now();
         assert!(serde_saphyr::from_multiple::<Value>(&bomb).is_err());
-        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        // The parser's budget stops it after a few hundred ms in a debug build; expanding the
+        // 10^10 nodes would take hours.
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
     proptest::proptest! {

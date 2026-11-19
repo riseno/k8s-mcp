@@ -151,6 +151,9 @@ pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
         );
         match parse_issue(message) {
             Some(issue) => add(ev, &mut found, issue, Source::Status, status),
+            // A command that is missing or not executable is reported once, by super::crashloop.
+            None if r == "RunContainerError"
+                && super::crashloop::command_failure(ev, c, st).is_some() => {}
             None => out.push(runtime_error(ev, c, status, message)),
         }
     }
@@ -563,6 +566,25 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].id, "pod.config.create_container_error");
         assert!(out[0].fix.contains("runAsUser"));
+    }
+
+    /// A command that cannot run is one finding, `pod.crashloop.not_executable`, from its first
+    /// failed start on.
+    #[test]
+    fn start_failure_is_left_to_crashloop() {
+        let mut ev = pod_fixture("pods/start-not-executable.yaml");
+        for restarts in [3, 1] {
+            ev.pod
+                .status
+                .as_mut()
+                .unwrap()
+                .container_statuses
+                .as_mut()
+                .unwrap()[0]
+                .restart_count = restarts;
+            let ids: Vec<String> = crate::diagnose_pod(&ev).into_iter().map(|f| f.id).collect();
+            assert_eq!(ids, ["pod.crashloop.not_executable"], "{restarts} restarts");
+        }
     }
 
     #[test]

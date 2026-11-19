@@ -1,0 +1,9 @@
+id: pvc-missing-storageclass
+symptom: The data claim in eval-pvc-missing-storageclass stays Pending. Why is no volume provisioned?
+tool: diagnose_pvc
+args: {name: data, namespace: eval-pvc-missing-storageclass}
+settle_seconds: 20
+expected:
+  primary: pvc.pending.no_storageclass
+  acceptable: []
+forbidden: [pvc.pending.wffc_waiting, pvc.pending.provisioning_failed]

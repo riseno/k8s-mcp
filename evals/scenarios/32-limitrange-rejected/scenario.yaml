@@ -1,0 +1,9 @@
+id: limitrange-rejected
+symptom: The worker deployment in eval-limitrange-rejected never gets a pod after we raised its CPU limit. Why?
+tool: diagnose_workload
+args: {kind: Deployment, name: worker, namespace: eval-limitrange-rejected}
+settle_seconds: 20
+expected:
+  primary: workload.create_failed
+  acceptable: [workload.replicas.unavailable]
+forbidden: [pod.pending.quota, pod.pending.insufficient_resources]

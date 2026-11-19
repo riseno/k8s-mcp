@@ -1,0 +1,10 @@
+id: lb-pending
+symptom: The web LoadBalancer Service in eval-lb-pending has shown EXTERNAL-IP <pending> for minutes. Why?
+tool: diagnose_service
+args: {name: web, namespace: eval-lb-pending}
+# The rule waits 2 minutes before calling a LoadBalancer pending.
+settle_seconds: 125
+expected:
+  primary: svc.lb_pending
+  acceptable: []
+forbidden: [svc.no_matching_pods, svc.no_ready_endpoints, svc.target_port_mismatch]

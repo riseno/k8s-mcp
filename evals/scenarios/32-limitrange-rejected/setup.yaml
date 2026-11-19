@@ -1,0 +1,12 @@
+# Applied before manifest.yaml, so the LimitRange is in force when the first pod is created.
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-limitrange-rejected}
+---
+apiVersion: v1
+kind: LimitRange
+metadata: {name: container-max, namespace: eval-limitrange-rejected}
+spec:
+  limits:
+    - type: Container
+      max: {cpu: 500m}

@@ -1,0 +1,9 @@
+id: not-executable
+symptom: The worker pod in eval-not-executable fails to start with exit code 128. What is wrong with it?
+tool: diagnose_pod
+args: {name: worker, namespace: eval-not-executable}
+settle_seconds: 60
+expected:
+  primary: pod.crashloop.not_executable
+  acceptable: []
+forbidden: [pod.crashloop.command_not_found, pod.crashloop.app_error, pod.config.create_container_error]

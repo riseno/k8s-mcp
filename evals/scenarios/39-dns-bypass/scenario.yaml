@@ -1,0 +1,9 @@
+id: dns-bypass
+symptom: The client pod in eval-dns-bypass cannot resolve our in-cluster db service, but other pods can. Why?
+tool: diagnose_dns
+args: {pod: client, namespace: eval-dns-bypass}
+settle_seconds: 20
+expected:
+  primary: dns.pod_bypasses_cluster_dns
+  acceptable: [dns.app_resolution_errors]
+forbidden: [dns.coredns_unhealthy, dns.no_endpoints, dns.netpol_blocks_egress]

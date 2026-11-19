@@ -1,0 +1,13 @@
+---
+source: crates/k8s-mcp-provider-aks/tests/mocked.rs
+expression: "access_envelope(ProviderId::Aks, (rows, findings)).render()"
+---
+AKS 5 principals mapped into the cluster, 2 with cluster-admin; no problems found by the provider rules.
+
+ITEMS (5)
+PRINCIPAL                             SOURCE                                    USERNAME                              GRANTS                                       ADMIN
+bbbbbbbb-1111-2222-3333-444444444444  Azure role assignment (Group)             bbbbbbbb-1111-2222-3333-444444444444  Azure Kubernetes Service RBAC Cluster Admin  true
+dddddddd-1111-2222-3333-444444444444  Azure role assignment (ServicePrincipal)  dddddddd-1111-2222-3333-444444444444  Azure Kubernetes Service Cluster Admin Role  false
+cccccccc-1111-2222-3333-444444444444  Azure role assignment (User, inherited)   cccccccc-1111-2222-3333-444444444444  Azure Kubernetes Service RBAC Reader         false
+aaaaaaaa-1111-2222-3333-444444444444  Entra admin group (aadProfile)            aaaaaaaa-1111-2222-3333-444444444444  ClusterRole/cluster-admin                    true
+eeeeeeee-1111-2222-3333-444444444444  RBAC RoleBinding/shop/oncall              eeeeeeee-1111-2222-3333-444444444444  ClusterRole/view                             false

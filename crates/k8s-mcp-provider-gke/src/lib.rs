@@ -24,8 +24,8 @@ use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::text::truncate;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
-    Addon, CloudLogs, ClusterInfo, IdentityReport, LogQuery, NodePool, Provider, Report,
-    UpgradeInfo, WorkloadIdentity,
+    AccessMapping, Addon, CloudLogs, ClusterInfo, IdentityReport, LogQuery, NodePool, Provider,
+    Report, UpgradeInfo, WorkloadIdentity,
 };
 
 pub use rules::RULES;
@@ -35,6 +35,9 @@ const GCP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// A GKE cluster reached through the Google Cloud APIs.
 pub struct Gke {
+    /// The cluster's RBAC bindings, set by the caller before `access` (the provider makes no
+    /// Kubernetes calls).
+    pub rbac: Vec<k8s_mcp_provider::RbacGrant>,
     clusters: ClusterManager,
     iam: Iam,
     logging: LoggingServiceV2,
@@ -189,6 +192,7 @@ impl Gke {
         cluster: String,
     ) -> Self {
         Self {
+            rbac: Vec::new(),
             clusters,
             iam,
             logging,
@@ -401,6 +405,10 @@ impl Provider for Gke {
 
     async fn addons(&self) -> Result<Report<Vec<Addon>>> {
         Ok(rules::addons(&*self.get_cluster().await?))
+    }
+
+    async fn access(&self) -> Result<Report<Vec<AccessMapping>>> {
+        Ok(rules::access(&*self.get_cluster().await?, &self.rbac))
     }
 
     async fn identity_check(&self, k8s: &WorkloadIdentity) -> Report<IdentityReport> {

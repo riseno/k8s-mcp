@@ -38,7 +38,9 @@ use k8s_mcp_core::policy::Policy;
 use k8s_mcp_core::redact::Redactor;
 
 #[cfg(feature = "provider-aks")]
-pub use aks::{aks_addons, aks_cluster_info, aks_identity_check, aks_logs, aks_node_pools};
+pub use aks::{
+    aks_access, aks_addons, aks_cluster_info, aks_identity_check, aks_logs, aks_node_pools,
+};
 pub use autoscaling::{AutoscalingStatusInput, autoscaling_status};
 pub use changes::{RecentChangesInput, RolloutHistoryInput, recent_changes, rollout_history};
 #[cfg(any(
@@ -57,7 +59,9 @@ pub use eks::{
     eks_access, eks_addons, eks_cluster_info, eks_identity_check, eks_logs, eks_nodegroups,
 };
 #[cfg(feature = "provider-gke")]
-pub use gke::{gke_addons, gke_cluster_info, gke_identity_check, gke_logs, gke_node_pools};
+pub use gke::{
+    gke_access, gke_addons, gke_cluster_info, gke_identity_check, gke_logs, gke_node_pools,
+};
 pub use helm::{HelmReleaseInput, HelmReleasesInput, helm_release, helm_releases};
 #[cfg(feature = "provider-aks")]
 pub use k8s_mcp_provider_aks::RULES as AKS_RULES;

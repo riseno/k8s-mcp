@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use google_cloud_container_v1::model::{Cluster, NodePool as GkeNodePool, ServerConfig};
 use k8s_mcp_core::finding::{Confidence, Finding, RuleMeta, Severity, Source};
 use k8s_mcp_core::text::truncate;
-use k8s_mcp_provider::{Addon, ClusterInfo, NodePool, Report, UpgradeCheck, UpgradeInfo};
+use k8s_mcp_provider::{
+    AccessMapping, Addon, ClusterInfo, NodePool, RbacGrant, Report, UpgradeCheck, UpgradeInfo,
+};
 
 const DOCS_TROUBLESHOOT: &str = "https://cloud.google.com/kubernetes-engine/docs/troubleshooting";
 const DOCS_CHANNELS: &str =
@@ -13,6 +15,9 @@ const DOCS_CHANNELS: &str =
 const DOCS_AUTHORIZED: &str =
     "https://cloud.google.com/kubernetes-engine/docs/how-to/authorized-networks";
 const DOCS_VERSIONS: &str = "https://cloud.google.com/kubernetes-engine/versioning";
+const DOCS_GROUPS: &str =
+    "https://cloud.google.com/kubernetes-engine/docs/how-to/google-groups-rbac";
+const DOCS_ABAC: &str = "https://cloud.google.com/kubernetes-engine/docs/how-to/hardening-your-cluster#leave_abac_disabled";
 
 /// Rules emitted by the GKE provider.
 pub const RULES: &[RuleMeta] = &[
@@ -41,7 +46,63 @@ pub const RULES: &[RuleMeta] = &[
         title: "A node pool runs an older Kubernetes minor than the control plane",
         docs: DOCS_VERSIONS,
     },
+    RuleMeta {
+        id: "gke.access.legacy_abac",
+        title: "Legacy ABAC is enabled: it grants rights outside RBAC",
+        docs: DOCS_ABAC,
+    },
+    RuleMeta {
+        id: "gke.access.google_groups_off",
+        title: "RBAC binds Google groups, but Google Groups for RBAC is off",
+        docs: DOCS_GROUPS,
+    },
 ];
+
+/// `gke_access`: the RBAC bindings of Google principals (users and service accounts, which
+/// are email addresses, and Google groups), with the cluster settings that decide whether
+/// they apply. IAM roles on the project (`roles/container.*`) grant access too; they are not
+/// listed.
+pub fn access(c: &Cluster, rbac: &[RbacGrant]) -> Report<Vec<AccessMapping>> {
+    let google = |g: &&RbacGrant| match g.kind.as_str() {
+        "User" => g.subject.contains('@'),
+        "Group" => !g.subject.starts_with("system:"),
+        _ => false,
+    };
+    let grants: Vec<&RbacGrant> = rbac.iter().filter(google).collect();
+    let mut findings = Vec::new();
+    let name = &c.name;
+    if c.legacy_abac.as_ref().is_some_and(|a| a.enabled) {
+        findings.push(
+            Finding::new("gke.access.legacy_abac", Severity::High, Confidence::High, format!("Legacy ABAC is enabled on {name}"))
+                .explain("With legacy ABAC, the cluster grants rights from static policies outside RBAC, including broad rights to every authenticated user and ServiceAccount. RBAC bindings and their reviews do not show them.")
+                .evidence(Source::Spec, "legacyAbac.enabled: true")
+                .docs(DOCS_ABAC)
+                .fix("Disable it (`gcloud container clusters update <cluster> --no-enable-legacy-authorization`) after granting what is still needed through RBAC."),
+        );
+    }
+    let groups_on = c
+        .authenticator_groups_config
+        .as_ref()
+        .is_some_and(|g| g.enabled);
+    let groups: Vec<&str> = grants
+        .iter()
+        .filter(|g| g.kind == "Group")
+        .map(|g| g.subject.as_str())
+        .collect();
+    if !groups_on && !groups.is_empty() {
+        findings.push(
+            Finding::new("gke.access.google_groups_off", Severity::Medium, Confidence::Medium, format!("{} RBAC binding(s) name groups, but Google Groups for RBAC is off on {name}", groups.len()))
+                .explain("Without Google Groups for RBAC, GKE does not put a user's Google group memberships into their Kubernetes identity, so bindings to Google groups grant nothing; members are refused or rely on IAM roles instead.")
+                .evidence(Source::Related, format!("groups bound: {}", truncate(&groups.join(", "), 300)))
+                .evidence(Source::Spec, "authenticatorGroupsConfig.enabled: false")
+                .docs(DOCS_GROUPS)
+                .fix("Enable it with the domain's gke-security-groups group (`gcloud container clusters update <cluster> --security-group=gke-security-groups@<domain>`), or bind the users directly."),
+        );
+    }
+    let mut rows: Vec<AccessMapping> = grants.iter().map(|g| g.mapping()).collect();
+    rows.sort_by(|a, b| (&a.principal, &a.source).cmp(&(&b.principal, &b.source)));
+    (rows, findings)
+}
 
 /// Minor of a GKE version such as `1.33.5-gke.1000`.
 pub fn minor(v: &str) -> Option<u32> {

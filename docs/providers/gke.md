@@ -9,6 +9,7 @@ GKE cluster to the Kubernetes one. Every tool is read-only, and the tools match 
 | `gke_cluster_info` | Version, status and conditions, Autopilot or Standard, release channel, endpoint access (public endpoint, authorized networks, private nodes), Workload Identity pool, logging and monitoring, maintenance window |
 | `gke_node_pools` | Node pools: version, machine type, spot, autoscaling, workload metadata mode, status and conditions (for example `GCE_STOCKOUT`) |
 | `gke_addons` | GKE-managed add-ons and whether each is enabled (GKE does not expose their versions) |
+| `gke_access` | Google principals in the cluster's RBAC: bindings of Google users, service accounts and groups (cluster-admin flagged), whether Google Groups for RBAC is on so group bindings apply (`gke.access.google_groups_off`), and legacy ABAC (`gke.access.legacy_abac`). IAM roles on the project (`roles/container.*`) grant access too and are not listed |
 | `gke_identity_check` | A ServiceAccount's Workload Identity: annotation, workload pool, node pools in `GKE_METADATA` mode, the Google service account and its `roles/iam.workloadIdentityUser` binding |
 | `gke_logs` | Cloud Logging: control-plane logs (api, audit, controllerManager, scheduler) or container logs of a namespace or pod, redacted and untrusted |
 

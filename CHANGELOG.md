@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `gke_access` and `aks_access`, so every provider toolset has the same six tools. `gke_access`
+  lists the RBAC bindings of Google users, service accounts and groups, and flags group
+  bindings that do nothing because Google Groups for RBAC is off (`gke.access.google_groups_off`)
+  and legacy ABAC (`gke.access.legacy_abac`). `aks_access` lists Entra admin groups, the Azure
+  role assignments that apply to the cluster (AKS roles by name, inherited ones marked) and the
+  RBAC bindings of Entra principals, with local accounts flagged.
 - Helm release inspection, opt-in (`--allow-helm-releases`, chart value
   `helmReleases.enabled`): `helm_releases` lists releases (latest revision, status, chart,
   app version, last update) and `helm_release` shows one release's revisions with Helm's

@@ -8,8 +8,8 @@ use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions}
 use azure_core::time::{Duration, OffsetDateTime};
 use k8s_mcp_core::provider::ProviderId;
 use k8s_mcp_provider::{
-    LogQuery, Provider, WorkloadIdentity, addons_envelope, cluster_info_envelope,
-    identity_envelope, logs_envelope, node_pools_envelope,
+    LogQuery, Provider, RbacGrant, WorkloadIdentity, access_envelope, addons_envelope,
+    cluster_info_envelope, identity_envelope, logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_aks::Aks;
 use serde_json::json;
@@ -267,4 +267,60 @@ async fn aks_errors_say_what_to_do() {
         err.contains("not found") && err.contains("--aks-cluster"),
         "{err}"
     );
+}
+
+fn grant(kind: &str, subject: &str, role: &str, binding: &str) -> RbacGrant {
+    RbacGrant {
+        kind: kind.into(),
+        subject: subject.into(),
+        role: role.into(),
+        binding: binding.into(),
+    }
+}
+
+/// v1.0: Entra admin groups, Azure role assignments (Azure RBAC for Kubernetes, inherited
+/// ones marked) and RBAC bindings of Entra principals.
+#[tokio::test]
+async fn aks_access() {
+    let server = MockServer::start().await;
+    let mut c = cluster();
+    c["properties"]["aadProfile"]["adminGroupObjectIDs"] =
+        json!(["aaaaaaaa-1111-2222-3333-444444444444"]);
+    Mock::given(method("GET"))
+        .and(path(CLUSTER))
+        .respond_with(ResponseTemplate::new(200).set_body_json(c))
+        .mount(&server)
+        .await;
+    let assignment = |principal: &str, kind: &str, role: &str, scope: &str| {
+        json!({"properties": {"principalId": principal, "principalType": kind, "scope": scope,
+            "roleDefinitionId": format!("/subscriptions/sub-1/providers/Microsoft.Authorization/roleDefinitions/{role}")}})
+    };
+    Mock::given(method("GET"))
+        .and(path(format!("{CLUSTER}/providers/Microsoft.Authorization/roleAssignments")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"value": [
+            assignment("bbbbbbbb-1111-2222-3333-444444444444", "Group", "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b", CLUSTER),
+            assignment("cccccccc-1111-2222-3333-444444444444", "User", "7f6c6a51-bcf8-42ba-9220-52d62157d7db", "/subscriptions/sub-1"),
+            // Cluster Admin Role only fetches the local admin kubeconfig: not admin while local accounts are off.
+            assignment("dddddddd-1111-2222-3333-444444444444", "ServicePrincipal", "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8", CLUSTER),
+        ]})))
+        .mount(&server)
+        .await;
+    let mut aks = aks(&server);
+    aks.rbac = vec![
+        grant(
+            "User",
+            "eeeeeeee-1111-2222-3333-444444444444",
+            "ClusterRole/view",
+            "RoleBinding/shop/oncall",
+        ),
+        grant(
+            "User",
+            "system:kube-proxy",
+            "ClusterRole/system:node-proxier",
+            "ClusterRoleBinding/kube-proxy",
+        ),
+    ];
+    let (rows, findings) = aks.access().await.unwrap();
+    assert!(findings.is_empty(), "local accounts are disabled");
+    insta::assert_snapshot!(access_envelope(ProviderId::Aks, (rows, findings)).render());
 }

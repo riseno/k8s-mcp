@@ -7,15 +7,73 @@ use k8s_mcp_core::envelope::Envelope;
 use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::text::parse_duration;
 use k8s_mcp_core::{Error, Result};
-use k8s_mcp_provider::{LogQuery, WorkloadIdentity};
+use k8s_mcp_diagnose::Unavailable;
+use k8s_mcp_provider::{LogQuery, RbacGrant, WorkloadIdentity};
 use k8s_openapi::api::apps::v1::DaemonSet;
 use k8s_openapi::api::core::v1::{Node, Pod, ServiceAccount};
+use k8s_openapi::api::rbac::v1::{ClusterRoleBinding, RoleBinding, RoleRef, Subject};
 use kube::api::{Api, ListParams};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::Ctx;
-use crate::common::{Scope, check_name, scope};
+use crate::common::{Scope, check_name, list_scoped, scope, soft};
+
+/// Every subject of the cluster's ClusterRoleBindings and of the RoleBindings in allowed
+/// namespaces, for the providers' access mappings. Bindings that cannot be read are noted.
+pub(crate) async fn rbac_grants(
+    ctx: &Ctx,
+    sc: &Scope,
+) -> Result<(Vec<RbacGrant>, Vec<Unavailable>)> {
+    let mut notes = Vec::new();
+    let cluster = Api::<ClusterRoleBinding>::all(sc.target.client.clone())
+        .list(&ListParams::default())
+        .await
+        .map(|l| l.items)
+        .map_err(|e| Error::kube("list clusterrolebindings", &e));
+    let cluster = soft(cluster, "ClusterRoleBindings", &mut notes)?.unwrap_or_default();
+    let namespaced =
+        list_scoped::<RoleBinding>(ctx, sc, &ListParams::default(), "RoleBindings", &mut notes)
+            .await;
+    let namespaced = soft(namespaced, "RoleBindings", &mut notes)?.unwrap_or_default();
+    let mut out = Vec::new();
+    let mut add = |binding: String, role: &RoleRef, subjects: Option<&Vec<Subject>>| {
+        for s in subjects.into_iter().flatten() {
+            let subject = match s.namespace.as_deref() {
+                Some(ns) if s.kind == "ServiceAccount" => format!("{ns}/{}", s.name),
+                _ => s.name.clone(),
+            };
+            out.push(RbacGrant {
+                kind: s.kind.clone(),
+                subject,
+                role: format!("{}/{}", role.kind, role.name),
+                binding: binding.clone(),
+            });
+        }
+    };
+    for b in &cluster {
+        add(
+            format!(
+                "ClusterRoleBinding/{}",
+                b.metadata.name.as_deref().unwrap_or_default()
+            ),
+            &b.role_ref,
+            b.subjects.as_ref(),
+        );
+    }
+    for b in &namespaced {
+        add(
+            format!(
+                "RoleBinding/{}/{}",
+                b.metadata.namespace.as_deref().unwrap_or_default(),
+                b.metadata.name.as_deref().unwrap_or_default()
+            ),
+            &b.role_ref,
+            b.subjects.as_ref(),
+        );
+    }
+    Ok((out, notes))
+}
 
 /// Inputs of the cluster-level provider tools (cluster info, node pools, add-ons).
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -228,4 +286,59 @@ pub(crate) fn log_query(ctx: &Ctx, input: LogsInput, components: &[&str]) -> Res
         since_ms: start.as_millisecond(),
         limit,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use k8s_mcp_core::cluster::ClusterManager;
+    use k8s_mcp_core::policy::Policy;
+    use k8s_mcp_testkit::mock::MockApi;
+    use serde_json::json;
+
+    use super::*;
+
+    /// Every subject of every binding, ServiceAccounts as `namespace/name`.
+    #[tokio::test]
+    async fn rbac_grants_flatten_both_binding_kinds() {
+        let mock = MockApi::new()
+            .list("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings", vec![json!({
+                "metadata": {"name": "admins"},
+                "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "cluster-admin"},
+                "subjects": [{"kind": "User", "name": "alice@acme.com"}, {"kind": "Group", "name": "sre"}]})])
+            .list("/apis/rbac.authorization.k8s.io/v1/rolebindings", vec![json!({
+                "metadata": {"name": "ci", "namespace": "shop"},
+                "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "edit"},
+                "subjects": [{"kind": "ServiceAccount", "name": "deployer", "namespace": "ci"}]})])
+            .start();
+        let ctx = Ctx::new(
+            Arc::new(ClusterManager::fixed(mock.client.clone(), "test", "shop")),
+            Arc::new(Policy::permissive()),
+        );
+        let sc = scope(&ctx, None, None, true).await.unwrap();
+        let (grants, notes) = rbac_grants(&ctx, &sc).await.unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        let rows: Vec<String> = grants
+            .iter()
+            .map(|g| {
+                format!(
+                    "{} {} {} {} {}",
+                    g.kind,
+                    g.subject,
+                    g.role,
+                    g.binding,
+                    g.cluster_admin()
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                "User alice@acme.com ClusterRole/cluster-admin ClusterRoleBinding/admins true",
+                "Group sre ClusterRole/cluster-admin ClusterRoleBinding/admins true",
+                "ServiceAccount ci/deployer ClusterRole/edit RoleBinding/shop/ci false",
+            ]
+        );
+    }
 }

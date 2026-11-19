@@ -1,0 +1,19 @@
+---
+source: crates/k8s-mcp-provider-gke/tests/mocked.rs
+expression: "access_envelope(ProviderId::Gke, provider.access().await.unwrap()).render()"
+---
+GKE 3 principals mapped into the cluster, 1 with cluster-admin. Top finding: 1 RBAC binding(s) name groups, but Google Groups for RBAC is off on shop.
+
+FINDINGS
+1. [medium/medium] gke.access.google_groups_off: 1 RBAC binding(s) name groups, but Google Groups for RBAC is off on shop
+   why: Without Google Groups for RBAC, GKE does not put a user's Google group memberships into their Kubernetes identity, so bindings to Google groups grant nothing; members are refused or rely on IAM roles instead.
+   evidence (related): <<untrusted source="related">> groups bound: sre@acme.com <</untrusted>>
+   evidence (spec): <<untrusted source="spec">> authenticatorGroupsConfig.enabled: false <</untrusted>>
+   fix: Enable it with the domain's gke-security-groups group (`gcloud container clusters update <cluster> --security-group=gke-security-groups@<domain>`), or bind the users directly.
+   docs: https://cloud.google.com/kubernetes-engine/docs/how-to/google-groups-rbac
+
+ITEMS (3)
+PRINCIPAL                            SOURCE                               USERNAME                             GRANTS                     ADMIN
+alice@acme.com                       RBAC ClusterRoleBinding/alice-admin  alice@acme.com                       ClusterRole/cluster-admin  true
+deploy@acme.iam.gserviceaccount.com  RBAC RoleBinding/shop/ci             deploy@acme.iam.gserviceaccount.com  ClusterRole/edit           false
+sre@acme.com                         RBAC RoleBinding/shop/sre            sre@acme.com                         ClusterRole/edit           false

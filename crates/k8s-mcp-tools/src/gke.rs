@@ -6,17 +6,18 @@ use k8s_mcp_core::envelope::Envelope;
 use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
-    Provider, Report, UpgradeInfo, addons_envelope, cluster_info_envelope, identity_envelope,
-    logs_envelope, node_pools_envelope,
+    Provider, Report, UpgradeInfo, access_envelope, addons_envelope, cluster_info_envelope,
+    identity_envelope, logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_gke::{Gke, identity::evaluate};
 
 use crate::Ctx;
 use crate::cloud::{
-    IdentityInput, LogsInput, ProviderInput, detected_identity, finish, log_query,
+    IdentityInput, LogsInput, ProviderInput, detected_identity, finish, log_query, rbac_grants,
     workload_identity,
 };
 use crate::common::{Scope, scope};
+use crate::read::add_notes;
 
 /// GKE control-plane log sources.
 const COMPONENTS: &[&str] = &["api", "audit", "controllerManager", "scheduler"];
@@ -87,6 +88,17 @@ pub async fn gke_node_pools(ctx: &Ctx, input: ProviderInput) -> Result<Envelope>
 pub async fn gke_addons(ctx: &Ctx, input: ProviderInput) -> Result<Envelope> {
     let (sc, gke) = connect(ctx, &input).await?;
     Ok(finish(&sc, addons_envelope(gke.id(), gke.addons().await?)))
+}
+
+/// `gke_access`: cloud principals and how they get into the cluster, from the cloud and the
+/// cluster's RBAC bindings.
+pub async fn gke_access(ctx: &Ctx, input: ProviderInput) -> Result<Envelope> {
+    let (sc, mut gke) = connect(ctx, &input).await?;
+    let (rbac, notes) = rbac_grants(ctx, &sc).await?;
+    gke.rbac = rbac;
+    let mut e = finish(&sc, access_envelope(gke.id(), gke.access().await?));
+    add_notes(&mut e, &notes);
+    Ok(e)
 }
 
 /// `gke_identity_check`: the Kubernetes side always; the Google Cloud side when it can be

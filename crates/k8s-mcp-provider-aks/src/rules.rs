@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 
 use k8s_mcp_core::finding::{Confidence, Finding, RuleMeta, Severity, Source};
 use k8s_mcp_core::text::truncate;
-use k8s_mcp_provider::{Addon, ClusterInfo, NodePool, Report, UpgradeCheck, UpgradeInfo};
+use k8s_mcp_provider::{
+    AccessMapping, Addon, ClusterInfo, NodePool, RbacGrant, Report, UpgradeCheck, UpgradeInfo,
+};
 use serde_json::Value;
 
 const DOCS_TROUBLESHOOT: &str =
@@ -56,6 +58,126 @@ fn s<'a>(v: &'a Value, path: &[&str]) -> &'a str {
 
 fn b(v: &Value, path: &[&str]) -> Option<bool> {
     path.iter().fold(v, |v, k| &v[*k]).as_bool()
+}
+
+fn local_accounts(name: &str) -> Finding {
+    Finding::new("aks.cluster.local_accounts", Severity::Low, Confidence::High, format!("Local accounts are enabled on {name}"))
+        .explain("With local accounts, `az aks get-credentials --admin` returns a static cluster-admin certificate that bypasses Entra ID and cannot be revoked short of rotating the cluster certificates.")
+        .evidence(Source::Spec, "disableLocalAccounts: false")
+        .docs(DOCS_LOCAL_ACCOUNTS)
+        .fix("Enable Entra ID integration and set disableLocalAccounts (`az aks update --disable-local-accounts`).")
+}
+
+/// Built-in Azure roles that act on AKS clusters: id, name, and whether it is cluster-admin
+/// (for the credential roles: only while local accounts are enabled).
+const AKS_ROLES: &[(&str, &str, bool)] = &[
+    (
+        "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b",
+        "Azure Kubernetes Service RBAC Cluster Admin",
+        true,
+    ),
+    (
+        "3498e952-d568-435e-9b2c-8d77e338d7f7",
+        "Azure Kubernetes Service RBAC Admin",
+        false,
+    ),
+    (
+        "a7ffa36f-339b-4b5c-8bdf-e2c188b2c0eb",
+        "Azure Kubernetes Service RBAC Writer",
+        false,
+    ),
+    (
+        "7f6c6a51-bcf8-42ba-9220-52d62157d7db",
+        "Azure Kubernetes Service RBAC Reader",
+        false,
+    ),
+    (
+        "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8",
+        "Azure Kubernetes Service Cluster Admin Role",
+        true,
+    ),
+    (
+        "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
+        "Azure Kubernetes Service Cluster User Role",
+        false,
+    ),
+];
+
+/// `aks_access`: Entra admin groups, Azure role assignments that apply to the cluster, and the
+/// RBAC bindings of Entra principals (object ids, user principal names and groups).
+pub fn access(c: &Value, assignments: &[Value], rbac: &[RbacGrant]) -> Report<Vec<AccessMapping>> {
+    let p = &c["properties"];
+    let local = !b(p, &["disableLocalAccounts"]).unwrap_or(false);
+    let mut rows: Vec<AccessMapping> = p["aadProfile"]["adminGroupObjectIDs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|g| AccessMapping {
+            principal: g.to_owned(),
+            source: "Entra admin group (aadProfile)".into(),
+            username: g.to_owned(),
+            grants: vec!["ClusterRole/cluster-admin".into()],
+            cluster_admin: true,
+        })
+        .collect();
+    for a in assignments {
+        let role_id = s(a, &["properties", "roleDefinitionId"])
+            .rsplit('/')
+            .next()
+            .unwrap_or("");
+        let (role, admin) = AKS_ROLES.iter().find(|(id, _, _)| *id == role_id).map_or(
+            (role_id, false),
+            |(id, name, admin)| {
+                (
+                    *name,
+                    *admin && (local || *id != "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8"),
+                )
+            },
+        );
+        let principal = s(a, &["properties", "principalId"]);
+        let scope = s(a, &["properties", "scope"]);
+        rows.push(AccessMapping {
+            principal: principal.to_owned(),
+            source: format!(
+                "Azure role assignment ({}{})",
+                s(a, &["properties", "principalType"]),
+                if scope.to_ascii_lowercase().ends_with(&format!(
+                    "/managedclusters/{}",
+                    s(c, &["name"]).to_ascii_lowercase()
+                )) {
+                    ""
+                } else {
+                    ", inherited"
+                }
+            ),
+            username: principal.to_owned(),
+            grants: vec![role.to_owned()],
+            cluster_admin: admin,
+        });
+    }
+    let entra = |g: &&RbacGrant| match g.kind.as_str() {
+        "User" => g.subject.contains('@') || is_object_id(&g.subject),
+        "Group" => !g.subject.starts_with("system:"),
+        _ => false,
+    };
+    rows.extend(rbac.iter().filter(entra).map(RbacGrant::mapping));
+    rows.sort_by(|a, b| (&a.source, &a.principal).cmp(&(&b.source, &b.principal)));
+    let findings = if local {
+        vec![local_accounts(s(c, &["name"]))]
+    } else {
+        Vec::new()
+    };
+    (rows, findings)
+}
+
+/// An Entra object id (a GUID).
+fn is_object_id(s: &str) -> bool {
+    s.len() == 36
+        && s.chars().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        })
 }
 
 /// The control plane's version: the running one, else the requested one.
@@ -173,13 +295,7 @@ pub fn cluster(c: &Value) -> Report<ClusterInfo> {
         findings.push(f);
     }
     if !local_disabled {
-        findings.push(
-            Finding::new("aks.cluster.local_accounts", Severity::Low, Confidence::High, format!("Local accounts are enabled on {name}"))
-                .explain("With local accounts, `az aks get-credentials --admin` returns a static cluster-admin certificate that bypasses Entra ID and cannot be revoked short of rotating the cluster certificates.")
-                .evidence(Source::Spec, "disableLocalAccounts: false")
-                .docs(DOCS_LOCAL_ACCOUNTS)
-                .fix("Enable Entra ID integration and set disableLocalAccounts (`az aks update --disable-local-accounts`)."),
-        );
+        findings.push(local_accounts(name));
     }
     if !private && ranges.is_empty() {
         findings.push(

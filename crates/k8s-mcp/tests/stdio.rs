@@ -811,6 +811,7 @@ async fn gke_tools_need_credentials() {
             "gke_cluster_info",
             "gke_node_pools",
             "gke_addons",
+            "gke_access",
             "gke_identity_check",
             "gke_logs"
         ]
@@ -880,6 +881,7 @@ async fn aks_tools_need_credentials() {
             "aks_cluster_info",
             "aks_node_pools",
             "aks_addons",
+            "aks_access",
             "aks_identity_check",
             "aks_logs"
         ]

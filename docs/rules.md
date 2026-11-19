@@ -48,6 +48,8 @@ Rule ids are stable: they are never renamed once released. Severity says how bad
 | `eks.pod_identity.association_missing` | The ServiceAccount has no AWS identity (no IRSA role, no Pod Identity association) | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `eks.pod_identity.trust_mismatch` | The Pod Identity role's trust policy does not allow EKS Pod Identity | [link](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) |
 | `eks.upgrade.insight_failing` | An EKS upgrade insight reports a problem for the next version | [link](https://docs.aws.amazon.com/eks/latest/userguide/cluster-insights.html) |
+| `gke.access.google_groups_off` | RBAC binds Google groups, but Google Groups for RBAC is off | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/google-groups-rbac) |
+| `gke.access.legacy_abac` | Legacy ABAC is enabled: it grants rights outside RBAC | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/hardening-your-cluster#leave_abac_disabled) |
 | `gke.cluster.no_release_channel` | The cluster is not enrolled in a release channel | [link](https://cloud.google.com/kubernetes-engine/docs/concepts/release-channels) |
 | `gke.cluster.public_endpoint` | The control-plane endpoint is public without authorized networks | [link](https://cloud.google.com/kubernetes-engine/docs/how-to/authorized-networks) |
 | `gke.cluster.unhealthy` | The GKE cluster reports an error or degraded status | [link](https://cloud.google.com/kubernetes-engine/docs/troubleshooting) |

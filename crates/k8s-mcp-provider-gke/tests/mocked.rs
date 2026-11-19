@@ -8,8 +8,8 @@ use google_cloud_iam_admin_v1::client::Iam;
 use google_cloud_logging_v2::client::LoggingServiceV2;
 use k8s_mcp_core::provider::ProviderId;
 use k8s_mcp_provider::{
-    LogQuery, Provider, WorkloadIdentity, addons_envelope, cluster_info_envelope,
-    identity_envelope, logs_envelope, node_pools_envelope,
+    LogQuery, Provider, RbacGrant, WorkloadIdentity, access_envelope, addons_envelope,
+    cluster_info_envelope, identity_envelope, logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_gke::Gke;
 use serde_json::json;
@@ -195,4 +195,75 @@ async fn gke_errors_say_what_to_do() {
         err.contains("not found") && err.contains("--gke-cluster"),
         "{err}"
     );
+}
+
+fn grant(kind: &str, subject: &str, role: &str, binding: &str) -> RbacGrant {
+    RbacGrant {
+        kind: kind.into(),
+        subject: subject.into(),
+        role: role.into(),
+        binding: binding.into(),
+    }
+}
+
+/// v1.0: Google principals in RBAC, flagged when Google Groups for RBAC is off (group
+/// bindings grant nothing) and when legacy ABAC grants rights outside RBAC.
+#[tokio::test]
+async fn gke_access() {
+    let rbac = vec![
+        grant(
+            "User",
+            "alice@acme.com",
+            "ClusterRole/cluster-admin",
+            "ClusterRoleBinding/alice-admin",
+        ),
+        grant(
+            "Group",
+            "sre@acme.com",
+            "ClusterRole/edit",
+            "RoleBinding/shop/sre",
+        ),
+        grant(
+            "User",
+            "deploy@acme.iam.gserviceaccount.com",
+            "ClusterRole/edit",
+            "RoleBinding/shop/ci",
+        ),
+        grant(
+            "User",
+            "system:kube-scheduler",
+            "ClusterRole/system:kube-scheduler",
+            "ClusterRoleBinding/system:kube-scheduler",
+        ),
+        grant(
+            "ServiceAccount",
+            "shop/api",
+            "Role/reader",
+            "RoleBinding/shop/api",
+        ),
+    ];
+    let server = server().await;
+    let mut provider = gke(&server).await;
+    provider.rbac = rbac.clone();
+    insta::assert_snapshot!(
+        access_envelope(ProviderId::Gke, provider.access().await.unwrap()).render()
+    );
+
+    // Groups for RBAC on, legacy ABAC on.
+    let other = MockServer::start().await;
+    let mut c = cluster();
+    c["authenticatorGroupsConfig"] =
+        json!({"enabled": true, "securityGroup": "gke-security-groups@acme.com"});
+    c["legacyAbac"] = json!({"enabled": true});
+    Mock::given(method("GET"))
+        .and(path(CLUSTER))
+        .respond_with(ResponseTemplate::new(200).set_body_json(c))
+        .mount(&other)
+        .await;
+    let mut provider = gke(&other).await;
+    provider.rbac = rbac;
+    let (rows, findings) = provider.access().await.unwrap();
+    assert_eq!(rows.len(), 3);
+    let ids: Vec<&str> = findings.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(ids, ["gke.access.legacy_abac"]);
 }

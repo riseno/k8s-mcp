@@ -70,6 +70,38 @@ pub struct AccessMapping {
     pub cluster_admin: bool,
 }
 
+/// One subject of a Kubernetes RoleBinding or ClusterRoleBinding, read by the tools layer for
+/// the providers' access mappings (cloud principals often get their rights from RBAC).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RbacGrant {
+    /// `User`, `Group` or `ServiceAccount`.
+    pub kind: String,
+    /// The subject's name: a username, group or `namespace/name` for a ServiceAccount.
+    pub subject: String,
+    /// The bound role, `ClusterRole/<name>` or `Role/<name>`.
+    pub role: String,
+    /// The binding, `ClusterRoleBinding/<name>` or `RoleBinding/<namespace>/<name>`.
+    pub binding: String,
+}
+
+impl RbacGrant {
+    /// Cluster-admin: `cluster-admin` bound cluster-wide.
+    pub fn cluster_admin(&self) -> bool {
+        self.role == "ClusterRole/cluster-admin" && self.binding.starts_with("ClusterRoleBinding/")
+    }
+
+    /// The mapping row for this grant.
+    pub fn mapping(&self) -> AccessMapping {
+        AccessMapping {
+            principal: self.subject.clone(),
+            source: format!("RBAC {}", self.binding),
+            username: self.subject.clone(),
+            grants: vec![self.role.clone()],
+            cluster_admin: self.cluster_admin(),
+        }
+    }
+}
+
 /// One step of a workload identity check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityCheck {
@@ -140,16 +172,8 @@ pub trait Provider {
     fn node_pools(&self) -> impl Future<Output = Result<Report<Vec<NodePool>>>> + Send;
     /// Installed add-ons, with the newest compatible versions.
     fn addons(&self) -> impl Future<Output = Result<Report<Vec<Addon>>>> + Send;
-    /// Cloud principals mapped into the cluster. Only EKS has this before v1.0 (PROPOSAL §8.4).
-    fn access(&self) -> impl Future<Output = Result<Report<Vec<AccessMapping>>>> + Send {
-        let id = self.id();
-        async move {
-            Err(k8s_mcp_core::Error::Unavailable(format!(
-                "cluster access mapping is not available for {} yet",
-                id.as_str().to_uppercase()
-            )))
-        }
-    }
+    /// Cloud principals mapped into the cluster, and how (PROPOSAL §8.4).
+    fn access(&self) -> impl Future<Output = Result<Report<Vec<AccessMapping>>>> + Send;
     /// The cloud identity of a ServiceAccount: the Kubernetes side always, the cloud side when
     /// credentials allow (otherwise `cloud_checks` says why it was skipped).
     fn identity_check(

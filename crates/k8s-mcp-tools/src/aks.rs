@@ -6,17 +6,18 @@ use k8s_mcp_core::envelope::Envelope;
 use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
-    Provider, Report, UpgradeInfo, addons_envelope, cluster_info_envelope, identity_envelope,
-    logs_envelope, node_pools_envelope,
+    Provider, Report, UpgradeInfo, access_envelope, addons_envelope, cluster_info_envelope,
+    identity_envelope, logs_envelope, node_pools_envelope,
 };
 use k8s_mcp_provider_aks::{Aks, identity::evaluate};
 
 use crate::Ctx;
 use crate::cloud::{
-    IdentityInput, LogsInput, ProviderInput, detected_identity, finish, log_query,
+    IdentityInput, LogsInput, ProviderInput, detected_identity, finish, log_query, rbac_grants,
     workload_identity,
 };
 use crate::common::{Scope, scope};
+use crate::read::add_notes;
 
 /// AKS control-plane log categories.
 const COMPONENTS: &[&str] = &["api", "audit", "controllerManager", "scheduler"];
@@ -87,6 +88,17 @@ pub async fn aks_node_pools(ctx: &Ctx, input: ProviderInput) -> Result<Envelope>
 pub async fn aks_addons(ctx: &Ctx, input: ProviderInput) -> Result<Envelope> {
     let (sc, aks) = connect(ctx, &input).await?;
     Ok(finish(&sc, addons_envelope(aks.id(), aks.addons().await?)))
+}
+
+/// `aks_access`: cloud principals and how they get into the cluster, from the cloud and the
+/// cluster's RBAC bindings.
+pub async fn aks_access(ctx: &Ctx, input: ProviderInput) -> Result<Envelope> {
+    let (sc, mut aks) = connect(ctx, &input).await?;
+    let (rbac, notes) = rbac_grants(ctx, &sc).await?;
+    aks.rbac = rbac;
+    let mut e = finish(&sc, access_envelope(aks.id(), aks.access().await?));
+    add_notes(&mut e, &notes);
+    Ok(e)
 }
 
 /// `aks_identity_check`: the Kubernetes side always; the Azure side when it can be asked

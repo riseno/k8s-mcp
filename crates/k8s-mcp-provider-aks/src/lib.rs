@@ -27,8 +27,8 @@ use k8s_mcp_core::provider::{ClusterIdentity, ProviderId};
 use k8s_mcp_core::text::truncate;
 use k8s_mcp_core::{Error, Result};
 use k8s_mcp_provider::{
-    Addon, CloudLogs, ClusterInfo, IdentityReport, LogQuery, NodePool, Provider, Report,
-    UpgradeInfo, WorkloadIdentity,
+    AccessMapping, Addon, CloudLogs, ClusterInfo, IdentityReport, LogQuery, NodePool, Provider,
+    Report, UpgradeInfo, WorkloadIdentity,
 };
 use serde_json::{Value, json};
 
@@ -43,6 +43,7 @@ const LA_SCOPE: &str = "https://api.loganalytics.io/.default";
 /// Pinned GA api-versions.
 const AKS_API: &str = "2026-09-01";
 const EXTENSIONS_API: &str = "2025-03-01";
+const ROLE_ASSIGNMENTS_API: &str = "2022-04-01";
 const IDENTITY_API: &str = "2024-11-30";
 const WORKSPACE_API: &str = "2026-03-01";
 /// Pages of a list followed at most.
@@ -53,6 +54,9 @@ const NO_CREDENTIALS: &str = "no Azure credentials found";
 
 /// An AKS cluster reached through ARM.
 pub struct Aks {
+    /// The cluster's RBAC bindings, set by the caller before `access` (the provider makes no
+    /// Kubernetes calls).
+    pub rbac: Vec<k8s_mcp_provider::RbacGrant>,
     http: reqwest::Client,
     credential: Arc<dyn TokenCredential>,
     arm: String,
@@ -237,6 +241,7 @@ impl Aks {
         cluster: String,
     ) -> Self {
         Self {
+            rbac: Vec::new(),
             http,
             credential,
             arm,
@@ -501,6 +506,22 @@ impl Provider for Aks {
                 Vec::new()
             });
         Ok(rules::addons(&c, &extensions))
+    }
+
+    async fn access(&self) -> Result<Report<Vec<AccessMapping>>> {
+        let c = self.get_cluster().await?;
+        // Assignments at the cluster's scope and inherited from above it.
+        let assignments = self
+            .arm_list(
+                "list the Azure role assignments that apply to the cluster (needs Microsoft.Authorization/roleAssignments/read, part of Reader)",
+                &format!(
+                    "{}/providers/Microsoft.Authorization/roleAssignments",
+                    self.cluster_id()
+                ),
+                ROLE_ASSIGNMENTS_API,
+            )
+            .await?;
+        Ok(rules::access(&c, &assignments, &self.rbac))
     }
 
     async fn identity_check(&self, k8s: &WorkloadIdentity) -> Report<IdentityReport> {

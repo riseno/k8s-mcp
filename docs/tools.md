@@ -460,6 +460,14 @@ GKE-managed add-ons and whether they are enabled: HTTP load balancing, HPA, netw
 |---|---|---|
 | `context` | string | Kubeconfig context (default: the server's default context). |
 
+### `gke_access`
+
+Who Google identities map to in the cluster: RBAC bindings of Google users, service accounts and groups (cluster-admin flagged), whether Google Groups for RBAC is on so group bindings apply, and legacy ABAC. IAM roles on the project (roles/container.*) grant access too and are not listed.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context (default: the server's default context). |
+
 ### `gke_identity_check`
 
 Does a ServiceAccount's GKE Workload Identity work? The iam.gke.io/gcp-service-account annotation, the cluster's workload pool, node pools in GKE_METADATA mode, the Google service account exists and is enabled, and its IAM policy grants roles/iam.workloadIdentityUser to this ServiceAccount. Without Google Cloud credentials it returns the Kubernetes side with cloud_checks: skipped.
@@ -506,6 +514,14 @@ AKS node pools (mode, VM size, spot, version, count and autoscaler range, provis
 ### `aks_addons`
 
 AKS add-on profiles (monitoring, Azure Policy, ...) and whether they are enabled, plus cluster extensions (Flux, Dapr, ...) with their versions and state.
+
+| Input | Type | Description |
+|---|---|---|
+| `context` | string | Kubeconfig context (default: the server's default context). |
+
+### `aks_access`
+
+Who Entra ID identities map to in the cluster: Entra admin groups, Azure role assignments that apply to the cluster (Azure RBAC for Kubernetes and the credential roles), RBAC bindings of Entra users and groups, cluster-admin flagged, and whether local accounts bypass Entra ID.
 
 | Input | Type | Description |
 |---|---|---|

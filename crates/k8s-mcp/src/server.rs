@@ -210,6 +210,10 @@ tools! {
         "GKE-managed add-ons and whether they are enabled: HTTP load balancing, HPA, network policy, NodeLocal DNSCache, the Persistent Disk, Filestore and Cloud Storage FUSE CSI drivers, Backup for GKE, Config Connector.",
         |c, i| t::gke_addons(c, i).await;
     #[cfg(feature = "provider-gke")]
+    "gke_access", "gke", t::ProviderInput,
+        "Who Google identities map to in the cluster: RBAC bindings of Google users, service accounts and groups (cluster-admin flagged), whether Google Groups for RBAC is on so group bindings apply, and legacy ABAC. IAM roles on the project (roles/container.*) grant access too and are not listed.",
+        |c, i| t::gke_access(c, i).await;
+    #[cfg(feature = "provider-gke")]
     "gke_identity_check", "gke", t::IdentityInput,
         "Does a ServiceAccount's GKE Workload Identity work? The iam.gke.io/gcp-service-account annotation, the cluster's workload pool, node pools in GKE_METADATA mode, the Google service account exists and is enabled, and its IAM policy grants roles/iam.workloadIdentityUser to this ServiceAccount. Without Google Cloud credentials it returns the Kubernetes side with cloud_checks: skipped.",
         |c, i| t::gke_identity_check(c, i).await;
@@ -229,6 +233,10 @@ tools! {
     "aks_addons", "aks", t::ProviderInput,
         "AKS add-on profiles (monitoring, Azure Policy, ...) and whether they are enabled, plus cluster extensions (Flux, Dapr, ...) with their versions and state.",
         |c, i| t::aks_addons(c, i).await;
+    #[cfg(feature = "provider-aks")]
+    "aks_access", "aks", t::ProviderInput,
+        "Who Entra ID identities map to in the cluster: Entra admin groups, Azure role assignments that apply to the cluster (Azure RBAC for Kubernetes and the credential roles), RBAC bindings of Entra users and groups, cluster-admin flagged, and whether local accounts bypass Entra ID.",
+        |c, i| t::aks_access(c, i).await;
     #[cfg(feature = "provider-aks")]
     "aks_identity_check", "aks", t::IdentityInput,
         "Does a ServiceAccount's Azure workload identity work? The azure.workload.identity/client-id annotation, the pods' azure.workload.identity/use label and injected AZURE_* environment, the cluster's OIDC issuer and workload identity, the user-assigned managed identity with that client id and a federated credential naming this cluster's issuer and the ServiceAccount. Without Azure credentials it returns the Kubernetes side with cloud_checks: skipped.",
@@ -919,6 +927,7 @@ mod tests {
             ["eks_cluster_info", "gke_cluster_info", "aks_cluster_info"],
             ["eks_nodegroups", "gke_node_pools", "aks_node_pools"],
             ["eks_addons", "gke_addons", "aks_addons"],
+            ["eks_access", "gke_access", "aks_access"],
             [
                 "eks_identity_check",
                 "gke_identity_check",
@@ -934,16 +943,12 @@ mod tests {
             assert!(a.tier == b.tier && b.tier == c.tier, "{eks}, {gke}, {aks}");
             assert_eq!([a.toolset, b.toolset, c.toolset], ["eks", "gke", "aks"]);
         }
-        for set in ["gke", "aks"] {
-            let names: Vec<&str> = tools
-                .iter()
-                .filter(|t| t.toolset == set)
-                .map(|t| t.name)
-                .collect();
+        // Every provider toolset has the same six tools.
+        for set in ["eks", "gke", "aks"] {
             assert_eq!(
-                names.len(),
-                5,
-                "{set}_access arrives in v1.0 (PROPOSAL §8.4): {names:?}"
+                tools.iter().filter(|t| t.toolset == set).count(),
+                6,
+                "{set}"
             );
         }
     }

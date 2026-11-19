@@ -9,6 +9,7 @@ ones (same inputs, same output shape).
 | `aks_cluster_info` | Version, provisioning and power state, SKU tier, network plugin, API server access (private, authorized IP ranges), OIDC issuer and workload identity, Entra ID integration and Azure RBAC, local accounts, support plan, auto-upgrade channel |
 | `aks_node_pools` | Node pools: mode, VM size, spot, version, count and autoscaler range, provisioning and power state, node image |
 | `aks_addons` | Add-on profiles (enabled or not) and cluster extensions with their versions and state |
+| `aks_access` | Entra principals in the cluster: Entra admin groups, Azure role assignments that apply to the cluster (Azure RBAC for Kubernetes roles and the credential roles by name; inherited ones marked), RBAC bindings of Entra users and groups, cluster-admin flagged, and local accounts (`aks.cluster.local_accounts`) |
 | `aks_identity_check` | A ServiceAccount's workload identity: client-id annotation, the pods' label and injected environment, OIDC issuer, workload identity, the managed identity and its federated credentials |
 | `aks_logs` | Log Analytics: container logs (`ContainerLogV2`) or control-plane logs (`AKSControlPlane`, `AKSAudit`), redacted and untrusted |
 
@@ -67,7 +68,8 @@ In-cluster, give the chart's ServiceAccount a workload identity
 ## Permissions
 
 Grant the identity k8s-mcp uses:
-- `Reader` on the AKS cluster (cluster, node pools, upgrade profile, extensions);
+- `Reader` on the AKS cluster (cluster, node pools, upgrade profile, extensions, and the role
+  assignments `aks_access` lists);
 - `Reader` on the user-assigned managed identities to check (or the subscription), for the
   identity list and their federated credentials;
 - `Log Analytics Reader` on the monitoring workspace (`aks_logs`).

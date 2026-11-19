@@ -5,6 +5,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The public surface is frozen for 1.x: `docs/surface-v1.json` records every tool's name,
+  toolset, tier and argument types, the prompts, resources, rule ids and Envelope fields, and a
+  test fails on anything that removes or changes them; `docs/stability.md` describes what is
+  stable, what may change in 1.x and how deprecation works.
+
 ## [0.4.1] - 2026-11-18
 
 ### Fixed

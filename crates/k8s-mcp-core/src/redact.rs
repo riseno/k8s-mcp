@@ -207,14 +207,16 @@ impl Redactor {
     }
 
     /// Redact a tool call's arguments for the audit log: a string under a sensitive key name
-    /// (`confirm_token`, `*password*`, …) is masked whatever it looks like; everything else is
-    /// pattern-redacted as by [`Redactor::json`] (riseno/k8s-mcp#105). Object views use `json`
-    /// instead, where keys such as `secretName` or `sessionAffinity` are data.
+    /// (`confirm_token`, `*password*`, …) is masked whatever it looks like, at every level,
+    /// `off` included; everything else is pattern-redacted as by [`Redactor::json`]
+    /// (riseno/k8s-mcp#105). Object views use `json` instead, where keys such as `secretName`
+    /// or `sessionAffinity` are data.
     pub fn args(self, v: &mut Value) {
         match v {
             Value::Object(m) => {
                 for (k, v) in m.iter_mut() {
                     match v {
+                        Value::String(s) if SENSITIVE_NAME.is_match(k) => MASK.clone_into(s),
                         Value::String(s) => *s = self.named(k, s),
                         other => self.args(other),
                     }
@@ -237,11 +239,14 @@ impl Redactor {
 
 /// Mask exact occurrences of known secret values (for example the values of Secrets a pod
 /// references) in `lines`. Applied at every redaction level: Secret values are never returned.
-/// Values shorter than 6 characters are ignored to avoid masking common words.
+/// A multi-line value (a PEM key, a JSON key file) is masked line by line, since logs are
+/// split into lines first. Values (or lines) shorter than 6 characters are ignored to avoid
+/// masking common words.
 pub fn scrub_values(lines: &mut [String], values: &[String]) {
     let mut values: Vec<&str> = values
         .iter()
-        .map(|v| v.trim())
+        .flat_map(|v| v.lines())
+        .map(str::trim)
         .filter(|v| v.len() >= 6)
         .collect();
     values.sort_by_key(|v| std::cmp::Reverse(v.len()));
@@ -335,6 +340,13 @@ mod tests {
         assert_eq!(
             v,
             json!({"name": "web", "confirm_token": MASK, "nested": [{"api_key": MASK}], "grep": format!("password={MASK}")})
+        );
+        // `--redact off` still keeps confirm tokens and secret-named args out of the audit log.
+        let mut v = json!({"confirm_token": "1795041384.6ec538ee", "nested": [{"api_key": "abc"}], "grep": "password=hunter2"});
+        Redactor::new(RedactLevel::Off).args(&mut v);
+        assert_eq!(
+            v,
+            json!({"confirm_token": MASK, "nested": [{"api_key": MASK}], "grep": "password=hunter2"})
         );
     }
 }

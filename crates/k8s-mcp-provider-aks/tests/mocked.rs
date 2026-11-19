@@ -196,6 +196,32 @@ async fn aks_upgrade_checks() {
     insta::assert_snapshot!(k8s_mcp_provider::upgrade_lines(ProviderId::Aks, &info).join("\n"));
 }
 
+/// A resource id from ARM is fetched as a path on the ARM host: one that would move the
+/// request elsewhere (`@host/...` makes the ARM host a user name) is refused.
+#[tokio::test]
+async fn foreign_resource_ids_are_not_fetched() {
+    let (server, evil) = (MockServer::start().await, MockServer::start().await);
+    let mut c = cluster();
+    c["properties"]["addonProfiles"]["omsagent"]["config"]["logAnalyticsWorkspaceResourceID"] =
+        json!(format!("@{}/x", evil.address()));
+    Mock::given(method("GET"))
+        .and(path(CLUSTER))
+        .respond_with(ResponseTemplate::new(200).set_body_json(c))
+        .mount(&server)
+        .await;
+    let q = LogQuery {
+        source: "application".into(),
+        since_ms: 1_794_000_000_000,
+        limit: 10,
+        ..Default::default()
+    };
+    assert!(aks(&server).logs(&q).await.is_err());
+    assert!(
+        evil.received_requests().await.unwrap().is_empty(),
+        "the token went to another host"
+    );
+}
+
 /// The bearer token never leaves the ARM host: a nextLink to another host is not followed.
 #[tokio::test]
 async fn foreign_next_links_are_not_followed() {

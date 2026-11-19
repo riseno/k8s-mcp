@@ -107,7 +107,7 @@ Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `ac
 
 ## In-cluster endpoint
 
-One shared, audited endpoint for a team: `helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-namespace`
+One shared, audited endpoint for a team: `helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-namespace --set 'auth.allowedCallers={group:sre}'`
 serves streamable HTTP at `/mcp`, authenticates callers with Kubernetes tokens (TokenReview)
 and acts with a read-only ServiceAccount. See [docs/in-cluster.md](docs/in-cluster.md).
 

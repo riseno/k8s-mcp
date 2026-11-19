@@ -7,7 +7,7 @@ AKS identity of ServiceAccount shop/api: 6 checks (5 passed, 1 failed); cloud ch
 FINDINGS
 1. [critical/high] aks.wi.federated_credential_mismatch: The federated credentials of shop-api do not name ServiceAccount shop/api
    why: A credential trusts this cluster's issuer, but Entra ID also requires its subject to be exactly system:serviceaccount:shop:api and its audience to include api://AzureADTokenExchange; otherwise the token exchange fails with AADSTS70021 (no matching federated identity record).
-   evidence (related): shop-worker: subject system:serviceaccount:shop:worker, audiences api://AzureADTokenExchange
+   evidence (related): <<untrusted source="related">> shop-worker: subject system:serviceaccount:shop:worker, audiences api://AzureADTokenExchange <</untrusted>>
    fix: Create (or correct) the federated credential: `az identity federated-credential create --identity-name shop-api --resource-group <rg> --name <name> --issuer https://westeurope.oic.prod-aks.azure.com/tenant-1/guid-1/ --subject system:serviceaccount:shop:api --audience api://AzureADTokenExchange`.
    docs: https://learn.microsoft.com/azure/aks/workload-identity-overview
 

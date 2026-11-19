@@ -12,6 +12,7 @@
 - [Output format](output.md)
 - [Detection rules](rules.md)
 - [Security and threat model](security.md)
+  - [Security review (v1.0)](security-review.md)
 - [Evals](evals.md)
 - [FAQ](faq.md)
 - [Progress](progress.md)

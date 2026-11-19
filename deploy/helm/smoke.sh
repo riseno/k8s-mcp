@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Smoke test of an installed k8s-mcp chart: probes, 401/403, and a TokenReview-authenticated
 # client that lists tools and runs diagnose_pod; the audit log must name the caller and never
-# the token. A token without the chart's audience (k8s-mcp) must get 401. Only kind and k3d
-# clusters are allowed.
+# the token. A token without the chart's audience (k8s-mcp) must get 401, and one with it for a
+# ServiceAccount not in auth.allowedCallers 403. The release must allow
+# system:serviceaccount:default:mcp-caller. Only kind and k3d clusters are allowed.
 #
 # With WRITES=1 (a release with writes.enabled and the caller below in auth.allowedCallers), the
 # client also plans and confirms a restart of a scratch Deployment through the chart's write
@@ -17,6 +18,8 @@ k() { kubectl --kubeconfig "$KC" --context "$CTX" "$@"; }
 k create serviceaccount mcp-caller -n default --dry-run=client -o yaml | k apply -f - >/dev/null
 TOKEN=$(k create token mcp-caller -n default --duration 10m --audience k8s-mcp)
 DEFAULT_TOKEN=$(k create token mcp-caller -n default --duration 10m)
+k create serviceaccount mcp-stranger -n default --dry-run=client -o yaml | k apply -f - >/dev/null
+STRANGER_TOKEN=$(k create token mcp-stranger -n default --duration 10m --audience k8s-mcp)
 PORT=18081
 k -n "$NS" port-forward "svc/$REL" "$PORT:8080" >/dev/null 2>&1 &
 PF=$!
@@ -40,6 +43,7 @@ check "/readyz" 200 "$(code "$URL/readyz")"
 check "no token -> 401" 401 "$(code "${H[@]}" -d "$INIT" "$URL/mcp")"
 check "bad token -> 401" 401 "$(code "${H[@]}" -H 'Authorization: Bearer nope' -d "$INIT" "$URL/mcp")"
 check "API-server-audience token -> 401" 401 "$(code "${H[@]}" -H "Authorization: Bearer $DEFAULT_TOKEN" -d "$INIT" "$URL/mcp")"
+check "caller not in allowedCallers -> 403" 403 "$(code "${H[@]}" -H "Authorization: Bearer $STRANGER_TOKEN" -d "$INIT" "$URL/mcp")"
 check "bad Origin -> 403" 403 "$(code "${H[@]}" "${A[@]}" -H 'Origin: https://evil.example' -d "$INIT" "$URL/mcp")"
 SID=$(curl -s -D - -o /dev/null "${H[@]}" "${A[@]}" -d "$INIT" "$URL/mcp" | tr -d '\r' | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}')
 check "session" yes "${SID:+yes}"
@@ -69,7 +73,7 @@ echo "     $(jq -r '.result.structuredContent.summary' <<<"$R" | cut -c1-120)"
 sleep 1
 LOGS=$(k -n "$NS" logs "deploy/$REL")
 check "audit caller" found "$(grep -q -F '"caller":"system:serviceaccount:default:mcp-caller"' <<<"$LOGS" && echo found || echo missing)"
-check "token in pod log" 0 "$(grep -c -F -e "$TOKEN" -e "$DEFAULT_TOKEN" <<<"$LOGS" || true)"
+check "token in pod log" 0 "$(grep -c -F -e "$TOKEN" -e "$DEFAULT_TOKEN" -e "$STRANGER_TOKEN" <<<"$LOGS" || true)"
 if [ "${WRITES:-0}" = 1 ]; then
   check "audit: restart plan and confirm" 2 "$(grep -F '"tool":"restart_workload"' <<<"$LOGS" | grep -c -e '"dry_run":true' -e '"dry_run":false' || true)"
   k delete namespace smoke-writes --wait=false >/dev/null

@@ -222,14 +222,21 @@ impl RotatingFile {
     }
 }
 
+/// Open for appending, owner-only (`0600`): set on a file that already exists too, since
+/// the mode given to `open` applies only when the file is created.
 fn open_append(path: &Path) -> Result<File> {
     let mut opts = OpenOptions::new();
     opts.create(true).append(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
         opts.mode(0o600);
+        let file = opts.open(path).map_err(|e| io_err(path, &e))?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| io_err(path, &e))?;
+        Ok(file)
     }
+    #[cfg(not(unix))]
     opts.open(path).map_err(|e| io_err(path, &e))
 }
 
@@ -284,6 +291,13 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            // An existing, wider file is narrowed when it is opened again.
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+            Audit::open(path.to_str().unwrap()).unwrap().close();
             assert_eq!(
                 std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
                 0o600

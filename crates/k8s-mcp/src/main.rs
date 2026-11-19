@@ -244,7 +244,10 @@ impl Opts {
         if self.max_output_bytes < 2_000 {
             bail!("--max-output-bytes must be at least 2000");
         }
-        if self.allow_write && self.transport == Transport::Http && self.allowed_callers.is_empty()
+        // Blank entries name no one (`Callers::new` drops them), so they do not count.
+        if self.allow_write
+            && self.transport == Transport::Http
+            && self.allowed_callers.iter().all(|c| c.trim().is_empty())
         {
             bail!(
                 "--allow-write over HTTP needs --auth tokenreview with --allowed-callers: name the users or groups that may change the cluster (for example --allowed-callers 'group:platform-admins')"

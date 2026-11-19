@@ -338,13 +338,21 @@ fn note(
     (None, None)
 }
 
-/// Redact one container log: exact Secret values first (every level), then patterns, tracking
-/// multi-line PEM keys.
+/// Bytes of one container log read at most: 2000 lines of 4 KiB.
+pub const MAX_LOG_BYTES: i64 = 8 * 1024 * 1024;
+
 /// A container's log as text. Read as bytes because `Api::logs` fails the whole read on one
 /// invalid UTF-8 byte (riseno/k8s-mcp#75): such bytes become `�` here.
+///
+/// At most [`MAX_LOG_BYTES`] are read (`limitBytes`), so a pod writing huge lines cannot
+/// exhaust the server's memory; past it the API server stops, so the newest lines are lost.
 pub async fn pod_logs(api: &Api<Pod>, name: &str, lp: &LogParams) -> kube::Result<String> {
+    let lp = LogParams {
+        limit_bytes: Some(MAX_LOG_BYTES),
+        ..lp.clone()
+    };
     let req = kube::core::Request::new(api.resource_url())
-        .logs(name, lp)
+        .logs(name, &lp)
         .map_err(kube::Error::BuildRequest)?;
     let res = api
         .clone()
@@ -364,6 +372,8 @@ pub async fn pod_logs(api: &Api<Pod>, name: &str, lp: &LogParams) -> kube::Resul
     Ok(text)
 }
 
+/// Redact one container log: exact Secret values first (every level), then patterns, tracking
+/// multi-line PEM keys.
 pub fn redact_log(ctx: &Ctx, raw: &str, secret_values: &[String]) -> Vec<String> {
     let mut lines: Vec<String> = raw
         .lines()

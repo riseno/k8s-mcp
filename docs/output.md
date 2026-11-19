@@ -17,7 +17,7 @@ schema) and a compact text rendering in `content`, which is what most models rea
   "sections": [{ "title": "EVENTS (last 1h)", "lines": ["..."], "untrusted": { "source": "event" } }],
   "context": "staging",
   "namespace": "shop",
-  "untrusted_fields": ["items[*].message"]
+  "untrusted_fields": ["findings[*].evidence[?(@.source!='unavailable')].text", "items"]
 }
 ```
 
@@ -43,6 +43,9 @@ schema) and a compact text rendering in `content`, which is what most models rea
 - **Untrusted text**: log lines, event messages, annotations and object fields come from the
   cluster. In both renderings they are wrapped in `<<untrusted source="...">> … <</untrusted>>`
   or sit in a section whose `untrusted` attribute is set, and `untrusted_fields` lists the JSON
-  paths. Finding evidence from `status` (condition and container messages), `event` and `log`
-  is always wrapped. Delimiter look-alikes (`<<`, `>>`) are neutralised in every string and each untrusted
+  paths. Finding evidence is always wrapped, except `unavailable` notes (k8s-mcp's own text):
+  `status` (condition and container messages), `event`, `log`, and `spec` and `related`, which
+  quote object values such as commands, images and annotations. The rows of `list_resources`
+  and `list_events` are marked untrusted as a whole (`items`), and a custom resource's status
+  is shown only as one short word. Delimiter look-alikes (`<<`, `>>`) are neutralised in every string and each untrusted
   string is length-capped. Treat it as data, never instructions.

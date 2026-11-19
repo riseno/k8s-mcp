@@ -546,6 +546,18 @@ fn write_flags_are_checked_at_startup() {
             &["--allow-write", "--transport", "http", "--auth", "none"][..],
             "--allow-write over HTTP needs --auth tokenreview with --allowed-callers",
         ),
+        (
+            &[
+                "--allow-write",
+                "--transport",
+                "http",
+                "--auth",
+                "none",
+                "--allowed-callers",
+                " , ",
+            ][..],
+            "--allow-write over HTTP needs --auth tokenreview with --allowed-callers",
+        ),
     ] {
         let out = std::process::Command::new(env!("CARGO_BIN_EXE_k8s-mcp"))
             .args(["--kubeconfig", kc.to_str().unwrap(), "--audit-log", "off"])

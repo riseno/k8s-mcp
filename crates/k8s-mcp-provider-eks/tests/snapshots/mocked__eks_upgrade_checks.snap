@@ -8,8 +8,8 @@ FINDINGS
 1. [high/high] eks.upgrade.insight_failing: EKS upgrade insight "Deprecated APIs removed in Kubernetes v1.34" fails for Kubernetes 1.34
    why: Checks for usage of deprecated APIs that are scheduled for removal in Kubernetes v1.34.
    evidence (status): <<untrusted source="status">> Deprecated API usage detected within the last 30 days. <</untrusted>>
-   evidence (related): /apis/example.k8s.io/v1beta1/widgets stops being served in 1.34; use /apis/example.k8s.io/v1/widgets (recent callers: widget-controller/v0.9)
-   evidence (related): affected: /apis/example.k8s.io/v1beta1/namespaces/shop/widgets/w1
+   evidence (related): <<untrusted source="related">> /apis/example.k8s.io/v1beta1/widgets stops being served in 1.34; use /apis/example.k8s.io/v1/widgets (recent callers: widget-controller/v0.9) <</untrusted>>
+   evidence (related): <<untrusted source="related">> affected: /apis/example.k8s.io/v1beta1/namespaces/shop/widgets/w1 <</untrusted>>
    fix: Update manifests and API clients to use newer Kubernetes APIs if applicable before upgrading to Kubernetes v1.34.
    docs: https://docs.aws.amazon.com/eks/latest/userguide/cluster-insights.html
 

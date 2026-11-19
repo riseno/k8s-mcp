@@ -50,6 +50,9 @@ spec:
             {{- with .Values.auth.audience }}
             - {{ printf "--auth-audience=%s" . | quote }}
             {{- end }}
+            {{- if and (empty .Values.auth.allowedCallers) (not .Values.auth.allowAnyCaller) }}
+            {{- fail "auth.allowedCallers is empty: name the users or groups that may call k8s-mcp (for example --set 'auth.allowedCallers={group:sre}'). Anyone who may create pods or tokens for a ServiceAccount can mint a token for the audience; set auth.allowAnyCaller=true only if all of them may read what k8s-mcp reads" }}
+            {{- end }}
             {{- with .Values.auth.allowedCallers }}
             - {{ printf "--allowed-callers=%s" (join "," .) | quote }}
             {{- end }}

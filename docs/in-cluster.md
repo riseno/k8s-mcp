@@ -7,8 +7,12 @@ has no cloud-specific templates beyond optional identity annotations.
 ## Install
 
 ```bash
-helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-namespace
+helm install k8s-mcp oci://ghcr.io/riseno/charts/k8s-mcp -n k8s-mcp --create-namespace \
+  --set 'auth.allowedCallers={group:sre}'
 ```
+
+`auth.allowedCallers` is required: it names who may call the server (see
+[Connect a client](#connect-a-client)).
 
 The chart creates:
 - a Deployment (1 replica, stateless) and a `ClusterIP` Service on port 8080, path `/mcp`;
@@ -57,14 +61,18 @@ claude mcp add --transport http k8s http://localhost:8080/mcp --header "Authoriz
 ```
 
 Limit who that is:
+- **Allowed callers (required).** `auth.allowedCallers` lists who may call, as globs over the
+  TokenReview username or `group:<glob>` over its groups, for example
+  `[system:serviceaccount:platform:*, group:sre]`. Others get 403, and the refusal is audited
+  (`"result": "refused"`). The install fails without it: anyone who may create pods (or
+  tokens) for some ServiceAccount can mint a token for the audience, so without a list every
+  pod creator could use the server's cluster-wide read access. `auth.allowAnyCaller: true`
+  lets everyone the cluster authenticates in instead, for clusters where all of them may read
+  what k8s-mcp reads.
 - **Audience.** The audience requirement keeps the token every pod has by default (minted for
   the API server's audience) from working, so a compromised pod cannot reuse it. Setting
   `auth.audience: ""` accepts any token the cluster authenticates, including OIDC tokens and
   those default pod tokens.
-- **Allowed callers.** `auth.allowedCallers` lists who may call, as globs over the TokenReview
-  username or `group:<glob>` over its groups, for example
-  `[system:serviceaccount:platform:*, group:sre]`. Others get 403, and the refusal is audited
-  (`"result": "refused"`).
 - **Network.** Restrict who can reach the Service (NetworkPolicy, ingress auth).
 
 Behind an ingress, add its hostname to `allowedHosts` (the server rejects unknown `Host`

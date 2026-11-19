@@ -99,11 +99,14 @@ pub struct Envelope {
     pub sections: Vec<Section>,
 }
 
-/// Evidence that quotes text whoever can write the object or its status chose: condition and
-/// container messages, events, logs (riseno/k8s-mcp#78). Wrapped as untrusted in both renderings.
-const UNTRUSTED_EVIDENCE: [Source; 3] = [Source::Status, Source::Event, Source::Log];
-const UNTRUSTED_EVIDENCE_PATH: &str =
-    "findings[*].evidence[?(@.source=='status' || @.source=='event' || @.source=='log')].text";
+/// Evidence quotes text whoever can write an object chose: condition and container messages,
+/// events, logs (riseno/k8s-mcp#78), and spec and related-object values such as commands,
+/// images and annotations (v1.0 security review). Wrapped as untrusted in both renderings;
+/// only `unavailable` notes are k8s-mcp's own text.
+fn quotes_cluster(source: Source) -> bool {
+    source != Source::Unavailable
+}
+const UNTRUSTED_EVIDENCE_PATH: &str = "findings[*].evidence[?(@.source!='unavailable')].text";
 
 impl Envelope {
     /// Start an envelope with a summary.
@@ -135,7 +138,7 @@ impl Envelope {
             .flatten()
         {
             let src = e["source"].as_str().unwrap_or("").to_owned();
-            if UNTRUSTED_EVIDENCE.iter().any(|u| u.as_str() == src)
+            if src != Source::Unavailable.as_str()
                 && let Some(t) = e.get("text").and_then(Value::as_str).map(|t| wrap(&src, t))
             {
                 e["text"] = json!(t);
@@ -146,7 +149,7 @@ impl Envelope {
             .findings
             .iter()
             .flat_map(|f| &f.evidence)
-            .any(|e| UNTRUSTED_EVIDENCE.contains(&e.source))
+            .any(|e| quotes_cluster(e.source))
         {
             untrusted.push(UNTRUSTED_EVIDENCE_PATH);
         }
@@ -187,6 +190,9 @@ impl Envelope {
         }
         if self.sections.iter().any(|s| s.untrusted.is_some()) {
             untrusted.push("sections[?(@.untrusted)].lines");
+        }
+        if self.items_untrusted.is_some() && !self.items.is_empty() {
+            untrusted.push("items");
         }
         for path in untrusted {
             match v.get_mut("untrusted_fields").and_then(Value::as_array_mut) {
@@ -232,7 +238,7 @@ impl Envelope {
                 }
                 for e in &f.evidence {
                     match e.source {
-                        src if UNTRUSTED_EVIDENCE.contains(&src) => {
+                        src if quotes_cluster(src) => {
                             let text = neutralize(&e.text);
                             let src = e.source.as_str();
                             let _ = writeln!(

@@ -368,4 +368,29 @@ mod tests {
         let (tail, omitted) = shape(&ctx(), raw, None, 0, false, 2, &[]);
         assert_eq!((tail.len(), omitted), (2, 2));
     }
+
+    // Fuzzing (v1.0 security review): shaping any log keeps the tail cap and never shows a
+    // Secret value the pod uses, even one spanning several lines.
+    proptest::proptest! {
+        #[test]
+        fn shaped_logs_are_capped_and_never_show_secret_values(
+            before in proptest::collection::vec("\\PC{0,40}", 0..5),
+            after in proptest::collection::vec("\\PC{0,40}", 0..5),
+            secret in proptest::collection::vec("[A-Za-z0-9+/=]{6,24}", 1..4),
+            errors_only in proptest::bool::ANY,
+            context in 0usize..3,
+            tail in 1usize..20,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let _runtime = rt.enter(); // the unused client needs one
+            let value = secret.join("\n");
+            let raw = [before.join("\n"), format!("key: {value}"), after.join("\n")].join("\n");
+            let (lines, _) = shape(&ctx(), &raw, None, context, errors_only, tail, std::slice::from_ref(&value));
+            proptest::prop_assert!(lines.len() <= tail);
+            for part in &secret {
+                let leaked = lines.iter().any(|l| l.contains(part.as_str()));
+                proptest::prop_assert!(!leaked, "{part} leaked in {lines:?}");
+            }
+        }
+    }
 }

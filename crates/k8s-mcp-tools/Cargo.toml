@@ -40,5 +40,6 @@ http.workspace = true
 
 [dev-dependencies]
 k8s-mcp-testkit.workspace = true
+proptest.workspace = true
 insta.workspace = true
 tower-test.workspace = true

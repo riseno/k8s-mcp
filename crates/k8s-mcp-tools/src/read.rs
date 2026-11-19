@@ -514,6 +514,8 @@ pub async fn list_resources(ctx: &Ctx, input: ListResourcesInput) -> Result<Enve
     );
     e.columns = rows::columns(&info.kind, info.namespaced && sc.namespace.is_none());
     e.items = items;
+    // Rows quote what object writers chose (images, custom resources' status).
+    e.items_untrusted = Some("cluster");
     if let Some(c) = cont {
         // Repeat the whole query: a page cursor is only valid for the same selectors.
         let mut args = json!({"kind": input.kind, "continue": c, "limit": limit});
@@ -1270,7 +1272,6 @@ pub async fn list_events(ctx: &Ctx, input: ListEventsInput) -> Result<Envelope> 
         e.omitted.items = total - limit;
     }
     e.items_untrusted = Some("event");
-    e.untrusted_fields = vec!["items[*].message".into()];
     add_notes(&mut e, &notes);
     Ok(e)
 }

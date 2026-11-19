@@ -277,7 +277,15 @@ impl Aks {
         }
     }
 
+    /// GET an ARM path. `path` may come from an ARM response (a resource id): it must start
+    /// with `/`, so it cannot move the request, and the token, to another host
+    /// (`@other.host/...` would make the ARM host a user name).
     async fn arm_get(&self, what: &str, path: &str, api_version: &str) -> Result<Value> {
+        if !path.starts_with('/') {
+            return Err(Error::Api(format!(
+                "{what}: Azure returned a resource id that is not an ARM path; check the cluster's add-on configuration"
+            )));
+        }
         let token = self.token(ARM_SCOPE).await?;
         self.send(
             what,

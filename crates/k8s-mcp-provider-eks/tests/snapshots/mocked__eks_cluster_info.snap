@@ -12,12 +12,12 @@ FINDINGS
    docs: https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html
 2. [low/high] eks.cluster.public_endpoint: The API server of shop accepts connections from any IP address
    why: The endpoint is public with 0.0.0.0/0 allowed. Authentication still applies, but the API server is exposed to scanning and credential stuffing.
-   evidence (spec): endpointPublicAccess=true publicAccessCidrs=0.0.0.0/0
+   evidence (spec): <<untrusted source="spec">> endpointPublicAccess=true publicAccessCidrs=0.0.0.0/0 <</untrusted>>
    fix: Restrict publicAccessCidrs to your networks, or turn the public endpoint off and use the private one.
    docs: https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html
 3. [low/high] eks.cluster.audit_logging_off: Audit logs of shop are not sent to CloudWatch
    why: Without the audit log type, who changed what in the cluster cannot be traced afterwards, and eks_logs cannot search control-plane audit events.
-   evidence (spec): enabled log types: api
+   evidence (spec): <<untrusted source="spec">> enabled log types: api <</untrusted>>
    fix: Enable at least the audit and authenticator log types in the cluster's logging configuration.
    docs: https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html
 

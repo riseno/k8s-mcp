@@ -12,7 +12,7 @@ FINDINGS
    docs: https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html
 2. [high/high] eks.addon.incompatible: Add-on vpc-cni v1.16.0-eksbuild.1 is not a published version for Kubernetes 1.33
    why: EKS publishes the add-on versions it supports per Kubernetes version; this one is not among them, so it may misbehave and blocks a clean upgrade.
-   evidence (related): compatible versions: v1.20.4-eksbuild.1, v1.19.6-eksbuild.1
+   evidence (related): <<untrusted source="related">> compatible versions: v1.20.4-eksbuild.1, v1.19.6-eksbuild.1 <</untrusted>>
    fix: Update vpc-cni to v1.20.4-eksbuild.1 (or another compatible version) with the EKS add-on API before the next cluster upgrade.
    docs: https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html
 

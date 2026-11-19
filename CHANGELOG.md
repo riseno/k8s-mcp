@@ -22,6 +22,11 @@ All notable changes are documented here. The format follows
   stable, what may change in 1.x and how deprecation works.
 
 ### Changed
+- **Helm chart: `auth.allowedCallers` is required.** `helm install` fails unless it names who
+  may call the server (for example `--set 'auth.allowedCallers={group:sre}'`), or
+  `auth.allowAnyCaller: true` is set: anyone who may create pods or tokens for a
+  ServiceAccount can mint a token for the `k8s-mcp` audience, so an empty list let every pod
+  creator use the server's cluster-wide read access (v1.0 security review).
 - The docs are an mdBook site (`book.toml` over `docs/`), built on every docs change in CI and
   published to GitHub Pages at <https://riseno.github.io/k8s-mcp/>; the wiki is no longer
   updated.
@@ -36,6 +41,30 @@ All notable changes are documented here. The format follows
   `StartError`) is one finding, `pod.crashloop.command_not_found` or
   `pod.crashloop.not_executable`, from its first failed start; before, it was a generic
   `pod.config.create_container_error` until the third restart, and both findings after it.
+
+### Security
+- A Secret value that spans several lines (a PEM key, a JSON key file) and appears in a pod's
+  logs is masked line by line; before, only the value as a whole was masked, so its lines
+  could be shown. Found by the v1.0 property tests, which now cover the duration, quantity,
+  version, scheduling-message, kubelet-message, deprecated-API-metric, ExecCredential and
+  manifest parsers, label selectors, log shaping, untrusted-block wrapping and every pod rule
+  on arbitrary cluster text.
+- Fixes from the v1.0 security review (`docs/security-review.md`):
+  - Evidence quoting object specs and related objects (commands, images, annotations) is
+    wrapped as untrusted, as status, event and log evidence already were; `list_resources`
+    and `list_events` rows are marked untrusted as a whole (`untrusted_fields: ["items"]`);
+    a custom resource's free-text `status.phase` is no longer shown in summaries.
+  - `rollback_workload` plans list the path of every changed pod template field, refuse an
+    identical template (that check never fired), and bind the source ReplicaSet in the
+    confirm token.
+  - `apply_manifest` sends each live object's resourceVersion as a precondition, and refuses
+    the whole RBAC, admission, CRD and aggregated-API (`APIService`) groups.
+  - A blank `--allowed-callers` no longer satisfies the requirement for writes over HTTP.
+  - `--redact off` no longer writes `confirm_token` and secret-named arguments to the audit
+    log; an existing audit file is narrowed to `0600` when opened.
+  - Each container log read is capped at 8 MiB.
+  - AKS: a resource id from an ARM response must be an ARM path, so it cannot send the
+    bearer token to another host.
 
 ## [0.4.1] - 2026-11-18
 

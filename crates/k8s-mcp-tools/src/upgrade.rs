@@ -401,8 +401,6 @@ pub async fn upgrade_readiness(ctx: &Ctx, input: UpgradeReadinessInput) -> Resul
         .collect();
     e.sections = sections;
     e.findings = findings;
-    // Field managers, client user agents and resource URIs are client-supplied text.
-    e.untrusted_fields = vec!["findings[*].evidence[?(@.source=='related')].text".into()];
     add_notes(&mut e, &ev.unavailable);
     Ok(e)
 }

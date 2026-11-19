@@ -5,6 +5,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The docs are an mdBook site (`book.toml` over `docs/`), built on every docs change in CI and
+  published to GitHub Pages at <https://riseno.github.io/k8s-mcp/>; the wiki is no longer
+  updated.
+
 ## [0.4.1] - 2026-11-18
 
 ### Fixed

@@ -1,0 +1,14 @@
+# The docs site (mdBook), published to GitHub Pages by .github/workflows/docs.yml.
+[book]
+title = "k8s-mcp"
+description = "Safe, zero-setup Kubernetes troubleshooting for AI assistants"
+src = "docs"
+language = "en"
+
+[build]
+build-dir = "target/book"
+
+[output.html]
+site-url = "/k8s-mcp/"
+git-repository-url = "https://github.com/riseno/k8s-mcp"
+edit-url-template = "https://github.com/riseno/k8s-mcp/edit/main/{path}"

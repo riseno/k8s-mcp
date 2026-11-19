@@ -85,6 +85,8 @@
     "eks.pod_identity.association_missing",
     "eks.pod_identity.trust_mismatch",
     "eks.upgrade.insight_failing",
+    "gke.access.google_groups_off",
+    "gke.access.legacy_abac",
     "gke.cluster.no_release_channel",
     "gke.cluster.public_endpoint",
     "gke.cluster.unhealthy",
@@ -174,6 +176,20 @@
     "workload.single_replica"
   ],
   "tools": {
+    "aks_access": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "aks"
+    },
     "aks_addons": {
       "inputs": {
         "context": {
@@ -1109,6 +1125,20 @@
       "tier": "read",
       "toolset": "core"
     },
+    "gke_access": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "gke"
+    },
     "gke_addons": {
       "inputs": {
         "context": {
@@ -1242,6 +1272,62 @@
       "required": [],
       "tier": "read",
       "toolset": "gke"
+    },
+    "helm_release": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "helm"
+    },
+    "helm_releases": {
+      "inputs": {
+        "all_namespaces": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "helm"
     },
     "list_contexts": {
       "inputs": {},

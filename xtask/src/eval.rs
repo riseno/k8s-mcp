@@ -1,6 +1,8 @@
 //! `cargo xtask eval`: apply every scenario in `evals/scenarios/`, ask the stdio server to
-//! diagnose each one over MCP, score the ranked finding ids and enforce the v0.1 gates.
+//! diagnose each one over MCP, score the ranked finding ids and enforce the v0.1 gates, plus
+//! the v1.0 latency gate: `diagnose_pod` p95 under 2 s over 20 runs.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -15,6 +17,16 @@ use crate::{CONTEXT, kubeconfig, kubectl, output, root, run, verify_context};
 
 const PROTOCOL_VERSION: &str = "2025-11-25";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
+/// `diagnose_pod` calls behind the latency gate, and the gate on their p95.
+const POD_RUNS: usize = 20;
+const POD_P95_GATE: Duration = Duration::from_secs(2);
+/// Tools timed cluster-wide (no namespace) while every scenario is applied.
+const CLUSTER_TOOLS: &[&str] = &[
+    "find_problems",
+    "recent_changes",
+    "upgrade_readiness",
+    "cluster_overview",
+];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,10 +93,12 @@ struct Summary {
     forbidden: usize,
     median_bytes: usize,
     p95: Duration,
+    /// p95 of the repeated `diagnose_pod` calls (`None`: no pod scenario ran).
+    pod_p95: Option<Duration>,
 }
 
 impl Summary {
-    fn new(outcomes: &[Outcome]) -> Self {
+    fn new(outcomes: &[Outcome], pod_runs: &[Duration]) -> Self {
         let count = |f: fn(&Score) -> bool| outcomes.iter().filter(|o| f(&o.score)).count();
         let ok: Vec<&Response> = outcomes
             .iter()
@@ -96,16 +110,19 @@ impl Summary {
             top3: count(|s| s.top3),
             forbidden: count(|s| s.forbidden),
             median_bytes: median(ok.iter().map(|r| r.bytes).collect()),
-            p95: p95(ok.iter().map(|r| r.latency).collect()),
+            p95: percentile(ok.iter().map(|r| r.latency).collect(), 95),
+            pod_p95: (!pod_runs.is_empty()).then(|| percentile(pod_runs.to_vec(), 95)),
         }
     }
 
-    /// v0.1 gates: top-1 >= 85%, top-3 = 100%, no forbidden findings.
+    /// v0.1 gates: top-1 >= 85%, top-3 = 100%, no forbidden findings; v1.0: `diagnose_pod`
+    /// p95 under 2 s.
     fn passes(&self) -> bool {
         self.total > 0
             && self.top1 * 100 >= self.total * 85
             && self.top3 == self.total
             && self.forbidden == 0
+            && self.pod_p95.is_none_or(|p| p < POD_P95_GATE)
     }
 }
 
@@ -118,12 +135,12 @@ fn median(mut v: Vec<usize>) -> usize {
     }
 }
 
-/// Nearest-rank 95th percentile.
-fn p95(mut v: Vec<Duration>) -> Duration {
+/// Nearest-rank percentile `p` (1 to 100).
+fn percentile(mut v: Vec<Duration>, p: usize) -> Duration {
     v.sort_unstable();
     match v.len() {
         0 => Duration::ZERO,
-        n => v[(n * 95).div_ceil(100) - 1],
+        n => v[(n * p).div_ceil(100) - 1],
     }
 }
 
@@ -221,6 +238,22 @@ pub fn main(args: &[String]) -> Result<()> {
         })
         .collect();
 
+    // The latency gate: the first pod scenario, POD_RUNS times; a failed call counts as a
+    // timeout. Then the cluster-wide tools, with every scenario's objects in the cluster.
+    let pod_runs: Vec<Duration> = scenarios
+        .iter()
+        .find(|(_, s)| s.tool == "diagnose_pod")
+        .map(|(_, s)| {
+            (0..POD_RUNS)
+                .map(|_| call(&bin, &s.tool, &s.args).map_or(RESPONSE_TIMEOUT, |r| r.latency))
+                .collect()
+        })
+        .unwrap_or_default();
+    let cluster: Vec<(&str, Result<Response>)> = CLUSTER_TOOLS
+        .iter()
+        .map(|&t| (t, call(&bin, t, &json!({}))))
+        .collect();
+
     if !keep {
         let mut delete = kubectl();
         delete.args(["delete", "namespace", "--wait=false", "--ignore-not-found"]);
@@ -235,8 +268,20 @@ pub fn main(args: &[String]) -> Result<()> {
         }
     }
 
-    let summary = Summary::new(&outcomes);
-    let report = render(&scenarios, &outcomes, &summary)?;
+    let summary = Summary::new(&outcomes, &pod_runs);
+    let mut latencies: BTreeMap<String, Vec<Duration>> = BTreeMap::new();
+    for ((_, s), o) in scenarios.iter().zip(&outcomes) {
+        if let Ok(r) = &o.response {
+            latencies.entry(s.tool.clone()).or_default().push(r.latency);
+        }
+    }
+    if !pod_runs.is_empty() {
+        latencies
+            .entry("diagnose_pod".into())
+            .or_default()
+            .extend(&pod_runs);
+    }
+    let report = render(&scenarios, &outcomes, &summary, &latencies, &cluster)?;
     println!("{report}");
     if only.is_none() {
         let dir = root().join("evals/results");
@@ -246,7 +291,9 @@ pub fn main(args: &[String]) -> Result<()> {
         println!("wrote {}", path.display());
     }
     if !summary.passes() {
-        bail!("eval gates failed: need top-1 >= 85%, top-3 = 100%, forbidden = 0");
+        bail!(
+            "eval gates failed: need top-1 >= 85%, top-3 = 100%, forbidden = 0, diagnose_pod p95 < 2 s"
+        );
     }
     Ok(())
 }
@@ -427,7 +474,13 @@ impl Drop for Server {
     }
 }
 
-fn render(scenarios: &[(String, Scenario)], outcomes: &[Outcome], sum: &Summary) -> Result<String> {
+fn render(
+    scenarios: &[(String, Scenario)],
+    outcomes: &[Outcome],
+    sum: &Summary,
+    latencies: &BTreeMap<String, Vec<Duration>>,
+    cluster: &[(&str, Result<Response>)],
+) -> Result<String> {
     use std::fmt::Write as _;
     let k8s = output(kubectl().args([
         "get",
@@ -466,11 +519,42 @@ fn render(scenarios: &[(String, Scenario)], outcomes: &[Outcome], sum: &Summary)
             mark(o.score.forbidden)
         )?;
     }
+    md.push_str("\n| Tool | Calls | p50 ms | p95 ms |\n|---|---|---|---|\n");
+    for (tool, v) in latencies {
+        writeln!(
+            md,
+            "| {tool} | {} | {} | {} |",
+            v.len(),
+            percentile(v.clone(), 50).as_millis(),
+            percentile(v.clone(), 95).as_millis()
+        )?;
+    }
+    md.push_str("\nCluster-wide (no namespace), with every scenario applied:\n\n| Tool | Bytes | ms |\n|---|---|---|\n");
+    for (tool, r) in cluster {
+        match r {
+            Ok(r) => writeln!(md, "| {tool} | {} | {} |", r.bytes, r.latency.as_millis())?,
+            Err(e) => writeln!(
+                md,
+                "| {tool} | error: {} | - |",
+                format!("{e:#}").replace('|', "/")
+            )?,
+        }
+    }
+    let pod_p95 = sum.pod_p95.map_or_else(
+        || "not run (no diagnose_pod scenario)".to_owned(),
+        |p| {
+            format!(
+                "{} ms, gate < {} ms",
+                p.as_millis(),
+                POD_P95_GATE.as_millis()
+            )
+        },
+    );
     writeln!(
         md,
         "\n- Top-1 accuracy: {}/{} ({:.1}%), gate >= 85%\n- Top-3 accuracy: {}/{} ({:.1}%), gate = 100%\n\
          - Forbidden-finding rate: {}/{} ({:.1}%), gate = 0\n- Median response bytes: {}\n- p95 latency: {} ms\n\
-         - Gates: {}",
+         - diagnose_pod p95 over {POD_RUNS} runs: {pod_p95}\n- Gates: {}",
         sum.top1,
         sum.total,
         pct(sum.top1),
@@ -544,21 +628,18 @@ mod tests {
     }
 
     #[test]
-    fn median_and_p95() {
+    fn median_and_percentiles() {
         assert_eq!(median(vec![]), 0);
         assert_eq!(median(vec![5, 1, 3]), 3);
         assert_eq!(median(vec![4, 1, 3, 2]), 2);
         let ms = |v: &[u64]| v.iter().map(|&m| Duration::from_millis(m)).collect();
-        assert_eq!(p95(vec![]), Duration::ZERO);
-        assert_eq!(p95(ms(&[7])), Duration::from_millis(7));
-        assert_eq!(
-            p95(ms(&(1..=20).rev().collect::<Vec<_>>())),
-            Duration::from_millis(19)
-        );
-        assert_eq!(
-            p95(ms(&(1..=14).collect::<Vec<_>>())),
-            Duration::from_millis(14)
-        );
+        assert_eq!(percentile(vec![], 95), Duration::ZERO);
+        assert_eq!(percentile(ms(&[7]), 95), Duration::from_millis(7));
+        let twenty: Vec<u64> = (1..=20).rev().collect();
+        assert_eq!(percentile(ms(&twenty), 95), Duration::from_millis(19));
+        assert_eq!(percentile(ms(&twenty), 50), Duration::from_millis(10));
+        let fourteen: Vec<u64> = (1..=14).collect();
+        assert_eq!(percentile(ms(&fourteen), 95), Duration::from_millis(14));
     }
 
     #[test]
@@ -578,7 +659,7 @@ mod tests {
             .map(|i| outcome(hit(), 100 * i, 10 * i as u64))
             .collect();
         outcomes.push(outcome(top3_only(), 900, 1000));
-        let sum = Summary::new(&outcomes);
+        let sum = Summary::new(&outcomes, &[]);
         assert_eq!(
             (sum.top1, sum.top3, sum.median_bytes, sum.p95),
             (6, 7, 300, Duration::from_secs(1))
@@ -586,7 +667,7 @@ mod tests {
         assert!(sum.passes());
 
         outcomes[0].score = top3_only();
-        assert!(!Summary::new(&outcomes).passes());
+        assert!(!Summary::new(&outcomes, &[]).passes());
 
         outcomes[0].score = Score {
             top1: true,
@@ -594,7 +675,7 @@ mod tests {
             forbidden: true,
         };
         assert!(
-            !Summary::new(&outcomes).passes(),
+            !Summary::new(&outcomes, &[]).passes(),
             "any forbidden finding fails"
         );
 
@@ -602,13 +683,29 @@ mod tests {
             score: Score::default(),
             response: Err(anyhow::anyhow!("x")),
         };
-        let sum = Summary::new(&outcomes);
+        let sum = Summary::new(&outcomes, &[]);
         assert!(!sum.passes(), "a failed call misses top-3");
         assert_eq!(
             sum.median_bytes, 350,
             "failed calls are left out of size stats"
         );
-        assert!(!Summary::new(&[]).passes());
+        assert!(!Summary::new(&[], &[]).passes());
+
+        // The diagnose_pod gate: p95 of the repeated runs under 2 s.
+        let hits: Vec<Outcome> = (0..3).map(|_| outcome(hit(), 1, 1)).collect();
+        let runs = |slow: usize| -> Vec<Duration> {
+            (0..20)
+                .map(|i| Duration::from_millis(if i < slow { 2500 } else { 100 }))
+                .collect()
+        };
+        assert!(
+            Summary::new(&hits, &runs(1)).passes(),
+            "one slow run of 20 is the p100"
+        );
+        assert!(
+            !Summary::new(&hits, &runs(2)).passes(),
+            "two slow runs reach the p95"
+        );
     }
 
     #[test]

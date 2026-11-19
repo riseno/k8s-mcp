@@ -28,14 +28,17 @@ cargo xtask eval --scenario oom-killed --keep
 The runner builds `k8s-mcp`, applies every manifest (a scenario's optional `crds.yaml` first,
 waiting until its CRDs are established, then its optional `setup.yaml`, waiting until its
 ResourceQuotas are in force), waits for the longest `settle_seconds`, then calls
-each scenario's tool over stdio MCP and reports:
+each scenario's tool over stdio MCP, then calls the first `diagnose_pod` scenario 20 more times
+and the cluster-wide tools (`find_problems`, `recent_changes`, `upgrade_readiness`,
+`cluster_overview`, no namespace) once each, and reports:
 
-| Metric | v0.1 gate |
+| Metric | Gate |
 |---|---|
 | Top-1 accuracy (primary ranked first) | ≥ 85% |
 | Top-3 accuracy | 100% |
 | Forbidden-finding rate | 0 |
-| Median response bytes, p95 latency | reported |
+| `diagnose_pod` p95 over the 20 runs (a failed call counts as 60 s) | < 2 s (v1.0) |
+| Median response bytes, p95 latency, p50/p95 per tool, cluster-wide call times | reported |
 
 Results are written to `evals/results/<version>.md`; the command exits non-zero when a gate
 fails. Scenario objects' real statuses and events are kept as a test corpus in

@@ -5,6 +5,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-19
+
+The first stable release: tool and argument names, rule ids and the output envelope are stable
+across 1.x ([docs/stability.md](docs/stability.md)).
+
 ### Added
 - `gke_access` and `aks_access`, so every provider toolset has the same six tools. `gke_access`
   lists the RBAC bindings of Google users, service accounts and groups, and flags group

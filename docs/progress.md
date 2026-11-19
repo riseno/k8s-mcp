@@ -48,12 +48,12 @@ specification, which is not published.
 | 8 | Responses ≤ 24,000 bytes; median diagnose_pod ≤ 4,000 | ✅ | max 7,154; median diagnose_pod 3,447 |
 | 9 | Namespace-scoped Role still diagnoses, says what was unavailable | ✅ | `namespace_scoped_rbac_still_diagnoses` (kind) |
 | 10 | Signed `v0.1.0` release for 5 targets, brew, installer, image | ✅ | Released 2026-11-15 through `release-gate` (evals on kind 1.34/1.37): 5 targets with GitHub build-provenance attestations (verified with `gh attestation verify`), shell/PowerShell installers, signed `sha256.sum`, cosign-signed and attested `ghcr.io/riseno/k8s-mcp:v0.1.0` and `:latest`, SBOMs, `brew install riseno/tap/k8s-mcp`. The ghcr package is public (anonymous pull of `v0.1.0` and `latest` verified) |
-| 11 | README, docs site, references published; SECURITY.md | ✅ | Repo public; docs published to the [wiki](https://github.com/riseno/k8s-mcp/wiki) by `wiki.yml` (instead of GitHub Pages) |
+| 11 | README, docs site, references published; SECURITY.md | ✅ | Repo public; docs published to the wiki until v1.0, then to GitHub Pages (`docs.yml`) |
 
 ## Not done yet (v0.1 follow-ups)
 
 - `cargo xtask release-check` (quickstart in a clean container) is done by hand above; not scripted.
-- The 10 s list cache (ADR 0004) and the mdBook build in CI.
+- The 10 s list cache (ADR 0004). (The mdBook build in CI came with v1.0 task 2.)
 - First CI run on GitHub (workflows are untested there; `release.yml` uses dist's `$/` self-repo syntax, which actionlint 1.7.12 does not know yet).
 
 ## v0.2: In-cluster and EKS (plan)
@@ -221,7 +221,7 @@ row ends with the v1.0 acceptance criterion it serves.
 | # | Task | Status | Notes / criterion |
 |---|---|---|---|
 | 1 | Schema freeze: a golden snapshot of every tool's name, tier, toolset, annotations and input and output schemas, plus prompt and resource names and the Envelope shape, so any change fails CI unless it is deliberate; `docs/stability.md`: what is stable (tool and argument names, rule ids, the Envelope), what may change in 1.x (new tools, new optional arguments, new rule ids and fields), how deprecation works | ✅ | Done: `docs/surface-v1.json` (44 tools, prompts, resources, 129 rule ids, Envelope fields) and the `stability` tests in the server crate: `surface_is_compatible_with_v1` fails on any removal, retyping, tier change, narrower enum or newly required argument; `breaking_changes_are_caught` proves each kind of break is caught and additions pass. Regenerated once more before 1.0.0 so the release freezes what it ships. AC 1 |
-| 2 | Docs site: `book.toml`, mdBook build in CI (also closes the v0.1 follow-up), published to GitHub Pages on every docs change on main | ⬜ | Decision 1 (resolved). |
+| 2 | Docs site: `book.toml`, mdBook build in CI (also closes the v0.1 follow-up), published to GitHub Pages on every docs change on main | ✅ | Done: `book.toml` over `docs/` (its `SUMMARY.md`), `docs.yml` builds it on every docs change (failing on mdBook warnings) and deploys it to GitHub Pages from main; `wiki.yml` and its script are removed. Pages must be switched on once (Settings → Pages → Source: GitHub Actions). |
 | 3 | Eval scenarios 28–40+: failure modes that have rules but no scenario yet (for example a startup probe too short, a readiness probe timeout, a missing ServiceAccount, Pod Security, LimitRange and ValidatingAdmissionPolicy rejections, an image that is not executable, an init container crash loop, a CronJob that never runs, a Service whose targetPort names no port, an HPA without metrics, a NetworkPolicy blocking a Service, an unbound PVC with a missing StorageClass), each with a negative check | ⬜ | AC 2 |
 | 4 | Performance pass: `cargo xtask eval` reports p50/p95 per tool and runs `diagnose_pod` 20 times for a p95 gate (< 2 s) in CI; profile the slowest tools (`find_problems` cluster-wide, `upgrade_readiness`, `recent_changes`) on kind and fix what the numbers show | ⬜ | The 0.4.1 eval already measured p95 121 ms across tools. AC 4 |
 | 5 | Security review: `docs/security-review.md`, a checklist completed against the code (input validation, prompt injection, redaction, Secrets, SSRF in cloud paging, resource limits, the write tier, HTTP auth, exec plugins, supply chain); the threat model in `security.md` revisited for writes, HTTP, providers and exec plugins; property-based fuzzing of every parser (durations, selectors, versions, the deprecated-API metric, ExecCredential, confirm tokens, manifests, log shaping, redaction) | ⬜ | Decisions 3, 4. AC 3 |

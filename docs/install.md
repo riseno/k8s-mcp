@@ -29,7 +29,7 @@ All checks passed. Add k8s-mcp to your MCP client, e.g. `claude mcp add k8s -- k
 ```
 
 `doctor` exits non-zero with an actionable message on failure, for example when an exec
-plugin is not on `PATH` ("install it, or pass --path-prepend <dir>").
+plugin is not on `PATH` ("install it, or pass `--path-prepend <dir>`").
 
 ## A dedicated read-only identity
 

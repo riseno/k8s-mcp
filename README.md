@@ -172,4 +172,4 @@ cargo xtask eval               # diagnosis eval scenarios against kind
 cargo run -- doctor --kubeconfig ./.dev/kubeconfig
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/](docs/SUMMARY.md). Licence: [Apache-2.0](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the docs ([docs/](docs/SUMMARY.md), published at <https://riseno.github.io/k8s-mcp/>). Licence: [Apache-2.0](LICENSE).

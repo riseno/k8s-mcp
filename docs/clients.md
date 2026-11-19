@@ -1,6 +1,6 @@
 # MCP clients
 
-The snippets in the [README](../README.md#client-setup) work for Claude Code, Claude
+The snippets in the [README](https://github.com/riseno/k8s-mcp#client-setup) work for Claude Code, Claude
 Desktop, Cursor and Grok Build. Grok Build also reads `.mcp.json`, `.cursor/mcp.json` and
 `~/.claude.json`, so an existing Claude or Cursor entry works there too.
 

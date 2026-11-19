@@ -49,6 +49,12 @@ runs the evals on kind 1.34 and 1.37 and only then dispatches the dist-generated
 only skips the builds, and dist still creates an empty release, which is what happened to
 `v0.1.0-rc.2`.)
 
+After a release is published, `cargo xtask release-check [<version>]` (default: the latest
+release) runs the README quickstart on a clean machine: an `ubuntu:24.04` container on kind's
+Docker network runs the published shell installer, then `k8s-mcp doctor` against the kind
+cluster, and fails if either fails, the version differs, or the two take more than 60 s. The
+kind kubeconfig reaches the container on stdin; no copy is written to disk.
+
 ## Manual LLM-in-the-loop check
 
 Not run in CI: point Claude Code (headless) or Grok Build at the kind cluster, invoke the

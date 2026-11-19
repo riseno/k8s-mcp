@@ -27,6 +27,9 @@ dispatch-releases = true
 # Attest the release archives with GitHub artifact attestations (needs a public repo on
 # GitHub Free/Pro/Team plans).
 github-attestations = true
+# gzip archives: a clean machine has gzip but often not xz (ubuntu:24.04 has no xz-utils, so
+# the shell installer could not unpack a .tar.xz)
+unix-archive = ".tar.gz"
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Whether to install an updater program

@@ -1105,3 +1105,257 @@ mod docs {
         }
     }
 }
+
+/// v1.0 AC 1: the public surface may grow in 1.x but never loses or changes what 1.0 shipped
+/// (docs/stability.md). `docs/surface-v1.json` is that baseline; regenerate it only on purpose,
+/// with `K8S_MCP_UPDATE_SURFACE=1 cargo test -p k8s-mcp-server surface`.
+#[cfg(all(
+    test,
+    feature = "provider-eks",
+    feature = "provider-gke",
+    feature = "provider-aks"
+))]
+mod stability {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::Path;
+
+    use super::*;
+
+    /// The JSON types and enum values a property accepts, following `$ref`, `anyOf`, `oneOf`.
+    fn shape(p: &Value, defs: &Value, types: &mut BTreeSet<String>, values: &mut BTreeSet<String>) {
+        if let Some(r) = p.get("$ref").and_then(Value::as_str)
+            && let Some(d) = r.rsplit('/').next().and_then(|n| defs.get(n))
+        {
+            shape(d, defs, types, values);
+        }
+        for key in ["anyOf", "oneOf"] {
+            for alt in p.get(key).and_then(Value::as_array).into_iter().flatten() {
+                shape(alt, defs, types, values);
+            }
+        }
+        match p.get("type") {
+            Some(Value::String(t)) => {
+                types.insert(t.clone());
+            }
+            Some(Value::Array(ts)) => {
+                types.extend(ts.iter().filter_map(Value::as_str).map(str::to_owned));
+            }
+            _ => {}
+        }
+        if let Some(c) = p.get("const") {
+            values.insert(c.to_string());
+        }
+        values.extend(
+            p.get("enum")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(Value::to_string),
+        );
+    }
+
+    /// The comparable public surface of this build.
+    fn surface() -> Value {
+        let tools: BTreeMap<String, Value> = all_tools()
+            .iter()
+            .map(|t| {
+                let schema = Value::Object((*t.input_schema).clone());
+                let defs = schema.get("$defs").cloned().unwrap_or_default();
+                let inputs: BTreeMap<String, Value> = schema["properties"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(k, p)| {
+                        let (mut types, mut values) = (BTreeSet::new(), BTreeSet::new());
+                        shape(p, &defs, &mut types, &mut values);
+                        (k.clone(), json!({"types": types, "enum": values}))
+                    })
+                    .collect();
+                let required: BTreeSet<&str> = schema["required"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                (
+                    t.name.to_owned(),
+                    json!({"toolset": t.toolset, "tier": t.tier.as_str(), "inputs": inputs, "required": required}),
+                )
+            })
+            .collect();
+        let prompts: BTreeMap<String, Value> = prompts()
+            .into_iter()
+            .map(|p| {
+                let args: BTreeMap<String, bool> = p
+                    .arguments
+                    .iter()
+                    .flatten()
+                    .map(|a| (a.name.clone(), a.required.unwrap_or(false)))
+                    .collect();
+                (p.name.clone(), json!(args))
+            })
+            .collect();
+        let resources: BTreeSet<String> =
+            K8sMcp::resources().iter().map(|r| r.uri.clone()).collect();
+        let rules: BTreeSet<String> = rules_catalogue().iter().map(|r| r.id.to_owned()).collect();
+        let envelope = Value::Object((*schema_for_type::<Envelope>()).clone());
+        let fields: BTreeSet<&String> = envelope["properties"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(k, _)| k)
+            .collect();
+        json!({
+            "tools": tools,
+            "prompts": prompts,
+            "resources": resources,
+            "resource_templates": [OVERVIEW_TEMPLATE],
+            "rules": rules,
+            "envelope": fields,
+        })
+    }
+
+    /// A change to a surface, for the break-detection test.
+    type Edit = fn(&mut Value);
+
+    fn set(v: &Value) -> BTreeSet<String> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_owned))
+            .collect()
+    }
+
+    /// What `current` breaks for clients of `base`: removed or retyped tools, arguments,
+    /// prompts, resources, rule ids and Envelope fields, new required arguments, narrower enums.
+    fn breaks(base: &Value, current: &Value) -> Vec<String> {
+        let mut out = Vec::new();
+        for (name, b) in base["tools"].as_object().into_iter().flatten() {
+            let Some(c) = current["tools"].get(name) else {
+                out.push(format!("tool {name} was removed"));
+                continue;
+            };
+            for f in ["toolset", "tier"] {
+                if b[f] != c[f] {
+                    out.push(format!("tool {name}: {f} {} became {}", b[f], c[f]));
+                }
+            }
+            for (arg, bs) in b["inputs"].as_object().into_iter().flatten() {
+                let Some(cs) = c["inputs"].get(arg) else {
+                    out.push(format!("tool {name}: argument {arg} was removed"));
+                    continue;
+                };
+                if !set(&bs["types"]).is_subset(&set(&cs["types"])) {
+                    out.push(format!(
+                        "tool {name}: argument {arg} no longer accepts {}",
+                        bs["types"]
+                    ));
+                }
+                let (be, ce) = (set(&bs["enum"]), set(&cs["enum"]));
+                if !ce.is_empty() && !be.is_subset(&ce) || be.is_empty() && !ce.is_empty() {
+                    out.push(format!("tool {name}: argument {arg} accepts fewer values"));
+                }
+            }
+            for arg in set(&c["required"]).difference(&set(&b["required"])) {
+                out.push(format!("tool {name}: argument {arg} became required"));
+            }
+        }
+        for (name, b) in base["prompts"].as_object().into_iter().flatten() {
+            let Some(c) = current["prompts"].get(name) else {
+                out.push(format!("prompt {name} was removed"));
+                continue;
+            };
+            for (arg, req) in b.as_object().into_iter().flatten() {
+                match c.get(arg) {
+                    None => out.push(format!("prompt {name}: argument {arg} was removed")),
+                    Some(r) if r == &json!(true) && req == &json!(false) => {
+                        out.push(format!("prompt {name}: argument {arg} became required"));
+                    }
+                    Some(_) => {}
+                }
+            }
+            for (arg, r) in c.as_object().into_iter().flatten() {
+                if b.get(arg).is_none() && r == &json!(true) {
+                    out.push(format!("prompt {name}: new required argument {arg}"));
+                }
+            }
+        }
+        for key in ["resources", "resource_templates", "rules", "envelope"] {
+            for gone in set(&base[key]).difference(&set(&current[key])) {
+                out.push(format!("{key}: {gone} was removed"));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn surface_is_compatible_with_v1() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/surface-v1.json");
+        let current = surface();
+        if std::env::var_os("K8S_MCP_UPDATE_SURFACE").is_some() {
+            std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&current).unwrap() + "\n",
+            )
+            .unwrap();
+            return;
+        }
+        let base: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let broken = breaks(&base, &current);
+        assert!(
+            broken.is_empty(),
+            "the public surface broke compatibility with 1.0 (docs/stability.md):\n- {}",
+            broken.join("\n- ")
+        );
+    }
+
+    #[test]
+    fn breaking_changes_are_caught() {
+        let base = surface();
+        assert!(breaks(&base, &base).is_empty());
+        let edits: [(&str, Edit); 6] = [
+            ("tool get_logs was removed", |s| {
+                s["tools"].as_object_mut().unwrap().remove("get_logs");
+            }),
+            ("argument tail was removed", |s| {
+                s["tools"]["get_logs"]["inputs"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("tail");
+            }),
+            ("argument tail became required", |s| {
+                s["tools"]["get_logs"]["required"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!("tail"));
+            }),
+            ("tier", |s| s["tools"]["get_logs"]["tier"] = json!("write")),
+            ("rules: pod.oom.container was removed", |s| {
+                let rules = s["rules"].as_array_mut().unwrap();
+                rules.retain(|r| r != "pod.oom.container");
+            }),
+            ("envelope: summary was removed", |s| {
+                s["envelope"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|f| f != "summary");
+            }),
+        ];
+        for (expected, edit) in edits {
+            let mut current = base.clone();
+            edit(&mut current);
+            let broken = breaks(&base, &current);
+            assert!(
+                broken.iter().any(|b| b.contains(expected)),
+                "{expected}: {broken:?}"
+            );
+        }
+        // Additions are compatible.
+        let mut grown = base.clone();
+        grown["tools"]["new_tool"] =
+            json!({"toolset": "core", "tier": "read", "inputs": {}, "required": []});
+        grown["tools"]["get_logs"]["inputs"]["new_flag"] =
+            json!({"types": ["boolean"], "enum": []});
+        assert!(breaks(&base, &grown).is_empty());
+    }
+}

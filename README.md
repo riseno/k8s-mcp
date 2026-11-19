@@ -101,6 +101,8 @@ NEXT
 | `aks` (when the cluster is AKS) | `aks_cluster_info`, `aks_node_pools`, `aks_addons`, `aks_identity_check`, `aks_logs` ([docs/providers/aks.md](docs/providers/aks.md)) |
 | write (`--allow-write`) | `restart_workload`, `scale_workload`, `rollback_workload`, `delete_pod`, `cordon_node`, `uncordon_node`; with `--allow-destructive` also `drain_node`, `apply_manifest` ([docs/writes.md](docs/writes.md)) |
 
+From 1.0, tool names and arguments, rule ids and the output envelope are stable across 1.x ([docs/stability.md](docs/stability.md)).
+
 Prompts: `investigate-incident`, `cluster-health-check`, `explain-workload`, `access-review`, `upgrade-readiness`. Resources: `k8s-mcp://policy`, `k8s-mcp://contexts`, `k8s-mcp://rules` and the template `k8s-mcp://cluster/{context}/overview`. See [docs/tools.md](docs/tools.md) and [docs/rules.md](docs/rules.md).
 
 ## In-cluster endpoint

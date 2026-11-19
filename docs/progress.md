@@ -220,7 +220,7 @@ row ends with the v1.0 acceptance criterion it serves.
 
 | # | Task | Status | Notes / criterion |
 |---|---|---|---|
-| 1 | Schema freeze: a golden snapshot of every tool's name, tier, toolset, annotations and input and output schemas, plus prompt and resource names and the Envelope shape, so any change fails CI unless it is deliberate; `docs/stability.md`: what is stable (tool and argument names, rule ids, the Envelope), what may change in 1.x (new tools, new optional arguments, new rule ids and fields), how deprecation works | ⬜ | AC 1 |
+| 1 | Schema freeze: a golden snapshot of every tool's name, tier, toolset, annotations and input and output schemas, plus prompt and resource names and the Envelope shape, so any change fails CI unless it is deliberate; `docs/stability.md`: what is stable (tool and argument names, rule ids, the Envelope), what may change in 1.x (new tools, new optional arguments, new rule ids and fields), how deprecation works | ✅ | Done: `docs/surface-v1.json` (44 tools, prompts, resources, 129 rule ids, Envelope fields) and the `stability` tests in the server crate: `surface_is_compatible_with_v1` fails on any removal, retyping, tier change, narrower enum or newly required argument; `breaking_changes_are_caught` proves each kind of break is caught and additions pass. Regenerated once more before 1.0.0 so the release freezes what it ships. AC 1 |
 | 2 | Docs site: `book.toml`, mdBook build in CI (also closes the v0.1 follow-up), published to GitHub Pages on every docs change on main | ✅ | Done: `book.toml` over `docs/` (its `SUMMARY.md`), `docs.yml` builds it on every docs change (failing on mdBook warnings) and deploys it to GitHub Pages from main; `wiki.yml` and its script are removed. Pages must be switched on once (Settings → Pages → Source: GitHub Actions). |
 | 3 | Eval scenarios 28–40+: failure modes that have rules but no scenario yet (for example a startup probe too short, a readiness probe timeout, a missing ServiceAccount, Pod Security, LimitRange and ValidatingAdmissionPolicy rejections, an image that is not executable, an init container crash loop, a CronJob that never runs, a Service whose targetPort names no port, an HPA without metrics, a NetworkPolicy blocking a Service, an unbound PVC with a missing StorageClass), each with a negative check | ⬜ | AC 2 |
 | 4 | Performance pass: `cargo xtask eval` reports p50/p95 per tool and runs `diagnose_pod` 20 times for a p95 gate (< 2 s) in CI; profile the slowest tools (`find_problems` cluster-wide, `upgrade_readiness`, `recent_changes`) on kind and fix what the numbers show | ⬜ | The 0.4.1 eval already measured p95 121 ms across tools. AC 4 |
@@ -234,7 +234,7 @@ row ends with the v1.0 acceptance criterion it serves.
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | Tool names and schemas are frozen, with a documented deprecation policy | ⬜ | |
+| 1 | Tool names and schemas are frozen, with a documented deprecation policy | ✅ | `docs/surface-v1.json`, `stability::surface_is_compatible_with_v1` and `breaking_changes_are_caught`, `docs/stability.md` |
 | 2 | 40 or more scenarios | ⬜ | |
 | 3 | An external security review checklist is completed (threat model revisited, fuzzing of parsers) | ⬜ | |
 | 4 | p95 latency for `diagnose_pod` is under 2 seconds on kind | ⬜ | |

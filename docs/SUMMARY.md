@@ -8,6 +8,7 @@
 - [MCP clients](clients.md)
 - [Tools](tools.md)
 - [Write tools](writes.md)
+- [Stability and deprecation](stability.md)
 - [Output format](output.md)
 - [Detection rules](rules.md)
 - [Security and threat model](security.md)

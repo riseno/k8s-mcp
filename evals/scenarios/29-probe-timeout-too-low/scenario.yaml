@@ -1,0 +1,9 @@
+id: probe-timeout-too-low
+symptom: The api pod in eval-probe-timeout-too-low is running but never Ready. The health check passes when I run it by hand. Why?
+tool: diagnose_pod
+args: {name: api, namespace: eval-probe-timeout-too-low}
+settle_seconds: 40
+expected:
+  primary: pod.probe.timeout_too_low
+  acceptable: [pod.probe.readiness_failing]
+forbidden: [pod.probe.port_mismatch, pod.crashloop.app_error]

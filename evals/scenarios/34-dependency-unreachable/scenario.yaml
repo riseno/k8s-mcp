@@ -1,0 +1,9 @@
+id: dependency-unreachable
+symptom: The api pod in eval-dependency-unreachable crash-loops right after starting. Why?
+tool: diagnose_pod
+args: {name: api, namespace: eval-dependency-unreachable}
+settle_seconds: 60
+expected:
+  primary: pod.crashloop.dependency_unreachable
+  acceptable: []
+forbidden: [pod.crashloop.command_not_found, pod.crashloop.exit_zero, pod.oom.container]

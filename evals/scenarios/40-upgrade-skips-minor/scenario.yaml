@@ -1,0 +1,9 @@
+id: upgrade-skips-minor
+symptom: We want to upgrade straight to Kubernetes 1.40. Is eval-upgrade-skips-minor ready for it?
+tool: upgrade_readiness
+args: {namespace: eval-upgrade-skips-minor, target_version: "1.40"}
+settle_seconds: 10
+expected:
+  primary: upgrade.target_skips_minor
+  acceptable: []
+forbidden: [upgrade.single_replica_workloads, upgrade.pdb_blocks_drain]

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-dns-bypass}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: client, namespace: eval-dns-bypass}
+spec:
+  # Copied from a hostNetwork pod: uses the node's resolv.conf, which knows no cluster names.
+  dnsPolicy: Default
+  containers:
+    - name: client
+      image: busybox:1.37
+      command: [sh, -c, "while true; do nslookup -timeout=2 db.eval-dns-bypass.svc.cluster.local >/dev/null 2>&1 || echo 'dial tcp: lookup db.eval-dns-bypass.svc.cluster.local: no such host'; sleep 5; done"]

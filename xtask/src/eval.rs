@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn scenarios_are_valid() {
         let all = load_scenarios(None).unwrap();
-        assert!(all.len() >= 25, "v0.3 needs at least 25 scenarios");
+        assert!(all.len() >= 40, "v1.0 needs at least 40 scenarios");
         for (dir, s) in &all {
             assert!(
                 [
@@ -622,6 +622,7 @@ mod tests {
                     "diagnose_workload",
                     "diagnose_service",
                     "diagnose_dns",
+                    "diagnose_pvc",
                     "autoscaling_status",
                     "upgrade_readiness"
                 ]

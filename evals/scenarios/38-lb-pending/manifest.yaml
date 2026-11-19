@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-lb-pending}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: eval-lb-pending}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec: {containers: [{name: web, image: "nginx:1.31-alpine", ports: [{containerPort: 80}]}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: web, namespace: eval-lb-pending}
+spec:
+  type: LoadBalancer
+  selector: {app: web}
+  ports: [{port: 80, targetPort: 80}]

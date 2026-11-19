@@ -1,0 +1,9 @@
+id: topology-spread
+symptom: The web pod in eval-topology-spread is stuck Pending, but the node has plenty of free capacity. Why?
+tool: diagnose_pod
+args: {name: web, namespace: eval-topology-spread}
+settle_seconds: 20
+expected:
+  primary: pod.pending.topology_spread
+  acceptable: []
+forbidden: [pod.pending.insufficient_resources, pod.pending.node_selector_affinity, pod.pending.taints]

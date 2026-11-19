@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-pvc-missing-storageclass}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: data, namespace: eval-pvc-missing-storageclass}
+spec:
+  # Copied from another cluster; kind only has "standard".
+  storageClassName: fast-ssd
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}

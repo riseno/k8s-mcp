@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: eval-job-deadline-exceeded}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: export, namespace: eval-job-deadline-exceeded}
+spec:
+  # The work takes an hour; the Job allows 10 seconds.
+  activeDeadlineSeconds: 10
+  template:
+    spec:
+      restartPolicy: Never
+      containers: [{name: export, image: "busybox:1.37", command: [sleep, "3600"]}]

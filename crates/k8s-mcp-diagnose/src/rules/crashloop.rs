@@ -101,12 +101,28 @@ fn log_cause(ev: &PodEvidence, container: &str) -> Option<LogCause> {
 /// Check every main container.
 pub fn check(ev: &PodEvidence, out: &mut Vec<Finding>) {
     for (c, st) in containers(&ev.pod) {
-        if let Some(st) = st
-            && is_crashlooping(st)
-        {
+        let Some(st) = st else { continue };
+        if is_crashlooping(st) {
             out.extend(classify(ev, c, st));
+        } else if waiting_reason(st) == Some("RunContainerError") {
+            out.extend(command_failure(ev, c, st));
         }
     }
+}
+
+/// A container the runtime cannot start because its command is missing or not executable,
+/// named from its first failed start; [`super::config`] leaves these out.
+pub(crate) fn command_failure(
+    ev: &PodEvidence,
+    c: &Container,
+    st: &ContainerStatus,
+) -> Option<Finding> {
+    classify(ev, c, st).filter(|f| {
+        matches!(
+            f.id.as_str(),
+            "pod.crashloop.command_not_found" | "pod.crashloop.not_executable"
+        )
+    })
 }
 
 /// True if the container is in (or heading into) CrashLoopBackOff.

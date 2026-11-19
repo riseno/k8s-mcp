@@ -335,7 +335,8 @@ fn endpoints(ev: &DnsEvidence, dns_ready: Option<usize>, out: &mut Vec<Finding>)
 
 /// A pod whose resolv.conf does not point at the cluster DNS: `dnsPolicy: None` or `Default`
 /// without the kube-dns ClusterIP among its nameservers, or `ClusterFirst` on the host network,
-/// which falls back to `Default`. `medium` when its logs show failed `.svc` lookups, else `info`.
+/// which falls back to `Default`. `high` when its logs show failed `.svc` lookups (it is their root
+/// cause, and ranks above `dns.app_resolution_errors`), else `info`.
 fn bypasses_cluster_dns(ev: &DnsEvidence, pod: &Pod, out: &mut Vec<Finding>) {
     let Some(spec) = &pod.spec else {
         return;
@@ -396,7 +397,7 @@ fn bypasses_cluster_dns(ev: &DnsEvidence, pod: &Pod, out: &mut Vec<Finding>) {
     let (name, _) = pod_ref(pod);
     let mut f = Finding::new(
         "dns.pod_bypasses_cluster_dns",
-        if failed.is_empty() { Severity::Info } else { Severity::Medium },
+        if failed.is_empty() { Severity::Info } else { Severity::High },
         confidence,
         format!("pod {name} does not use the cluster DNS, so Service names do not resolve"),
     )
@@ -590,7 +591,13 @@ mod tests {
             .unwrap();
         assert_eq!(
             (f.severity, f.confidence),
-            (Severity::Medium, Confidence::High)
+            (Severity::High, Confidence::High)
+        );
+        let mut ranked = out.clone();
+        k8s_mcp_core::finding::rank(&mut ranked);
+        assert_eq!(
+            ranked[0].id, "dns.pod_bypasses_cluster_dns",
+            "the root cause ranks first"
         );
         assert_eq!(
             f.evidence[0].text,
@@ -598,6 +605,15 @@ mod tests {
         );
         assert!(f.evidence[1].text.contains("db.shop.svc.cluster.local"));
         assert!(f.fix.contains("add 10.96.0.10 to dnsConfig.nameservers"));
+
+        // dnsPolicy Default is only medium confidence: it ties with the symptom and keeps rule order.
+        let mut ev = dns_fixture("dns/pod-bypasses.yaml");
+        spec(&mut ev).dns_policy = Some("Default".into());
+        spec(&mut ev).dns_config = None;
+        let mut ranked = Vec::new();
+        check_cluster(&ev, &mut ranked);
+        k8s_mcp_core::finding::rank(&mut ranked);
+        assert_eq!(ranked[0].id, "dns.pod_bypasses_cluster_dns");
 
         let mut ev = dns_fixture("dns/pod-bypasses.yaml");
         ev.pod_logs.clear();

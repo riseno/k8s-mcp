@@ -1,0 +1,9 @@
+id: missing-serviceaccount
+symptom: The builder deployment in eval-missing-serviceaccount has no pods at all. What is wrong?
+tool: diagnose_workload
+args: {kind: Deployment, name: builder, namespace: eval-missing-serviceaccount}
+settle_seconds: 20
+expected:
+  primary: pod.config.missing_serviceaccount
+  acceptable: [workload.create_failed, workload.replicas.unavailable]
+forbidden: [pod.pending.quota, pod.pending.insufficient_resources]

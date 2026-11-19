@@ -1,0 +1,9 @@
+id: job-deadline-exceeded
+symptom: The export job in eval-job-deadline-exceeded failed although its pod never crashed. What happened?
+tool: diagnose_workload
+args: {kind: Job, name: export, namespace: eval-job-deadline-exceeded}
+settle_seconds: 30
+expected:
+  primary: job.deadline_exceeded
+  acceptable: []
+forbidden: [job.backoff_limit, pod.crashloop.app_error]

@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Eval scenarios 28–40 (40 in total): a startup probe too short, a readiness probe timeout, a
+  missing ServiceAccount, Pod Security and LimitRange rejections, a command that is not
+  executable, a refused dependency, an unsatisfiable topology spread, a Job deadline, a missing
+  StorageClass, a pending LoadBalancer, a pod that bypasses cluster DNS, and an upgrade target
+  that skips minor versions.
 - The public surface is frozen for 1.x: `docs/surface-v1.json` records every tool's name,
   toolset, tier and argument types, the prompts, resources, rule ids and Envelope fields, and a
   test fails on anything that removes or changes them; `docs/stability.md` describes what is
@@ -15,6 +20,14 @@ All notable changes are documented here. The format follows
 - The docs are an mdBook site (`book.toml` over `docs/`), built on every docs change in CI and
   published to GitHub Pages at <https://riseno.github.io/k8s-mcp/>; the wiki is no longer
   updated.
+
+### Fixed
+- `dns.pod_bypasses_cluster_dns` is `high` (was `medium`) when the pod logs failed `.svc`
+  lookups, so it ranks above the `dns.app_resolution_errors` symptom it explains.
+- A container whose command is missing or not executable (`RunContainerError`, last state
+  `StartError`) is one finding, `pod.crashloop.command_not_found` or
+  `pod.crashloop.not_executable`, from its first failed start; before, it was a generic
+  `pod.config.create_container_error` until the third restart, and both findings after it.
 
 ## [0.4.1] - 2026-11-18
 

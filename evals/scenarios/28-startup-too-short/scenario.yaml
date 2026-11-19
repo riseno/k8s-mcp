@@ -1,0 +1,9 @@
+id: startup-too-short
+symptom: The api pod in eval-startup-too-short restarts every few seconds and never becomes ready, but it works locally. Why?
+tool: diagnose_pod
+args: {name: api, namespace: eval-startup-too-short}
+settle_seconds: 60
+expected:
+  primary: pod.probe.startup_too_short
+  acceptable: []
+forbidden: [pod.probe.port_mismatch, pod.crashloop.sigkill, pod.crashloop.app_error, pod.oom.container]

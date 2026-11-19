@@ -1,0 +1,9 @@
+id: pod-security-rejected
+symptom: The web deployment in eval-pod-security-rejected shows 0 of 1 replicas and no pods. What is blocking it?
+tool: diagnose_workload
+args: {kind: Deployment, name: web, namespace: eval-pod-security-rejected}
+settle_seconds: 20
+expected:
+  primary: workload.create_failed
+  acceptable: [workload.replicas.unavailable]
+forbidden: [pod.config.missing_serviceaccount, pod.pending.quota]

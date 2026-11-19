@@ -61,6 +61,9 @@ spec:
             {{- with .Values.allowedOrigins }}
             - --allowed-origins={{ join "," . }}
             {{- end }}
+            {{- if .Values.helmReleases.enabled }}
+            - --allow-helm-releases
+            {{- end }}
             {{- if .Values.writes.enabled }}
             {{- if or (ne .Values.auth.mode "tokenreview") (empty .Values.auth.allowedCallers) }}
             {{- fail "writes.enabled needs auth.mode=tokenreview and auth.allowedCallers: name the users or groups that may change the cluster" }}

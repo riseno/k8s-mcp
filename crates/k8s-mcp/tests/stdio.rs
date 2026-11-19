@@ -457,6 +457,41 @@ async fn silent_api_server_fails_with_the_network_error() {
     client.cancel().await.unwrap();
 }
 
+/// v1.0: the Helm release tools are registered only with --allow-helm-releases, read-only.
+#[tokio::test]
+async fn helm_tools_need_allow_helm_releases() {
+    let dir = tempfile::tempdir().unwrap();
+    let kc = offline_kubeconfig(dir.path(), "https://127.0.0.1:1", "    token: t");
+    let kc = kc.to_str().unwrap();
+    let helm = |tools: &[rmcp::model::Tool]| -> Vec<String> {
+        tools
+            .iter()
+            .filter(|t| t.name.starts_with("helm_"))
+            .map(|t| t.name.to_string())
+            .collect()
+    };
+    let client = spawn(&["--kubeconfig", kc, "--audit-log", "off"]).await;
+    assert!(helm(&client.list_all_tools().await.unwrap()).is_empty());
+    client.cancel().await.unwrap();
+    let client = spawn(&[
+        "--kubeconfig",
+        kc,
+        "--audit-log",
+        "off",
+        "--allow-helm-releases",
+    ])
+    .await;
+    let tools = client.list_all_tools().await.unwrap();
+    assert_eq!(helm(&tools), ["helm_releases", "helm_release"]);
+    assert!(
+        tools
+            .iter()
+            .filter(|t| t.name.starts_with("helm_"))
+            .all(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
+    );
+    client.cancel().await.unwrap();
+}
+
 /// v0.4 AC 1 and 5: write tools are registered only with --allow-write (annotated as
 /// destructive), are refused by name without it, and every write call is audited with its tier
 /// and `dry_run`.

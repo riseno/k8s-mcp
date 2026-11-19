@@ -26,6 +26,11 @@ The chart creates:
   aggregated API that is down (metrics-server crashed or without endpoints) from one that is
   not installed.
 
+**Helm releases.** `helmReleases.enabled: true` registers `helm_releases` and `helm_release`
+and adds `get` and `list` on Secrets, where Helm stores its release records. `list` on Secrets
+lets the ServiceAccount read every Secret; k8s-mcp only decodes Helm's records and never
+shows their values, manifests or chart files.
+
 **Secret values in logs.** The ClusterRole includes `get` on Secrets (`rbac.secretsMetadata:
 true`, the default) so the server can mask the values of the Secrets a pod uses in that pod's
 logs. It never returns them, but its ServiceAccount can read every Secret. With

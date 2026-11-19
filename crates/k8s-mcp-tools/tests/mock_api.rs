@@ -11,7 +11,8 @@ use k8s_mcp_testkit::{load, now};
 use k8s_mcp_tools::{
     AutoscalingStatusInput, Ctx, DiagnoseDnsInput, DiagnosePodInput, DiagnosePvcInput,
     DiagnoseServiceInput, DiagnoseWorkloadInput, FindProblemsInput, GetLogsInput, GetResourceInput,
-    ListEventsInput, ListResourcesInput, RecentChangesInput, RolloutHistoryInput,
+    HelmReleaseInput, HelmReleasesInput, ListEventsInput, ListResourcesInput, RecentChangesInput,
+    RolloutHistoryInput,
 };
 use serde_json::{Value, json};
 
@@ -1999,4 +2000,122 @@ async fn upgrade_readiness_in_cluster_hints() {
         "{:?}",
         deprecated.evidence
     );
+}
+
+/// v1.0 Helm release inspection: the releases and one release's history come from Helm's
+/// release records, and nothing from their values, manifests or chart files is shown.
+#[tokio::test]
+async fn helm_releases_show_metadata_and_never_values() {
+    // base64(gzip(release JSON)), as Helm 3 stores it; every record's values, manifest and
+    // notes carry the password "hunter2".
+    let record = |name: &str, rev: u32, status: &str, blob: &str| {
+        json!({"apiVersion": "v1", "kind": "Secret", "type": "helm.sh/release.v1",
+            "metadata": {"name": format!("sh.helm.release.v1.{name}.v{rev}"), "namespace": "shop",
+                "labels": {"owner": "helm", "name": name, "version": rev.to_string(), "status": status}},
+            "data": {"release": k8s_openapi::ByteString(blob.as_bytes().to_vec())}})
+    };
+    let (web2, web1, db1) = (
+        record(
+            "web",
+            2,
+            "failed",
+            "H4sIAAAAAAAC/3VRwU7DMAz9lShn1rUdAhSJGxIXTsB2QJWQ17htROtGibsNTf13kpQhOHCK/Ow8v/d8lgQDSiXkEffySqTSW6gT5rvRRvCAzpuRAlSGqh6pMW0ozlLv02PB++PodPzTTcToSjnPYXQAMg16jg2wZrfwKHEoKvowpJV4wdohV+TZGWofgCEQ2qMS3zxzRVGBoWZMqzwDTz7yNWB61LHZg+d3jbYfPzFpKPPyZlUUq+L6tSjUJld5/hYHNfraGcuLF7m1rQONoormKykWRiWCQcYTC42ge0Mo8FQj6mUZjYxp/yOy4A7F9vkpqGW2ar0OPFkMrSLQgyFxCeb+J5WYXweOk5kBGXSwnIrLIag1dPqbuizusjLLIwjW7n7hWXmbbRLrAfopCfvvHPMXhIH7PuwBAAA=",
+        ),
+        record(
+            "web",
+            1,
+            "superseded",
+            "H4sIAAAAAAAC/3VQXUvEMBD8KyHPXq+poNJnQQSf/LgHOZC9ZnsNtpuQbO+Uo//dZE9BH4RAmMlmZnZOmmBC3Sp9xJ2+UAJTgE64NPhQyAPG5DxlymTUeerdPoOTtju5AqR09NGWP8NMjLHRy5JHJyDXY+LyAMFtzjqtOpgtvTuyrXrCLiJvKXF0tL8FhiwYjq361lm2VBI46r1YJQaek4SbQ5ZDi7YMjJD4zWIY/SdKjqZurlbGrMzls6nbupzXMmgxddEFPu+j77MzjKPq/BRGZJQOPKNY3CErHlC9PD7kQMyhXa9zT5X0UvbrBogsuSZksDm9gJ9Oae/o42+B2txUpqoLCSFsfvFVc101onqAcZYA/zW7fAFfye69twEAAA==",
+        ),
+        record(
+            "db",
+            1,
+            "deployed",
+            "H4sIAAAAAAAC/3VQwUrEMBD9lZKzW5IeVuzZi2dlD1KQMZm2wTSJmWkXWfrvJlkVPQiB8N7MvDfzLsLDgqJvhHkVN01FFEFXiuYQC7lhIht8plRGOvjRThlcykz5IhCdQzJlZl49Y+rEvufWBbwdkbgUINrTVadvNjX4N+tN3zyiTsiDJ07WT/fAkAXjuW++dPbBlw2sH0O1IgZeqe6L0YUPNKXsgPjlh8jFTnbHg1IHJZ/kXS9lfs+l0SDpZCNfrxEP2Reca3RYokPGmkBgrAaiXKBnSFydF2Qweb8KvkOLgXhKSO/ub05CHVvZykJCjKdf/G3bVeEN3Fp9/otv/wQiQC3YmwEAAA==",
+        ),
+    );
+    let secret = |r: &Value| {
+        format!(
+            "/api/v1/namespaces/shop/secrets/{}",
+            r["metadata"]["name"].as_str().unwrap()
+        )
+    };
+    let mock = MockApi::new()
+        .list(
+            "/api/v1/namespaces/shop/secrets",
+            vec![web2.clone(), web1.clone(), db1.clone()],
+        )
+        .get(&secret(&web2), web2.clone())
+        .get(&secret(&web1), web1.clone())
+        .get(&secret(&db1), db1.clone())
+        .start();
+    let c = ctx(&mock, Policy::permissive());
+
+    let list = k8s_mcp_tools::helm_releases(&c, HelmReleasesInput::default())
+        .await
+        .unwrap();
+    assert_eq!(list.summary, "2 Helm release(s), 1 not deployed.");
+    let rows: Vec<String> = list
+        .items
+        .iter()
+        .map(|i| {
+            format!(
+                "{} r{} {} {} {}",
+                i["name"].as_str().unwrap(),
+                i["revision"],
+                i["status"].as_str().unwrap(),
+                i["chart"].as_str().unwrap(),
+                i["app_version"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "db r1 deployed postgresql-16.0.0 17.2",
+            "web r2 failed nginx-18.2.0 1.27.3"
+        ]
+    );
+
+    let one = k8s_mcp_tools::helm_release(
+        &c,
+        HelmReleaseInput {
+            name: "web".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        one.summary
+            .starts_with("Helm release web (shop): revision 2, failed, chart nginx-18.2.0"),
+        "{}",
+        one.summary
+    );
+    assert_eq!(
+        one.items[0]["description"],
+        "Upgrade \"web\" failed: context deadline exceeded"
+    );
+    assert_eq!(one.items[1]["status"], "superseded");
+    assert!(one.summary.ends_with("; 2 revision(s)."), "{}", one.summary);
+    assert_eq!(one.sections[0].lines[0], "Get the URL: http://web.shop");
+
+    for e in [&list, &one] {
+        let (text, json) = (e.render(), e.to_json().to_string());
+        assert!(
+            !text.contains("hunter2") && !json.contains("hunter2"),
+            "{text}\n{json}"
+        );
+        assert!(json.contains(r#""untrusted_fields""#), "{json}");
+    }
+    let err = k8s_mcp_tools::helm_release(
+        &c,
+        HelmReleaseInput {
+            name: "api".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, k8s_mcp_core::Error::NotFound(_)), "{err}");
 }

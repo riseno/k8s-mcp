@@ -99,6 +99,7 @@ NEXT
 | `eks` (when the cluster is EKS) | `eks_cluster_info`, `eks_nodegroups`, `eks_addons`, `eks_access`, `eks_identity_check`, `eks_logs` ([docs/providers/eks.md](docs/providers/eks.md)) |
 | `gke` (when the cluster is GKE) | `gke_cluster_info`, `gke_node_pools`, `gke_addons`, `gke_identity_check`, `gke_logs` ([docs/providers/gke.md](docs/providers/gke.md)) |
 | `aks` (when the cluster is AKS) | `aks_cluster_info`, `aks_node_pools`, `aks_addons`, `aks_identity_check`, `aks_logs` ([docs/providers/aks.md](docs/providers/aks.md)) |
+| `helm` (`--allow-helm-releases`) | `helm_releases`, `helm_release`: releases, revision history, failure descriptions and notes from Helm's release records; values are never shown |
 | write (`--allow-write`) | `restart_workload`, `scale_workload`, `rollback_workload`, `delete_pod`, `cordon_node`, `uncordon_node`; with `--allow-destructive` also `drain_node`, `apply_manifest` ([docs/writes.md](docs/writes.md)) |
 
 From 1.0, tool names and arguments, rule ids and the output envelope are stable across 1.x ([docs/stability.md](docs/stability.md)).
@@ -148,6 +149,7 @@ No config file is needed; every flag also reads `K8S_MCP_<FLAG>` (for example `K
 | `--deny-namespaces <glob,...>` | none | Deny-list (wins over allow) |
 | `--allow-write` | off | Register the write tools: each change is a server-side dry-run plan first and needs the plan's confirm token |
 | `--allow-destructive` | off | Also register `drain_node` and `apply_manifest`; needs `--allow-write` |
+| `--allow-helm-releases` | off | Register `helm_releases` and `helm_release` (needs `list` on Secrets, where Helm keeps its records) |
 | `--write-deny-namespaces <glob,...>` | `kube-system,kube-public,kube-node-lease` | Namespaces no write tool changes objects in (`''` clears the list) |
 | `--redact strict\|standard\|off` | `standard` | Redaction level |
 | `--max-output-bytes` | `24000` | Hard cap per tool response |

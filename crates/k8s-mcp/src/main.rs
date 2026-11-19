@@ -61,6 +61,7 @@ enum Redact {
 
 /// Flags (each also readable from `K8S_MCP_<FLAG>`). No config file is needed.
 #[derive(Args, Clone)]
+#[allow(clippy::struct_excessive_bools)] // each bool is a command-line switch
 pub struct Opts {
     /// MCP transport: stdio, or streamable HTTP (`/mcp`) for in-cluster use.
     #[arg(
@@ -152,6 +153,9 @@ pub struct Opts {
     /// Also register the destructive tools (drain_node, apply_manifest); needs --allow-write.
     #[arg(long, global = true, env = "K8S_MCP_ALLOW_DESTRUCTIVE")]
     allow_destructive: bool,
+    /// Register helm_releases and helm_release, which read Helm's release records (Secrets): needs `list` on Secrets. Values are never shown.
+    #[arg(long, global = true, env = "K8S_MCP_ALLOW_HELM_RELEASES")]
+    allow_helm_releases: bool,
     /// Namespaces no write tool changes objects in (globs, comma separated; '' clears the list).
     #[arg(
         long,
@@ -375,6 +379,9 @@ async fn toolsets(opts: &Opts, ctx: &Ctx) -> anyhow::Result<Vec<String>> {
         bail!("unknown provider {bad:?}: use auto, none, eks, gke or aks");
     }
     let mut out = opts.toolsets.clone();
+    if opts.allow_helm_releases {
+        out.push("helm".into());
+    }
     if p.iter().any(|x| x == "none") {
         if p.len() > 1 {
             bail!("--providers none cannot be combined with other providers");

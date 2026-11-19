@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Helm release inspection, opt-in (`--allow-helm-releases`, chart value
+  `helmReleases.enabled`): `helm_releases` lists releases (latest revision, status, chart,
+  app version, last update) and `helm_release` shows one release's revisions with Helm's
+  description (why an install or upgrade failed) and the latest notes, redacted. Both decode
+  Helm 3's release records; values, manifests and chart files are never deserialised, so
+  they cannot be shown.
 - `cargo xtask release-check [<version>]`: the README quickstart (published installer, then
   `k8s-mcp doctor` against kind) in a clean `ubuntu:24.04` container, within 60 s.
 - Eval scenarios 28–40 (40 in total): a startup probe too short, a readiness probe timeout, a

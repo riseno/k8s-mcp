@@ -61,7 +61,11 @@ rules:
   # upgrade_readiness: the API server's apiserver_requested_deprecated_apis metric.
   - nonResourceURLs: [/metrics]
     verbs: [get]
-  {{- if .Values.rbac.secretsMetadata }}
+  {{- if .Values.helmReleases.enabled }}
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list]
+  {{- else if .Values.rbac.secretsMetadata }}
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get]

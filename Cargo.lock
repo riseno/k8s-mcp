@@ -2556,6 +2556,7 @@ dependencies = [
 name = "k8s-mcp-tools"
 version = "0.4.1"
 dependencies = [
+ "flate2",
  "http 1.5.0",
  "insta",
  "jiff",

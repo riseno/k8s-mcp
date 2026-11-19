@@ -42,6 +42,11 @@
         "labels": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
+    "helmReleases": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "type": "boolean" } }
+    },
     "writes": {
       "type": "object",
       "additionalProperties": false,

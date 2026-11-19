@@ -1,0 +1,1736 @@
+{
+  "envelope": [
+    "context",
+    "findings",
+    "items",
+    "namespace",
+    "next",
+    "omitted",
+    "sections",
+    "summary",
+    "truncated",
+    "untrusted_fields"
+  ],
+  "prompts": {
+    "access-review": {
+      "namespace": true,
+      "serviceaccount": true
+    },
+    "cluster-health-check": {
+      "context": false
+    },
+    "explain-workload": {
+      "kind": true,
+      "name": true,
+      "namespace": false
+    },
+    "investigate-incident": {
+      "namespace": false,
+      "symptom": true,
+      "workload": false
+    },
+    "upgrade-readiness": {
+      "context": false,
+      "target_version": true
+    }
+  },
+  "resource_templates": [
+    "k8s-mcp://cluster/{context}/overview"
+  ],
+  "resources": [
+    "k8s-mcp://contexts",
+    "k8s-mcp://policy",
+    "k8s-mcp://rules"
+  ],
+  "rules": [
+    "aks.cluster.local_accounts",
+    "aks.cluster.public_endpoint",
+    "aks.cluster.unhealthy",
+    "aks.nodepool.unhealthy",
+    "aks.nodepool.version_skew",
+    "aks.wi.env_not_injected",
+    "aks.wi.federated_credential_mismatch",
+    "aks.wi.federated_credential_missing",
+    "aks.wi.identity_not_found",
+    "aks.wi.not_enabled",
+    "aks.wi.oidc_issuer_disabled",
+    "aks.wi.pod_label_missing",
+    "autoscaling.ca.not_triggered",
+    "autoscaling.ca.unhealthy",
+    "autoscaling.hpa.at_max",
+    "autoscaling.hpa.not_scaling",
+    "autoscaling.karpenter.limit_reached",
+    "autoscaling.karpenter.nodeclaim_not_launched",
+    "cronjob.not_scheduling",
+    "dns.app_resolution_errors",
+    "dns.coredns_unhealthy",
+    "dns.ndots_hint",
+    "dns.netpol_blocks_egress",
+    "dns.no_endpoints",
+    "dns.pod_bypasses_cluster_dns",
+    "eks.access.aws_auth_invalid",
+    "eks.addon.incompatible",
+    "eks.addon.unhealthy",
+    "eks.cluster.audit_logging_off",
+    "eks.cluster.auth_configmap_only",
+    "eks.cluster.public_endpoint",
+    "eks.cluster.unhealthy",
+    "eks.identity.pods_not_injected",
+    "eks.irsa.oidc_provider_missing",
+    "eks.irsa.role_missing",
+    "eks.irsa.trust_mismatch",
+    "eks.nodegroup.unhealthy",
+    "eks.nodegroup.version_skew",
+    "eks.pod_identity.agent_missing",
+    "eks.pod_identity.association_missing",
+    "eks.pod_identity.trust_mismatch",
+    "eks.upgrade.insight_failing",
+    "gke.cluster.no_release_channel",
+    "gke.cluster.public_endpoint",
+    "gke.cluster.unhealthy",
+    "gke.nodepool.unhealthy",
+    "gke.nodepool.version_skew",
+    "gke.wi.binding_missing",
+    "gke.wi.gsa_disabled",
+    "gke.wi.gsa_missing",
+    "gke.wi.metadata_mode",
+    "gke.wi.pool_missing",
+    "job.backoff_limit",
+    "job.deadline_exceeded",
+    "node.cordoned",
+    "node.network_unavailable",
+    "node.not_ready",
+    "node.npd.condition",
+    "node.oom.system",
+    "node.overcommitted",
+    "node.pressure.disk",
+    "node.pressure.memory",
+    "node.pressure.pid",
+    "node.version_skew",
+    "pod.config.create_container_error",
+    "pod.config.invalid_env_ref",
+    "pod.config.missing_configmap",
+    "pod.config.missing_key",
+    "pod.config.missing_secret",
+    "pod.config.missing_serviceaccount",
+    "pod.config.mount_failed",
+    "pod.crashloop.app_error",
+    "pod.crashloop.command_not_found",
+    "pod.crashloop.dependency_unreachable",
+    "pod.crashloop.exit_zero",
+    "pod.crashloop.not_executable",
+    "pod.crashloop.other",
+    "pod.crashloop.sigkill",
+    "pod.crashloop.sigterm",
+    "pod.creating.cni",
+    "pod.creating.sandbox",
+    "pod.creating.volume",
+    "pod.evicted",
+    "pod.image.auth",
+    "pod.image.invalid_name",
+    "pod.image.network",
+    "pod.image.not_found",
+    "pod.image.platform",
+    "pod.image.pull_failed",
+    "pod.image.rate_limited",
+    "pod.init.failing",
+    "pod.init.waiting",
+    "pod.oom.container",
+    "pod.pending.insufficient_resources",
+    "pod.pending.no_scheduler",
+    "pod.pending.node_selector_affinity",
+    "pod.pending.pvc_unbound",
+    "pod.pending.quota",
+    "pod.pending.taints",
+    "pod.pending.too_many_pods",
+    "pod.pending.topology_spread",
+    "pod.pending.unschedulable",
+    "pod.pending.volume_node_affinity",
+    "pod.probe.liveness_failing",
+    "pod.probe.port_mismatch",
+    "pod.probe.readiness_failing",
+    "pod.probe.startup_too_short",
+    "pod.probe.timeout_too_low",
+    "pod.terminating.stuck",
+    "pvc.attach.limit",
+    "pvc.attach.multi_attach",
+    "pvc.pending.no_storageclass",
+    "pvc.pending.provisioning_failed",
+    "pvc.pending.wffc_waiting",
+    "svc.lb_pending",
+    "svc.no_matching_pods",
+    "svc.no_ready_endpoints",
+    "svc.target_port_mismatch",
+    "upgrade.deprecated_api_in_use",
+    "upgrade.kubelet_skew",
+    "upgrade.pdb_blocks_drain",
+    "upgrade.removed_api_in_use",
+    "upgrade.single_replica_workloads",
+    "upgrade.target_skips_minor",
+    "upgrade.version_support_ending",
+    "workload.create_failed",
+    "workload.replicas.unavailable",
+    "workload.rollout.stuck",
+    "workload.single_replica"
+  ],
+  "tools": {
+    "aks_addons": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "aks"
+    },
+    "aks_cluster_info": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "aks"
+    },
+    "aks_identity_check": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "service_account": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "service_account"
+      ],
+      "tier": "read",
+      "toolset": "aks"
+    },
+    "aks_logs": {
+      "inputs": {
+        "component": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "grep": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "pod": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "since": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "source": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "aks"
+    },
+    "aks_node_pools": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "aks"
+    },
+    "api_resources": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "group": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespaced": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "apply_manifest": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "manifest": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "manifest"
+      ],
+      "tier": "destructive",
+      "toolset": "core"
+    },
+    "autoscaling_status": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "check_permissions": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "verbs_for": {
+          "enum": [],
+          "types": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "cluster_overview": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "cordon_node": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "write",
+      "toolset": "core"
+    },
+    "delete_pod": {
+      "inputs": {
+        "allow_unowned": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "write",
+      "toolset": "core"
+    },
+    "diagnose_dns": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "pod": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "diagnose_node": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "diagnose_pod": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "include_logs": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "log_tail": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "diagnose_pvc": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "diagnose_service": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "diagnose_workload": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "kind": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "drain_node": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "ignore_daemonsets": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "destructive",
+      "toolset": "core"
+    },
+    "eks_access": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "eks"
+    },
+    "eks_addons": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "eks"
+    },
+    "eks_cluster_info": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "eks"
+    },
+    "eks_identity_check": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "service_account": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "service_account"
+      ],
+      "tier": "read",
+      "toolset": "eks"
+    },
+    "eks_logs": {
+      "inputs": {
+        "component": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "grep": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "pod": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "since": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "source": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "eks"
+    },
+    "eks_nodegroups": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "eks"
+    },
+    "find_problems": {
+      "inputs": {
+        "all_namespaces": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "kinds": {
+          "enum": [],
+          "types": [
+            "array",
+            "null"
+          ]
+        },
+        "min_severity": {
+          "enum": [
+            "\"critical\"",
+            "\"high\"",
+            "\"info\"",
+            "\"low\"",
+            "\"medium\""
+          ],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "diagnose"
+    },
+    "get_logs": {
+      "inputs": {
+        "all_containers": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "container": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context_lines": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "errors_only": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "grep": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "max_pods": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "pod": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "previous": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "since": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "tail": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "workload": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "get_resource": {
+      "inputs": {
+        "api_version": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "include_events": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "view": {
+          "enum": [
+            "\"full\"",
+            "\"summary\"",
+            "\"yaml\""
+          ],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "gke_addons": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "gke"
+    },
+    "gke_cluster_info": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "gke"
+    },
+    "gke_identity_check": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "service_account": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "service_account"
+      ],
+      "tier": "read",
+      "toolset": "gke"
+    },
+    "gke_logs": {
+      "inputs": {
+        "component": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "grep": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "pod": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "since": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "source": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "gke"
+    },
+    "gke_node_pools": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "gke"
+    },
+    "list_contexts": {
+      "inputs": {},
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "list_events": {
+      "inputs": {
+        "all_namespaces": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "involved_kind": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "involved_name": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "since": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "types": {
+          "enum": [],
+          "types": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "list_resources": {
+      "inputs": {
+        "all_namespaces": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "api_version": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "continue": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "field_selector": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "kind": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "label_selector": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "recent_changes": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "since": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "workload": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "restart_workload": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "tier": "write",
+      "toolset": "core"
+    },
+    "rollback_workload": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "to_revision": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "write",
+      "toolset": "core"
+    },
+    "rollout_history": {
+      "inputs": {
+        "compare": {
+          "enum": [],
+          "types": [
+            "array",
+            "null"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "kind": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "scale_workload": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "replicas": {
+          "enum": [],
+          "types": [
+            "integer"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas"
+      ],
+      "tier": "write",
+      "toolset": "core"
+    },
+    "top": {
+      "inputs": {
+        "all_namespaces": {
+          "enum": [],
+          "types": [
+            "boolean"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "limit": {
+          "enum": [],
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "sort_by": {
+          "enum": [
+            "\"cpu\"",
+            "\"memory\""
+          ],
+          "types": [
+            "string"
+          ]
+        },
+        "target": {
+          "enum": [
+            "\"nodes\"",
+            "\"pods\""
+          ],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    },
+    "uncordon_node": {
+      "inputs": {
+        "confirm_token": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "dry_run": {
+          "enum": [],
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "enum": [],
+          "types": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "tier": "write",
+      "toolset": "core"
+    },
+    "upgrade_readiness": {
+      "inputs": {
+        "context": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "namespace": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        },
+        "target_version": {
+          "enum": [],
+          "types": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "tier": "read",
+      "toolset": "core"
+    }
+  }
+}

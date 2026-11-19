@@ -337,3 +337,26 @@ echo '{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredentia
         assert!(!ran.exists());
     }
 }
+
+// Fuzzing (v1.0 security review): whatever a plugin prints, parsing it fails cleanly.
+#[cfg(test)]
+mod fuzz {
+    use super::{ExecCredential, Timestamp};
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn any_plugin_output_parses_or_fails_cleanly(
+            raw in prop::collection::vec(any::<u8>(), 0..512),
+            token in any::<String>(),
+            expiry in any::<String>(),
+        ) {
+            let _ = serde_saphyr::from_slice::<ExecCredential>(&raw);
+            let json = serde_json::json!({"kind": "ExecCredential", "status": {"token": token, "expirationTimestamp": expiry}});
+            let cred = serde_saphyr::from_slice::<ExecCredential>(json.to_string().as_bytes());
+            if let Some(e) = cred.ok().and_then(|c| c.status).and_then(|s| s.expiration_timestamp) {
+                let _ = e.parse::<Timestamp>();
+            }
+        }
+    }
+}

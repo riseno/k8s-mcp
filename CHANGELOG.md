@@ -32,6 +32,14 @@ All notable changes are documented here. The format follows
   `pod.crashloop.not_executable`, from its first failed start; before, it was a generic
   `pod.config.create_container_error` until the third restart, and both findings after it.
 
+### Security
+- A Secret value that spans several lines (a PEM key, a JSON key file) and appears in a pod's
+  logs is masked line by line; before, only the value as a whole was masked, so its lines
+  could be shown. Found by the v1.0 property tests, which now cover the duration, quantity,
+  version, scheduling-message, kubelet-message, deprecated-API-metric, ExecCredential and
+  manifest parsers, label selectors, log shaping, untrusted-block wrapping and every pod rule
+  on arbitrary cluster text.
+
 ## [0.4.1] - 2026-11-18
 
 ### Fixed

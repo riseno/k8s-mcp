@@ -237,11 +237,14 @@ impl Redactor {
 
 /// Mask exact occurrences of known secret values (for example the values of Secrets a pod
 /// references) in `lines`. Applied at every redaction level: Secret values are never returned.
-/// Values shorter than 6 characters are ignored to avoid masking common words.
+/// A multi-line value (a PEM key, a JSON key file) is masked line by line, since logs are
+/// split into lines first. Values (or lines) shorter than 6 characters are ignored to avoid
+/// masking common words.
 pub fn scrub_values(lines: &mut [String], values: &[String]) {
     let mut values: Vec<&str> = values
         .iter()
-        .map(|v| v.trim())
+        .flat_map(|v| v.lines())
+        .map(str::trim)
         .filter(|v| v.len() >= 6)
         .collect();
     values.sort_by_key(|v| std::cmp::Reverse(v.len()));

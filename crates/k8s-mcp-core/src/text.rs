@@ -217,4 +217,64 @@ mod tests {
             "x␀␁␛␍y␡\u{fffd}"
         );
     }
+
+    // Fuzzing (v1.0 security review): the parsers and the untrusted-text helpers never panic
+    // and keep their guarantees on any input.
+    mod fuzz {
+        use super::*;
+        use crate::quantity::{bytes, cpu_millis};
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn parsers_never_panic(s in any::<String>()) {
+                let _ = parse_duration(&s);
+                let _ = cpu_millis(&s);
+                let _ = bytes(&s);
+            }
+
+            #[test]
+            fn a_duration_is_the_sum_of_its_parts(
+                parts in prop::collection::vec((0i64..100_000, prop::sample::select(vec![('s', 1i64), ('m', 60), ('h', 3600), ('d', 86400)])), 1..5)
+            ) {
+                let text = parts.iter().map(|(n, (u, _))| format!("{n}{u}")).collect::<Vec<_>>().concat();
+                let want: i64 = parts.iter().map(|(n, (_, secs))| n * secs).sum();
+                let got = parse_duration(&text).map(|d| d.as_secs());
+                prop_assert_eq!(got, Ok(want));
+            }
+
+            #[test]
+            fn binary_quantities_are_exact(n in 0i64..1_000_000, unit in 0usize..4) {
+                let (suffix, scale) = [("Ki", 1i64 << 10), ("Mi", 1 << 20), ("Gi", 1 << 30), ("Ti", 1 << 40)][unit];
+                prop_assert_eq!(bytes(&format!("{n}{suffix}")), Some(n * scale));
+                prop_assert_eq!(cpu_millis(&format!("{n}m")), Some(n));
+            }
+
+            /// Cluster text cannot open or close an untrusted block: the only delimiters are
+            /// the block's own.
+            #[test]
+            fn untrusted_text_cannot_escape_its_block(attr in any::<String>(), lines in prop::collection::vec(any::<String>(), 0..8)) {
+                let block = untrusted_block(&[("pod", &attr)], &lines);
+                let opens = block.matches("<<").count();
+                let closes = block.matches(">>").count();
+                prop_assert!(block.starts_with("<<untrusted pod=\""));
+                prop_assert!(block.ends_with("\n<</untrusted>>"));
+                prop_assert_eq!((opens, closes), (2, 2));
+            }
+
+            #[test]
+            fn truncate_caps_bytes_on_a_char_boundary(s in any::<String>(), max in 0usize..64) {
+                let t = truncate(&s, max);
+                let kept = t.strip_suffix('…').filter(|_| s.len() > max).unwrap_or(&t);
+                prop_assert!(kept.len() <= max);
+                prop_assert!(s.starts_with(kept));
+            }
+
+            #[test]
+            fn escaped_text_has_no_control_characters(s in any::<String>()) {
+                let escaped = escape_controls(&s);
+                prop_assert!(!escaped.chars().any(|c| c.is_control() && c != '\t'));
+            }
+        }
+    }
 }

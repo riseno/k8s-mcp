@@ -195,6 +195,18 @@ fn exact_secret_values_are_scrubbed() {
     ];
     k8s_mcp_core::redact::scrub_values(&mut lines, &["s3cr3t-from-secret".into(), "1".into()]);
     assert_eq!(lines, ["echoed env: «redacted» and $OTHER", "ok"]);
+
+    // A multi-line value, as a PEM key printed to the log, is masked line by line.
+    let mut lines = vec![
+        "-----BEGIN KEY-----".to_owned(),
+        "MIIEvQIBADANBgkq".to_owned(),
+        "ok".to_owned(),
+    ];
+    k8s_mcp_core::redact::scrub_values(
+        &mut lines,
+        &["-----BEGIN KEY-----\nMIIEvQIBADANBgkq\n".into()],
+    );
+    assert_eq!(lines, ["«redacted»", "«redacted»", "ok"]);
 }
 
 fn safe_text() -> impl Strategy<Value = String> {

@@ -21,3 +21,4 @@ jiff.workspace = true
 
 [dev-dependencies]
 k8s-mcp-testkit.workspace = true
+proptest.workspace = true

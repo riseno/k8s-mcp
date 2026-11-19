@@ -382,4 +382,34 @@ mod tests {
             ]
         );
     }
+
+    /// A YAML alias bomb ("billion laughs") within the size cap is rejected, not expanded.
+    #[test]
+    fn alias_bombs_are_refused() {
+        let lines: Vec<String> = ('a'..='i')
+            .zip('b'..='j')
+            .map(|(prev, name)| {
+                format!(
+                    "{name}: &{name} [{}]",
+                    vec![format!("*{prev}"); 10].join(", ")
+                )
+            })
+            .collect();
+        let bomb = format!(
+            "a: &a [x, x, x, x, x, x, x, x, x, x]\n{}\n",
+            lines.join("\n")
+        );
+        assert!(bomb.len() < MAX_MANIFEST);
+        let started = std::time::Instant::now();
+        assert!(serde_saphyr::from_multiple::<Value>(&bomb).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    proptest::proptest! {
+        /// Fuzzing (v1.0 security review): any manifest text parses or fails cleanly.
+        #[test]
+        fn any_manifest_text_parses_or_fails_cleanly(text in "(?s).{0,400}") {
+            let _ = serde_saphyr::from_multiple::<Value>(&text);
+        }
+    }
 }

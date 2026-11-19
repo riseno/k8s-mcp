@@ -74,6 +74,13 @@ writes:
   # Namespaces no write tool changes objects in (--write-deny-namespaces).
   denyNamespaces: [kube-system, kube-public, kube-node-lease]
 
+# Helm release inspection (off by default): registers helm_releases and helm_release
+# (--allow-helm-releases) and adds `get` and `list` on Secrets, where Helm stores its release
+# records. `list` on Secrets can read every Secret's values; k8s-mcp only decodes Helm's
+# records and never shows their values, manifests or chart files.
+helmReleases:
+  enabled: false
+
 rbac:
   # Read-only ClusterRole bound to the ServiceAccount.
   create: true

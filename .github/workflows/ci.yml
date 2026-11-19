@@ -106,7 +106,7 @@ jobs:
           # The defaults alone must fail: auth.allowedCallers is required.
           if helm template t "$CHART" >/dev/null 2>&1; then echo "rendered without auth.allowedCallers"; exit 1; fi
           for values in "--set auth.allowedCallers={group:sre}" \
-            "--set auth.allowAnyCaller=true" \
+            "--set auth.allowAnyCaller=true --set helmReleases.enabled=true" \
             "--set auth.mode=static --set auth.existingSecret=token" \
             "--set networkPolicy.enabled=true --set networkPolicy.apiServerCIDRs={10.0.0.1/32} --set podDisruptionBudget.enabled=true --set rbac.secretsMetadata=false --set auth.allowedCallers={group:sre}" \
             "--set auth.audience= --set auth.allowedCallers={system:serviceaccount:platform:*,group:sre}" \

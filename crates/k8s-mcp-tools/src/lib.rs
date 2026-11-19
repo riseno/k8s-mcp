@@ -20,6 +20,7 @@ mod dns;
 mod eks;
 #[cfg(feature = "provider-gke")]
 mod gke;
+mod helm;
 mod logs;
 mod read;
 mod rows;
@@ -57,6 +58,7 @@ pub use eks::{
 };
 #[cfg(feature = "provider-gke")]
 pub use gke::{gke_addons, gke_cluster_info, gke_identity_check, gke_logs, gke_node_pools};
+pub use helm::{HelmReleaseInput, HelmReleasesInput, helm_release, helm_releases};
 #[cfg(feature = "provider-aks")]
 pub use k8s_mcp_provider_aks::RULES as AKS_RULES;
 #[cfg(feature = "provider-aks")]

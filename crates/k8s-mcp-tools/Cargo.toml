@@ -37,6 +37,7 @@ tracing.workspace = true
 regex.workspace = true
 jiff.workspace = true
 http.workspace = true
+flate2.workspace = true
 
 [dev-dependencies]
 k8s-mcp-testkit.workspace = true

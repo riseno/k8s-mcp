@@ -20,6 +20,11 @@ All notable changes are documented here. The format follows
   stable, what may change in 1.x and how deprecation works.
 
 ### Changed
+- **Helm chart: `auth.allowedCallers` is required.** `helm install` fails unless it names who
+  may call the server (for example `--set 'auth.allowedCallers={group:sre}'`), or
+  `auth.allowAnyCaller: true` is set: anyone who may create pods or tokens for a
+  ServiceAccount can mint a token for the `k8s-mcp` audience, so an empty list let every pod
+  creator use the server's cluster-wide read access (v1.0 security review).
 - The docs are an mdBook site (`book.toml` over `docs/`), built on every docs change in CI and
   published to GitHub Pages at <https://riseno.github.io/k8s-mcp/>; the wiki is no longer
   updated.

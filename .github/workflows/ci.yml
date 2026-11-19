@@ -102,10 +102,13 @@ jobs:
       - name: Lint and validate the rendered chart
         run: |
           curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz kubeconform
-          helm lint "$CHART"
-          for values in "" \
+          helm lint "$CHART" --set 'auth.allowedCallers={group:sre}'
+          # The defaults alone must fail: auth.allowedCallers is required.
+          if helm template t "$CHART" >/dev/null 2>&1; then echo "rendered without auth.allowedCallers"; exit 1; fi
+          for values in "--set auth.allowedCallers={group:sre}" \
+            "--set auth.allowAnyCaller=true" \
             "--set auth.mode=static --set auth.existingSecret=token" \
-            "--set networkPolicy.enabled=true --set networkPolicy.apiServerCIDRs={10.0.0.1/32} --set podDisruptionBudget.enabled=true --set rbac.secretsMetadata=false" \
+            "--set networkPolicy.enabled=true --set networkPolicy.apiServerCIDRs={10.0.0.1/32} --set podDisruptionBudget.enabled=true --set rbac.secretsMetadata=false --set auth.allowedCallers={group:sre}" \
             "--set auth.audience= --set auth.allowedCallers={system:serviceaccount:platform:*,group:sre}" \
             "--set writes.enabled=true --set writes.destructive=true --set auth.allowedCallers={group:sre}"; do
             # shellcheck disable=SC2086 # $values holds several flags
@@ -130,12 +133,13 @@ jobs:
       - name: Install the chart
         run: |
           helm install k8s-mcp "$CHART" --kube-context "$CONTEXT" -n k8s-mcp --create-namespace \
-            --set image.repository=k8s-mcp --set image.tag=ci --set image.pullPolicy=Never --wait --timeout 3m
+            --set image.repository=k8s-mcp --set image.tag=ci --set image.pullPolicy=Never \
+            --set 'auth.allowedCallers={system:serviceaccount:default:mcp-caller}' --wait --timeout 3m
       - run: deploy/helm/smoke.sh "$HOME/.kube/config" "$CONTEXT" k8s-mcp k8s-mcp
       - name: Enable writes and smoke-test a planned and confirmed restart
         run: |
           helm upgrade k8s-mcp "$CHART" --kube-context "$CONTEXT" -n k8s-mcp --reuse-values \
-            --set writes.enabled=true --set 'auth.allowedCallers={system:serviceaccount:default:mcp-caller}' --wait --timeout 3m
+            --set writes.enabled=true --wait --timeout 3m
           WRITES=1 deploy/helm/smoke.sh "$HOME/.kube/config" "$CONTEXT" k8s-mcp k8s-mcp
       - if: failure()
         run: |

@@ -23,9 +23,14 @@ auth:
   # pod gets by default (API server audience) from working. Empty accepts those tokens too.
   audience: k8s-mcp
   # tokenreview: callers let in, as globs over the username (`system:serviceaccount:platform:*`)
-  # or `group:<glob>` over its groups. Others get 403 and an audit record. Empty: everyone the
-  # cluster authenticates (with a token for `audience`).
+  # or `group:<glob>` over its groups. Others get 403 and an audit record. Required: anyone who
+  # may create pods (or tokens) for some ServiceAccount can mint a token for `audience`, so an
+  # empty list would let them all use the server's read access.
   allowedCallers: []
+  # tokenreview: with allowedCallers empty, let in everyone the cluster authenticates (with a
+  # token for `audience`) instead of failing the install. Only for clusters where every pod
+  # creator may read what k8s-mcp reads.
+  allowAnyCaller: false
   # Secret holding the static token (key `token`); required when mode is static.
   existingSecret: ""
 

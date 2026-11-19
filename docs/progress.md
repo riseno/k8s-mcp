@@ -52,7 +52,7 @@ specification, which is not published.
 
 ## Not done yet (v0.1 follow-ups)
 
-- `cargo xtask release-check` (quickstart in a clean container) is done by hand above; not scripted.
+- ~~`cargo xtask release-check` (quickstart in a clean container) is done by hand above; not scripted.~~ Scripted in v1.0 task 8.
 - The 10 s list cache (ADR 0004). (The mdBook build in CI came with v1.0 task 2.)
 - First CI run on GitHub (workflows are untested there; `release.yml` uses dist's `$/` self-repo syntax, which actionlint 1.7.12 does not know yet).
 
@@ -227,7 +227,7 @@ row ends with the v1.0 acceptance criterion it serves.
 | 5 | Security review: `docs/security-review.md`, a checklist completed against the code (input validation, prompt injection, redaction, Secrets, SSRF in cloud paging, resource limits, the write tier, HTTP auth, exec plugins, supply chain); the threat model in `security.md` revisited for writes, HTTP, providers and exec plugins; property-based fuzzing of every parser (durations, selectors, versions, the deprecated-API metric, ExecCredential, confirm tokens, manifests, log shaping, redaction) | ⬜ | Decisions 3, 4. AC 3 |
 | 6 | Helm release inspection (opt-in): `helm_releases` (releases in a namespace or the cluster: name, revision, status, chart and app version, updated) and `helm_release` (history with failure descriptions, notes), decoded from Helm's `sh.helm.release.v1` Secrets; registered only with an opt-in flag; chart value with the extra Secret permission; values never shown | ⬜ | Decision 2. |
 | 7 | Provider access mapping (§8.4, v1.0): `gke_access` (IAM vs RBAC, RBAC bindings to Google groups) and `aks_access` (Entra integration, local accounts, Azure RBAC for Kubernetes), replacing the "not available yet" default; parity test | ⬜ | |
-| 8 | Release check: `cargo xtask release-check` scripts the v0.1 quickstart test (a clean `ubuntu:24.04` container, install, `doctor` against kind) | ⬜ | v0.1 follow-up |
+| 8 | Release check: `cargo xtask release-check` scripts the v0.1 quickstart test (a clean `ubuntu:24.04` container, install, `doctor` against kind) | ✅ | Done: `cargo xtask release-check [<version>]` (`docs/evals.md`). Its first run found that the published installer cannot install on a clean `ubuntu:24.04`: the archives were `.tar.xz` and the image has no `xz`. Releases now ship `.tar.gz` (`unix-archive`), which takes effect with the next release; with `xz` added by hand, install + `doctor` against kind took 4 s. v0.1 follow-up |
 | 9 | Docs and release: README stability statement, regenerated references, CHANGELOG, 1.0.0 | ⬜ | |
 
 ## v1.0 acceptance criteria (PROPOSAL §16)

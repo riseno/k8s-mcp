@@ -1,12 +1,14 @@
-//! Developer tasks: `cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep] | docs`.
+//! Developer tasks: `cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep] | docs |
+//! release-check [<version>]`.
 //!
 //! Every cluster command goes through [`kubectl`], which pins the kind-only kubeconfig in
 //! `.dev/kubeconfig` and the `kind-k8s-mcp-dev` context, so `~/.kube/config` is never used.
 
 mod eval;
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
@@ -25,8 +27,11 @@ fn main() -> Result<()> {
         Some("kind-down") => kind_down(),
         Some("eval") => eval::main(&args[1..]),
         Some("docs") => docs(),
+        Some("release-check") => release_check(args.get(1).map(String::as_str)),
         _ => {
-            bail!("usage: cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep] | docs")
+            bail!(
+                "usage: cargo xtask kind-up | kind-down | eval [--scenario <id>] [--keep] | docs | release-check [<version>]"
+            )
         }
     }
 }
@@ -223,4 +228,63 @@ fn docs() -> Result<()> {
             "docs_are_current",
         ])
         .env("K8S_MCP_UPDATE_DOCS", "1"))
+}
+
+/// The README quickstart on a clean machine: in an `ubuntu:24.04` container on kind's Docker
+/// network, the published shell installer (of `version`, default the latest release), then
+/// `k8s-mcp doctor` against the kind cluster, within the 60 s budget of PROPOSAL §16. The kind
+/// kubeconfig goes in on stdin, so no copy of it is written to disk.
+fn release_check(version: Option<&str>) -> Result<()> {
+    verify_context()?;
+    let (url, want) = match version.map(|v| v.trim_start_matches('v')) {
+        Some(v) => (
+            format!("https://github.com/riseno/k8s-mcp/releases/download/v{v}/k8s-mcp-server-installer.sh"),
+            v.to_owned(),
+        ),
+        None => (
+            "https://github.com/riseno/k8s-mcp/releases/latest/download/k8s-mcp-server-installer.sh".to_owned(),
+            String::new(),
+        ),
+    };
+    let kubeconfig =
+        output(Command::new("kind").args(["get", "kubeconfig", "--internal", "--name", CLUSTER]))?;
+    // curl is not part of the quickstart (the image lacks it), so it is installed untimed.
+    let script = format!(
+        r#"set -euo pipefail
+cat > /tmp/kubeconfig
+apt-get update -qq >/dev/null && apt-get install -y -qq curl ca-certificates >/dev/null
+start=$(date +%s)
+curl -fsSL {url} | sh
+"$HOME/.cargo/bin/k8s-mcp" doctor --kubeconfig /tmp/kubeconfig --context {CONTEXT}
+took=$(( $(date +%s) - start ))
+"$HOME/.cargo/bin/k8s-mcp" version | grep -F "{want}"
+echo "quickstart: install + doctor in ${{took}}s (budget 60s)"
+[ "$took" -le 60 ]
+"#
+    );
+    let mut child = Command::new("docker")
+        .args([
+            "run",
+            "--rm",
+            "-i",
+            "--network",
+            "kind",
+            "ubuntu:24.04",
+            "bash",
+            "-c",
+            &script,
+        ])
+        .stdin(Stdio::piped())
+        .spawn()
+        .context("spawn docker: is Docker running?")?;
+    child
+        .stdin
+        .take()
+        .context("docker stdin")?
+        .write_all(kubeconfig.as_bytes())?;
+    let status = child.wait()?;
+    if !status.success() {
+        bail!("release check failed ({status}): see the output above");
+    }
+    Ok(())
 }

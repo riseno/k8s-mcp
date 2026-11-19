@@ -13,6 +13,9 @@ All notable changes are documented here. The format follows
   executable, a refused dependency, an unsatisfiable topology spread, a Job deadline, a missing
   StorageClass, a pending LoadBalancer, a pod that bypasses cluster DNS, and an upgrade target
   that skips minor versions.
+- `cargo xtask eval` gates on `diagnose_pod` p95 latency (under 2 s over 20 runs) and reports
+  p50/p95 per tool and the time of cluster-wide `find_problems`, `recent_changes`,
+  `upgrade_readiness` and `cluster_overview` calls.
 - The public surface is frozen for 1.x: `docs/surface-v1.json` records every tool's name,
   toolset, tier and argument types, the prompts, resources, rule ids and Envelope fields, and a
   test fails on anything that removes or changes them; `docs/stability.md` describes what is

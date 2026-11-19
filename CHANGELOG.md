@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `cargo xtask release-check [<version>]`: the README quickstart (published installer, then
+  `k8s-mcp doctor` against kind) in a clean `ubuntu:24.04` container, within 60 s.
 - Eval scenarios 28–40 (40 in total): a startup probe too short, a readiness probe timeout, a
   missing ServiceAccount, Pod Security and LimitRange rejections, a command that is not
   executable, a refused dependency, an unsatisfiable topology spread, a Job deadline, a missing
@@ -30,6 +32,9 @@ All notable changes are documented here. The format follows
   updated.
 
 ### Fixed
+- The shell installer works on a clean Ubuntu 24.04: release archives for Linux and macOS are
+  `.tar.gz` (were `.tar.xz`, which needs `xz`, absent from the `ubuntu:24.04` image). Scripts
+  that download an archive by name need the new extension.
 - `dns.pod_bypasses_cluster_dns` is `high` (was `medium`) when the pod logs failed `.svc`
   lookups, so it ranks above the `dns.app_resolution_errors` symptom it explains.
 - A container whose command is missing or not executable (`RunContainerError`, last state

@@ -7,10 +7,19 @@ name: publish-container
 # keyless writes to Sigstore's public transparency log, and GitHub attestations need a public
 # repo on Free/Pro/Team plans. Pre-releases do not move `:latest`. The Helm chart is pushed
 # to oci://ghcr.io/<owner>/charts/k8s-mcp with the release version as chart and app version.
+#
+# workflow_dispatch re-runs it from main for an existing release (a rerun of the release run
+# uses this file as it was at the tag, so it cannot pick up a fix).
 on:
   workflow_call:
     inputs:
       plan:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish the image and chart for, for example v1.0.0
         required: true
         type: string
 
@@ -24,15 +33,19 @@ jobs:
   container:
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
       GH_TOKEN: ${{ github.token }}
+      TAG_INPUT: ${{ inputs.tag }}
+      PLAN: ${{ inputs.plan }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: artifacts-*
-          path: target/distrib
-          merge-multiple: true
+      - name: Download the release's musl binaries and checksums
+        run: |
+          tag=${TAG_INPUT:-$(jq -r .announcement_tag <<<"$PLAN")}
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          # Pre-releases (a SemVer suffix) do not move :latest.
+          if [[ $tag == *-* ]]; then echo "LATEST=" >> "$GITHUB_ENV"; else echo "LATEST=,ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/k8s-mcp:latest" >> "$GITHUB_ENV"; fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" -D target/distrib \
+            -p 'k8s-mcp-server-*-unknown-linux-musl.tar.gz' -p sha256.sum
       - name: Unpack the musl binaries per platform
         run: |
           echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/k8s-mcp" >> "$GITHUB_ENV"
@@ -54,7 +67,7 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.IMAGE }}:${{ env.TAG }}${{ !fromJson(inputs.plan).announcement_is_prerelease && format(',{0}:latest', env.IMAGE) || '' }}
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}${{ env.LATEST }}
       - uses: sigstore/cosign-installer@v4.1.3
         if: github.event.repository.private == false
       - name: Sign the image and the release checksums
@@ -67,8 +80,9 @@ jobs:
           version="${TAG#v}"
           helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin <<<"$GH_TOKEN"
           helm package deploy/helm/k8s-mcp --version "$version" --app-version "$version" -d target/chart
-          # The chart's default image must be the one just pushed (issue #45).
-          image=$(helm template k8s-mcp "target/chart/k8s-mcp-$version.tgz" | awk '$1 == "image:" {gsub(/"/, "", $2); print $2}')
+          # The chart's default image must be the one just pushed (issue #45). Rendering needs
+          # a caller setting (auth.allowedCallers is required); it does not change the image.
+          image=$(helm template k8s-mcp "target/chart/k8s-mcp-$version.tgz" --set auth.allowAnyCaller=true | awk '$1 == "image:" {gsub(/"/, "", $2); print $2}')
           test "$image" = "$IMAGE:$TAG" || { echo "the chart's default image is $image, not $IMAGE:$TAG" >&2; exit 1; }
           docker buildx imagetools inspect "$image" >/dev/null
           digest=$(helm push "target/chart/k8s-mcp-$version.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" 2>&1 | tee /dev/stderr | awk '/^Digest:/ {print $2}')

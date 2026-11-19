@@ -21,33 +21,15 @@ const MAX_OBJECTS: usize = 20;
 /// Diff lines shown per object.
 const MAX_LINES: usize = 40;
 
-/// Kinds `apply_manifest` refuses (v0.4 decision 2): Secrets would carry their values through
-/// the server and the audit log; the others are the shortest paths to cluster-admin.
-const REFUSED: &[(&str, &str)] = &[
-    ("", "Secret"),
-    ("rbac.authorization.k8s.io", "Role"),
-    ("rbac.authorization.k8s.io", "ClusterRole"),
-    ("rbac.authorization.k8s.io", "RoleBinding"),
-    ("rbac.authorization.k8s.io", "ClusterRoleBinding"),
-    (
-        "admissionregistration.k8s.io",
-        "ValidatingWebhookConfiguration",
-    ),
-    (
-        "admissionregistration.k8s.io",
-        "MutatingWebhookConfiguration",
-    ),
-    ("admissionregistration.k8s.io", "ValidatingAdmissionPolicy"),
-    (
-        "admissionregistration.k8s.io",
-        "ValidatingAdmissionPolicyBinding",
-    ),
-    ("admissionregistration.k8s.io", "MutatingAdmissionPolicy"),
-    (
-        "admissionregistration.k8s.io",
-        "MutatingAdmissionPolicyBinding",
-    ),
-    ("apiextensions.k8s.io", "CustomResourceDefinition"),
+/// What `apply_manifest` refuses (v0.4 decision 2): Secrets would carry their values through
+/// the server and the audit log; the API groups below are the shortest paths to cluster-admin
+/// (RBAC, admission control, CRDs, aggregated APIs), refused whole so new kinds are covered.
+const REFUSED_KINDS: &[(&str, &str)] = &[("", "Secret")];
+const REFUSED_GROUPS: &[&str] = &[
+    "rbac.authorization.k8s.io",
+    "admissionregistration.k8s.io",
+    "apiextensions.k8s.io",
+    "apiregistration.k8s.io",
 ];
 
 /// Inputs for `apply_manifest`.
@@ -226,14 +208,16 @@ async fn prepare(
         })?;
     check_name(&kind, &name)?;
     let info = resolve(ctx, target, &kind, Some(&api_version)).await?.info;
-    if REFUSED.contains(&(info.group.as_str(), info.kind.as_str())) {
+    if REFUSED_KINDS.contains(&(info.group.as_str(), info.kind.as_str()))
+        || REFUSED_GROUPS.contains(&info.group.as_str())
+    {
         return Err(Error::Forbidden(format!(
             "apply_manifest does not apply {} objects ({kind} {name}): {}. Use kubectl for this change.",
             info.kind,
             if info.kind == "Secret" {
                 "their values would pass through k8s-mcp and its audit log"
             } else {
-                "RBAC, admission control and CRDs can grant or bypass any permission"
+                "RBAC, admission control, CRDs and aggregated APIs can grant or bypass any permission"
             }
         )));
     }
@@ -241,8 +225,8 @@ async fn prepare(
         .get_mut("metadata")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| Error::InvalidInput(format!("{kind} {name} has no metadata")))?;
-    // Fields the server owns: server-side apply rejects managedFields, and a stale
-    // resourceVersion would make the apply fail.
+    // Fields the server owns: server-side apply rejects managedFields, and the manifest's
+    // resourceVersion is replaced by the live one below.
     for f in [
         "managedFields",
         "resourceVersion",
@@ -284,6 +268,11 @@ async fn prepare(
     let rv = live
         .as_ref()
         .and_then(|l| l.metadata.resource_version.clone());
+    // The live resourceVersion (the one the confirm token is checked against) makes the apply
+    // conditional: an object changed after this read gets a conflict instead of the apply.
+    if let (Some(rv), Some(meta)) = (&rv, doc.get_mut("metadata").and_then(Value::as_object_mut)) {
+        meta.insert("resourceVersion".into(), json!(rv));
+    }
     let live = live.map(|l| {
         clean(
             ctx,

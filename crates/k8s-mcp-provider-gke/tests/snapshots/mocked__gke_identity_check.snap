@@ -7,12 +7,12 @@ GKE identity of ServiceAccount shop/api: 5 checks (3 passed, 2 failed); cloud ch
 FINDINGS
 1. [critical/high] gke.wi.binding_missing: api@acme.iam.gserviceaccount.com does not let ServiceAccount shop/api impersonate it
    why: The GKE metadata server exchanges the pod's token only if the Google service account's IAM policy grants roles/iam.workloadIdentityUser to the Kubernetes ServiceAccount; otherwise the pods get PERMISSION_DENIED on every Google API call.
-   evidence (related): roles/iam.workloadIdentityUser members: serviceAccount:acme.svc.id.goog[shop/worker]
+   evidence (related): <<untrusted source="related">> roles/iam.workloadIdentityUser members: serviceAccount:acme.svc.id.goog[shop/worker] <</untrusted>>
    fix: Grant it: `gcloud iam service-accounts add-iam-policy-binding api@acme.iam.gserviceaccount.com --role roles/iam.workloadIdentityUser --member "serviceAccount:acme.svc.id.goog[shop/api]"`.
    docs: https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity
 2. [high/high] gke.wi.metadata_mode: 1 node pool(s) do not run the GKE metadata server, so pods there cannot use Workload Identity
    why: Pods get Workload Identity credentials from the GKE metadata server, which runs only on node pools with workload metadata mode GKE_METADATA. Pods scheduled elsewhere see the node's service account instead.
-   evidence (related): node pools in GCE_METADATA mode: legacy
+   evidence (related): <<untrusted source="related">> node pools in GCE_METADATA mode: legacy <</untrusted>>
    fix: Set `--workload-metadata=GKE_METADATA` on those node pools (it recreates their nodes), or keep the workloads off them with a nodeSelector.
    docs: https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity
 

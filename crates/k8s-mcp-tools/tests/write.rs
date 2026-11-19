@@ -173,13 +173,19 @@ async fn protected_namespaces_are_refused_before_any_request() {
 }
 
 fn rs(revision: u32, image: &str) -> Value {
+    // Revision 2 also runs privileged: a change the summary lines do not name.
+    let security = if revision == 2 {
+        json!({"privileged": true})
+    } else {
+        json!(null)
+    };
     json!({"apiVersion": "apps/v1", "kind": "ReplicaSet",
         "metadata": {"name": format!("web-{revision}"), "namespace": "shop",
             "annotations": {"deployment.kubernetes.io/revision": revision.to_string()},
             "ownerReferences": [{"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "uid": "u1", "controller": true}]},
         "spec": {"replicas": 0, "selector": {"matchLabels": {"app": "web"}},
             "template": {"metadata": {"labels": {"app": "web", "pod-template-hash": format!("h{revision}")}},
-                "spec": {"containers": [{"name": "app", "image": image}]}}}})
+                "spec": {"containers": [{"name": "app", "image": image, "securityContext": security}]}}}})
 }
 
 fn pod(owned: bool, mirror: bool) -> Value {
@@ -221,7 +227,7 @@ fn cluster() -> Mock {
         )
         .list(
             "/apis/apps/v1/namespaces/shop/replicasets",
-            vec![rs(3, "nginx:1.27"), rs(2, "nginx:1.26")],
+            vec![rs(3, "nginx:1.27"), rs(2, "nginx:1.26"), rs(1, "nginx:1.27")],
         )
         .get(POD, pod(true, false))
         .route("DELETE", POD, 200, pod(true, false))
@@ -372,11 +378,24 @@ async fn plans_show_the_change_and_its_impact() {
         "{:?}",
         lines(&rollback)
     );
+    assert!(
+        lines(&rollback)
+            .iter()
+            .any(|l| l.starts_with("changed fields: ")
+                && l.contains("spec.containers[0].image")
+                && l.contains("spec.containers[0].securityContext")),
+        "{:?}",
+        lines(&rollback)
+    );
     assert_eq!(
         rollback.next[0].args["to_revision"], 2,
         "the default resolved into the confirm call"
     );
     for (args, expected) in [
+        (
+            json!({"name": "web", "to_revision": 1}),
+            "has the same pod template as the current one",
+        ),
         (
             json!({"name": "web", "to_revision": 3}),
             "already at revision 3",
@@ -570,7 +589,8 @@ fn discovery(m: MockApi) -> MockApi {
     let res = |name: &str, kind: &str, namespaced: bool| json!({"name": name, "singularName": "", "kind": kind, "namespaced": namespaced, "verbs": ["get", "list", "patch"]});
     let group = |g: &str| json!({"name": g, "versions": [{"groupVersion": format!("{g}/v1"), "version": "v1"}], "preferredVersion": {"groupVersion": format!("{g}/v1"), "version": "v1"}});
     m.get("/api/v1", json!({"kind": "APIResourceList", "groupVersion": "v1", "resources": [res("configmaps", "ConfigMap", true), res("secrets", "Secret", true), res("namespaces", "Namespace", false)]}))
-        .get("/apis", json!({"kind": "APIGroupList", "groups": [group("apps"), group("rbac.authorization.k8s.io")]}))
+        .get("/apis", json!({"kind": "APIGroupList", "groups": [group("apps"), group("rbac.authorization.k8s.io"), group("apiregistration.k8s.io")]}))
+        .get("/apis/apiregistration.k8s.io/v1", json!({"kind": "APIResourceList", "groupVersion": "apiregistration.k8s.io/v1", "resources": [res("apiservices", "APIService", false)]}))
         .get("/apis/apps/v1", json!({"kind": "APIResourceList", "groupVersion": "apps/v1", "resources": [res("deployments", "Deployment", true)]}))
         .get("/apis/rbac.authorization.k8s.io/v1", json!({"kind": "APIResourceList", "groupVersion": "rbac.authorization.k8s.io/v1", "resources": [res("clusterrolebindings", "ClusterRoleBinding", false)]}))
 }
@@ -648,6 +668,10 @@ async fn apply_manifest_plans_a_dry_run_apply_per_object() {
             .all(|r| dry(r) && r.contains("fieldManager=k8s-mcp") && !r.contains("force")),
         "{sent:?}"
     );
+    // The existing object's apply is conditional on the resourceVersion the plan read.
+    let (update, create) = (&sent[0], &sent[1]);
+    assert!(update.contains(r#""resourceVersion":"7""#), "{update}");
+    assert!(!create.contains("resourceVersion"), "{create}");
 
     for (manifest, expected) in [
         (
@@ -657,6 +681,10 @@ async fn apply_manifest_plans_a_dry_run_apply_per_object() {
         (
             "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata: {name: me-admin}\n",
             "does not apply ClusterRoleBinding objects",
+        ),
+        (
+            "apiVersion: apiregistration.k8s.io/v1\nkind: APIService\nmetadata: {name: v1.metrics.example}\n",
+            "does not apply APIService objects",
         ),
         (
             "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x, namespace: kube-system}\n",

@@ -195,6 +195,12 @@ async fn diagnose_pod_golden_and_secret_safe() {
     );
     assert!(
         reqs.iter()
+            .filter(|r| r.contains("/log?"))
+            .all(|r| r.contains("limitBytes=8388608")),
+        "every log read is capped: {reqs:?}"
+    );
+    assert!(
+        reqs.iter()
             .any(|r| r.contains("fieldSelector=involvedObject.kind%3DPod")),
         "{reqs:?}"
     );
@@ -1777,8 +1783,9 @@ async fn upgrade_readiness_flags_removed_apis_and_blocking_pdbs() {
     assert_eq!(status("removed APIs"), Some(json!("blocked")));
     assert_eq!(status("kubelet skew"), Some(json!("ok")));
     assert_eq!(
-        env.untrusted_fields,
-        ["findings[*].evidence[?(@.source=='related')].text"]
+        env.to_json()["untrusted_fields"],
+        json!(["findings[*].evidence[?(@.source!='unavailable')].text"]),
+        "field managers, user agents and resource URIs are client-supplied text"
     );
     let requests = mock.requests.lock().unwrap().clone();
     assert!(

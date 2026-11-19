@@ -39,6 +39,22 @@ All notable changes are documented here. The format follows
   version, scheduling-message, kubelet-message, deprecated-API-metric, ExecCredential and
   manifest parsers, label selectors, log shaping, untrusted-block wrapping and every pod rule
   on arbitrary cluster text.
+- Fixes from the v1.0 security review (`docs/security-review.md`):
+  - Evidence quoting object specs and related objects (commands, images, annotations) is
+    wrapped as untrusted, as status, event and log evidence already were; `list_resources`
+    and `list_events` rows are marked untrusted as a whole (`untrusted_fields: ["items"]`);
+    a custom resource's free-text `status.phase` is no longer shown in summaries.
+  - `rollback_workload` plans list the path of every changed pod template field, refuse an
+    identical template (that check never fired), and bind the source ReplicaSet in the
+    confirm token.
+  - `apply_manifest` sends each live object's resourceVersion as a precondition, and refuses
+    the whole RBAC, admission, CRD and aggregated-API (`APIService`) groups.
+  - A blank `--allowed-callers` no longer satisfies the requirement for writes over HTTP.
+  - `--redact off` no longer writes `confirm_token` and secret-named arguments to the audit
+    log; an existing audit file is narrowed to `0600` when opened.
+  - Each container log read is capped at 8 MiB.
+  - AKS: a resource id from an ARM response must be an ARM path, so it cannot send the
+    bearer token to another host.
 
 ## [0.4.1] - 2026-11-18
 

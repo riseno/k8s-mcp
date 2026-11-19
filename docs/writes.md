@@ -50,11 +50,11 @@ conflict instead of applying. Write requests are never retried automatically.
 |---|---|---|
 | `restart_workload` | the new `restartedAt` template annotation; how the update strategy replaces the pods (`OnDelete` replaces none) | kinds other than Deployment, StatefulSet, DaemonSet |
 | `scale_workload` | `spec.replicas: a → b`; scaling to zero; an HPA that would set the replicas back | kinds other than Deployment, StatefulSet, ReplicaSet |
-| `rollback_workload` | the pod template diff to the target revision (default: the previous one) | paused Deployments, unknown or current revisions, identical templates |
+| `rollback_workload` | the pod template diff to the target revision (default: the previous one), then the path of every changed field (values left out); the token also binds the revision's ReplicaSet | paused Deployments, unknown or current revisions, identical templates |
 | `delete_pod` | the grace period and which controller recreates the pod | pods without an owner (unless `allow_unowned: true`), static pods' mirrors, pods already terminating |
 | `cordon_node`, `uncordon_node` | `spec.unschedulable`, the pods on the node | any node while `--namespaces` limits the server |
 | `drain_node` | the cordon, then every pod: evicted, blocked by a PodDisruptionBudget, or left in place (DaemonSet, static, finished, no owner); pods losing `emptyDir` data | `ignore_daemonsets: false` on a node with DaemonSet pods; any node while `--namespaces` or `--deny-namespaces` limits the server |
-| `apply_manifest` | each object's field diff (live against the dry-run result, values redacted), or `create` | Secrets, RBAC, admission webhooks and policies, CRDs; more than 20 objects or 256 KiB |
+| `apply_manifest` | each object's field diff (live against the dry-run result, values redacted), or `create` | Secrets; any object in the RBAC (`rbac.authorization.k8s.io`), admission (`admissionregistration.k8s.io`), CRD (`apiextensions.k8s.io`) or aggregated-API (`apiregistration.k8s.io`) groups; more than 20 objects or 256 KiB. Policy engines' own kinds (Kyverno, Gatekeeper) are not known and not refused: deny them with RBAC |
 
 `drain_node` uses the Eviction API, so PodDisruptionBudgets hold. It reports each pod's outcome
 and does not wait for the pods to terminate; call it again to retry the pods a budget blocked

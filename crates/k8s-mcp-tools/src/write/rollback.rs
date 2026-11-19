@@ -7,7 +7,7 @@ use k8s_openapi::api::apps::v1::Deployment;
 use kube::api::Api;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{Change, check_confirm, run};
 use crate::changes::{revisions, template_diff};
@@ -98,13 +98,36 @@ pub async fn rollback_workload(ctx: &Ctx, input: RollbackWorkloadInput) -> Resul
     if let Some(labels) = template.metadata.as_mut().and_then(|m| m.labels.as_mut()) {
         labels.remove("pod-template-hash");
     }
-    let mut lines = template_diff(&spec.template, &template);
-    if lines.is_empty() {
+    // The summary covers the common fields; the paths of every changed field (values left out:
+    // env values may be credentials) make sure nothing else changes unseen.
+    let mut fields = Vec::new();
+    changed_paths(
+        &serde_json::to_value(&spec.template).unwrap_or_default(),
+        &serde_json::to_value(&template).unwrap_or_default(),
+        "",
+        &mut fields,
+    );
+    if fields.is_empty() {
         return Err(Error::InvalidInput(format!(
             "revision {} of Deployment {ns}/{name} has the same pod template as the current one: nothing would change",
             target.number
         )));
     }
+    let mut lines: Vec<String> = template_diff(&spec.template, &template)
+        .into_iter()
+        .filter(|l| l != "no pod template change")
+        .collect();
+    let more = fields.len().saturating_sub(MAX_FIELDS);
+    fields.truncate(MAX_FIELDS);
+    lines.push(format!(
+        "changed fields: {}{}",
+        fields.join(", "),
+        if more > 0 {
+            format!(" and {more} more")
+        } else {
+            String::new()
+        }
+    ));
     lines.push(
         "the Deployment rolls out the revision's pod template following its update strategy".into(),
     );
@@ -112,7 +135,11 @@ pub async fn rollback_workload(ctx: &Ctx, input: RollbackWorkloadInput) -> Resul
     let to = target.number;
     let rv = dep.metadata.resource_version.clone();
     let args = json!({"name": name, "namespace": ns, "to_revision": to});
-    let targets = [(format!("Deployment/{ns}/{name}"), rv)];
+    // The source revision too: a confirm after it was edited would apply another template.
+    let targets = [
+        (format!("Deployment/{ns}/{name}"), rv),
+        target.source.clone(),
+    ];
     let (api, ns_ref) = (&api, ns.as_str());
     run(
         ctx,
@@ -148,4 +175,38 @@ pub async fn rollback_workload(ctx: &Ctx, input: RollbackWorkloadInput) -> Resul
         },
     )
     .await
+}
+
+/// Changed-field paths listed in a rollback plan.
+const MAX_FIELDS: usize = 30;
+
+/// Paths of the fields that differ between two JSON values, e.g.
+/// `spec.containers[0].securityContext.privileged`.
+fn changed_paths(old: &Value, new: &Value, path: &str, out: &mut Vec<String>) {
+    match (old, new) {
+        (Value::Object(before), Value::Object(after)) => {
+            let keys: std::collections::BTreeSet<&String> =
+                before.keys().chain(after.keys()).collect();
+            for key in keys {
+                let at = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                changed_paths(
+                    before.get(key).unwrap_or(&Value::Null),
+                    after.get(key).unwrap_or(&Value::Null),
+                    &at,
+                    out,
+                );
+            }
+        }
+        (Value::Array(before), Value::Array(after)) if before.len() == after.len() => {
+            for (i, (was, now)) in before.iter().zip(after).enumerate() {
+                changed_paths(was, now, &format!("{path}[{i}]"), out);
+            }
+        }
+        _ if old != new => out.push(path.to_owned()),
+        _ => {}
+    }
 }

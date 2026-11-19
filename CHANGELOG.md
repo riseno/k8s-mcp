@@ -5,6 +5,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Release: the container job checks the chart's default image with `auth.allowAnyCaller`
+  set, since the defaults alone no longer render (`auth.allowedCallers` is required); 1.0.0's
+  chart, provenance attestation and SBOMs were not published because of it. The job also
+  takes a `workflow_dispatch` `tag`, and reads the binaries from the GitHub release, so it can
+  be re-run from main for an existing release.
+
 ## [1.0.0] - 2026-11-19
 
 The first stable release: tool and argument names, rule ids and the output envelope are stable

@@ -31,12 +31,15 @@ Every write tool is annotated `destructiveHint: true` (`scale_workload` and the 
 2. **Confirm.** Show the plan to the user. Only once they agree, call again with
    `dry_run: false` and that `confirm_token`. The server instructions tell the model the same.
 
-The token is an HMAC (SHA-256) of the tool, its arguments, the context and the
-`resourceVersion` of every object the plan touches ([ADR 0015](adr/0015-confirm-tokens.md)).
+The token is an HMAC (SHA-256) of the tool, its arguments, the context and the state of
+every object the plan touches: a digest of the object without its `status`,
+`resourceVersion` and `managedFields` ([ADR 0015](adr/0015-confirm-tokens.md),
+[ADR 0016](adr/0016-confirm-tokens-ignore-status.md)).
 It is rejected, and nothing changes, when:
 
 - the arguments or the context differ from the plan's,
-- any of those objects changed since the plan (a controller's status update counts),
+- any of those objects changed since the plan: its spec, data, labels, annotations or UID (a
+  status update alone, such as ready counts or a restarting container, does not count),
 - more than 120 seconds passed, or
 - the token comes from another k8s-mcp process (the key is random per process).
 

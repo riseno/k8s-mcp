@@ -23,9 +23,9 @@ pub struct Binding<'a> {
     pub context: &'a str,
     /// The request, with defaults resolved and without `dry_run` and `confirm_token`.
     pub args: &'a Value,
-    /// Each object the plan would change (`kind/namespace/name`) and its `resourceVersion`
-    /// (`None` when it does not exist yet).
-    pub versions: &'a [(String, Option<String>)],
+    /// Each object the plan would change (`kind/namespace/name`) and its [`state`] (`None`
+    /// when it does not exist yet).
+    pub states: &'a [(String, Option<String>)],
 }
 
 /// Issues and checks confirm tokens.
@@ -64,7 +64,7 @@ impl Confirmer {
         }
         hmac::verify(self.key()?, message(binding, expires).as_bytes(), &tag).map_err(|_| {
             rejected(
-                "the arguments, the context or the objects changed since the plan, or the token comes from another k8s-mcp process",
+                "the arguments, the context or the objects (other than their status) changed since the plan, or the token comes from another k8s-mcp process",
             )
         })
     }
@@ -78,19 +78,38 @@ fn rejected(why: &str) -> Error {
 
 /// The signed text: versioned, one field per line, JSON with sorted keys.
 fn message(b: &Binding<'_>, expires: i64) -> String {
-    let mut out = format!("k8s-mcp/confirm/v1\n{expires}\n{}\n{}\n", b.tool, b.context);
+    let mut out = format!("k8s-mcp/confirm/v2\n{expires}\n{}\n{}\n", b.tool, b.context);
     canonical(b.args, &mut out);
-    let mut versions: Vec<String> = b
-        .versions
+    let mut states: Vec<String> = b
+        .states
         .iter()
-        .map(|(object, rv)| format!("{object}={}", rv.as_deref().unwrap_or("-")))
+        .map(|(object, state)| format!("{object}={}", state.as_deref().unwrap_or("-")))
         .collect();
-    versions.sort();
-    for v in versions {
+    states.sort();
+    for v in states {
         out.push('\n');
         out.push_str(&v);
     }
     out
+}
+
+/// What a token binds for one object (ADR 0016): a digest of it without `status`,
+/// `metadata.resourceVersion` and `metadata.managedFields`. Any change to its spec, data,
+/// labels, annotations or UID voids a plan; a status update (ready counts, a restarting
+/// container) does not. The write still carries the current resourceVersion as a
+/// precondition.
+pub fn state<T: serde::Serialize>(object: &T) -> String {
+    let mut v = serde_json::to_value(object).unwrap_or_default();
+    if let Some(o) = v.as_object_mut() {
+        o.remove("status");
+    }
+    if let Some(m) = v.get_mut("metadata").and_then(Value::as_object_mut) {
+        m.remove("resourceVersion");
+        m.remove("managedFields");
+    }
+    let mut text = String::new();
+    canonical(&v, &mut text);
+    hex(&ring::digest::digest(&ring::digest::SHA256, text.as_bytes()).as_ref()[..16])
 }
 
 /// JSON with object keys sorted, so equal requests sign equally whatever their key order.
@@ -153,20 +172,46 @@ mod tests {
         "2026-11-18T10:00:00Z".parse().unwrap()
     }
 
-    fn versions(rv: Option<&str>) -> Vec<(String, Option<String>)> {
-        vec![("Deployment/shop/web".into(), rv.map(str::to_owned))]
+    fn states(state: Option<&str>) -> Vec<(String, Option<String>)> {
+        vec![("Deployment/shop/web".into(), state.map(str::to_owned))]
+    }
+
+    /// ADR 0016: the state ignores status, resourceVersion and managedFields (and key order),
+    /// and changes with the spec, labels, annotations or UID.
+    #[test]
+    fn state_ignores_status_only() {
+        let obj = serde_json::json!({"metadata": {"name": "web", "uid": "u1", "resourceVersion": "41",
+            "labels": {"app": "web"}, "managedFields": [{"manager": "a"}]},
+            "spec": {"replicas": 3}, "status": {"readyReplicas": 3}});
+        let base = state(&obj);
+        let mut churned = obj.clone();
+        churned["metadata"]["resourceVersion"] = "42".into();
+        churned["metadata"]["managedFields"] = serde_json::json!([{"manager": "b"}]);
+        churned["status"] = serde_json::json!({"readyReplicas": 1, "conditions": []});
+        assert_eq!(state(&churned), base);
+        let reordered: Value = serde_json::from_str(r#"{"status": {}, "spec": {"replicas": 3}, "metadata": {"labels": {"app": "web"}, "uid": "u1", "name": "web"}}"#).unwrap();
+        assert_eq!(state(&reordered), base);
+        for (path, value) in [
+            ("/spec/replicas", serde_json::json!(4)),
+            ("/metadata/labels/app", "api".into()),
+            ("/metadata/uid", "u2".into()),
+        ] {
+            let mut changed = obj.clone();
+            *changed.pointer_mut(path).unwrap() = value;
+            assert_ne!(state(&changed), base, "{path}");
+        }
     }
 
     #[test]
     fn a_token_confirms_only_the_planned_request_within_120_s() {
         let c = Confirmer::default();
         let args = json!({"kind": "Deployment", "name": "web", "replicas": 3});
-        let v = versions(Some("41"));
+        let v = states(Some("41"));
         let plan = Binding {
             tool: "scale_workload",
             context: "dev",
             args: &args,
-            versions: &v,
+            states: &v,
         };
         let token = c.issue(&plan, now()).unwrap();
         c.verify(&token, &plan, now()).unwrap();
@@ -184,8 +229,8 @@ mod tests {
         )
         .unwrap();
         let other_args = json!({"kind": "Deployment", "name": "web", "replicas": 30});
-        let newer = versions(Some("42"));
-        let absent = versions(None);
+        let newer = states(Some("42"));
+        let absent = states(None);
         for changed in [
             Binding {
                 args: &other_args,
@@ -200,11 +245,11 @@ mod tests {
                 ..plan
             },
             Binding {
-                versions: &newer,
+                states: &newer,
                 ..plan
             },
             Binding {
-                versions: &absent,
+                states: &absent,
                 ..plan
             },
         ] {
@@ -225,9 +270,9 @@ mod tests {
         fn any_changed_argument_is_rejected(name in "[a-z]{1,12}", other in "[a-z]{1,12}") {
             prop_assume!(name != other);
             let c = Confirmer::default();
-            let v = versions(Some("7"));
+            let v = states(Some("7"));
             let args = json!({"name": name});
-            let plan = Binding { tool: "delete_pod", context: "dev", args: &args, versions: &v };
+            let plan = Binding { tool: "delete_pod", context: "dev", args: &args, states: &v };
             let token = c.issue(&plan, now()).unwrap();
             let changed = json!({"name": other});
             let rejected = c

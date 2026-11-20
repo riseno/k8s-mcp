@@ -14,6 +14,7 @@ mod scale;
 use std::future::Future;
 
 use k8s_mcp_core::confirm::Binding;
+pub(crate) use k8s_mcp_core::confirm::state;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::finding::NextCall;
 use k8s_mcp_core::{Error, Result};
@@ -66,8 +67,8 @@ pub(crate) fn check_confirm(tool: &str, dry_run: Option<bool>, token: Option<&st
 
 /// One write call: a plan (the default), or with `dry_run: false` and the plan's token, the
 /// change. `args` is the request with defaults resolved, without `context`, `dry_run` and
-/// `confirm_token`; `targets` are the objects it changes with their current resourceVersion,
-/// read for this call, so a change since the plan voids the token.
+/// `confirm_token`; `targets` are the objects it changes with their current [`state`], read
+/// for this call, so a change since the plan (other than a status update) voids the token.
 pub(crate) async fn run<F, Fut>(
     ctx: &Ctx,
     sc: &Scope,
@@ -86,7 +87,7 @@ where
         tool,
         context: &sc.target.context,
         args: &args,
-        versions: targets,
+        states: targets,
     };
     if !dry_run.unwrap_or(true) {
         check_confirm(tool, dry_run, token)?;

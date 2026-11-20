@@ -70,7 +70,7 @@ macro_rules! tools {
             v
         }
 
-        async fn dispatch(ctx: &Ctx, name: &str, args: Value) -> k8s_mcp_core::Result<Envelope> {
+        async fn call_tool(ctx: &Ctx, name: &str, args: Value) -> k8s_mcp_core::Result<Envelope> {
             match name {
                 $( $(#[$m])* $name => {
                     let $i: $input = parse(args)?;
@@ -84,6 +84,23 @@ macro_rules! tools {
 }
 
 use k8s_mcp_tools as t;
+
+/// Run a tool. A NotFound from a call that names a namespace that does not exist becomes that
+/// error, so a mistyped namespace never reads as a missing object (riseno/k8s-mcp#121); the
+/// extra lookup happens only on that error path.
+async fn dispatch(ctx: &Ctx, name: &str, args: Value) -> k8s_mcp_core::Result<Envelope> {
+    let str_arg = |k: &str| args.get(k).and_then(Value::as_str).map(str::to_owned);
+    let (namespace, context) = (str_arg("namespace"), str_arg("context"));
+    match call_tool(ctx, name, args).await {
+        Err(e) if e.is_not_found() => match &namespace {
+            Some(ns) => Err(t::missing_namespace(ctx, context.as_deref(), ns)
+                .await
+                .unwrap_or(e)),
+            None => Err(e),
+        },
+        other => other,
+    }
+}
 
 tools! {
     "list_contexts", "core", t::ListContextsInput,
@@ -822,6 +839,69 @@ impl ServerHandler for K8sMcp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #121: every read tool that takes a Kubernetes namespace reports one that does not
+    /// exist as such, never as "nothing found". Required arguments get placeholder values.
+    #[tokio::test]
+    async fn every_namespaced_tool_rejects_a_missing_namespace() {
+        let mock = k8s_mcp_testkit::mock::with_discovery(
+            k8s_mcp_testkit::mock::MockApi::new().absent_namespace("no-such-ns"),
+        )
+        .start();
+        let ctx = Ctx::new(
+            Arc::new(k8s_mcp_core::cluster::ClusterManager::fixed(
+                mock.client.clone(),
+                "test",
+                "default",
+            )),
+            Arc::new(k8s_mcp_core::policy::Policy::permissive()),
+        );
+        let (mut checked, mut failures) = (0, Vec::new());
+        for t in all_tools().into_iter().filter(|t| {
+            t.tier == Tier::Read
+                && !matches!(t.toolset, "eks" | "gke" | "aks")
+                // top needs metrics.k8s.io first; it checks the namespace after an empty result.
+                && t.name != "top"
+                && t.input_schema
+                    .get("properties")
+                    .and_then(|p| p.get("namespace"))
+                    .is_some()
+        }) {
+            let schema = Value::Object((*t.input_schema).clone());
+            let mut args = serde_json::Map::new();
+            for name in schema["required"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                let prop = &schema["properties"][name];
+                let value = match (&prop["enum"], prop["type"].as_str()) {
+                    (Value::Array(e), _) => e[0].clone(),
+                    (_, Some("integer")) => json!(1),
+                    (_, Some("boolean")) => json!(false),
+                    (_, Some("array")) => json!([]),
+                    _ if name == "kind" => json!("Deployment"),
+                    _ => json!("x"),
+                };
+                args.insert(name.to_owned(), value);
+            }
+            // get_logs needs a pod (or workload); diagnose_dns takes one.
+            if schema["properties"].get("pod").is_some() {
+                args.insert("pod".into(), json!("x"));
+            }
+            args.insert("namespace".into(), json!("no-such-ns"));
+            match dispatch(&ctx, t.name, Value::Object(args)).await {
+                Err(e)
+                    if e.to_string()
+                        .contains("namespace \"no-such-ns\" does not exist") => {}
+                other => failures.push(format!("{}: {:?}", t.name, other.map(|e| e.summary))),
+            }
+            checked += 1;
+        }
+        assert!(failures.is_empty(), "{failures:#?}");
+        assert!(checked >= 15, "only {checked} tools checked");
+    }
 
     #[test]
     fn every_tool_has_a_short_description_and_object_schema() {

@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{Change, check_confirm, run};
+use super::{Change, check_confirm, run, state};
 use crate::common::{check_name, scope};
 use crate::{Ctx, Envelope};
 
@@ -91,7 +91,7 @@ async fn set_unschedulable(ctx: &Ctx, input: NodeWriteInput, cordon: bool) -> Re
         lines.push("the scheduler may place new pods on it again".into());
     }
     let args = json!({"name": name});
-    let targets = [(format!("Node/{name}"), rv.clone())];
+    let targets = [(format!("Node/{name}"), Some(state(&node)))];
     let api = &api;
     run(
         ctx,

@@ -22,6 +22,8 @@ struct Route {
 #[derive(Default)]
 pub struct MockApi {
     routes: Vec<Route>,
+    /// `/namespaces/<ns>/` of a namespace answered as missing (see [`MockApi::absent_namespace`]).
+    absent: Option<String>,
 }
 
 /// A running mock: a kube client wired to it and the request log.
@@ -107,6 +109,14 @@ impl MockApi {
         )
     }
 
+    /// Answer like an API server where namespace `ns` does not exist: lists inside it are
+    /// empty, and everything else in it, the Namespace included, is not found (404).
+    #[must_use]
+    pub fn absent_namespace(mut self, ns: &str) -> Self {
+        self.absent = Some(format!("/namespaces/{ns}/"));
+        self
+    }
+
     /// Start serving. Must be called inside a Tokio runtime.
     pub fn start(self) -> Mock {
         let (svc, mut handle) =
@@ -149,8 +159,20 @@ impl MockApi {
                     unanswered.push(send); // keep the request open forever
                     continue;
                 }
+                // A list inside a missing namespace is empty on a real API server.
+                let empty_list = method == "GET"
+                    && self.absent.as_ref().is_some_and(|a| {
+                        path.split_once(a.as_str())
+                            .is_some_and(|(_, rest)| !rest.contains('/'))
+                    });
                 let (code, body) = match route {
                     Some(r) => (r.status, r.body.clone()),
+                    None if empty_list => (
+                        200,
+                        bytes(
+                            json!({"apiVersion": "v1", "kind": "List", "metadata": {}, "items": []}),
+                        ),
+                    ),
                     None => (
                         404,
                         bytes(status(

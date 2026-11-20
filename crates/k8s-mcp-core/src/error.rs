@@ -99,6 +99,11 @@ impl Error {
         matches!(self, Self::Forbidden(_))
     }
 
+    /// True when the object (or what the call names) does not exist.
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound(_))
+    }
+
     /// True when the API server cannot be reached or the credentials fail.
     pub fn is_unreachable(&self) -> bool {
         matches!(self, Self::Unreachable(_))

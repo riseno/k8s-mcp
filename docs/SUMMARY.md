@@ -31,3 +31,4 @@
   - [0013 Azure through ARM REST on ring](adr/0013-azure-arm-rest-on-ring.md)
   - [0014 Exec plugins run by k8s-mcp](adr/0014-run-exec-plugins-in-k8s-mcp.md)
   - [0015 Confirm tokens](adr/0015-confirm-tokens.md)
+  - [0016 Confirm tokens ignore status](adr/0016-confirm-tokens-ignore-status.md)

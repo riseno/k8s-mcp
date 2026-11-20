@@ -278,6 +278,42 @@ async fn find_problems_falls_back_to_allowed_namespaces_when_cluster_list_is_for
     );
 }
 
+/// Issue #120: a grep searches the last 2000 lines; when that window is full, the result says
+/// older lines were not searched instead of reading as "no match".
+#[tokio::test]
+async fn a_full_grep_window_is_reported() {
+    for (lines, full) in [(2000, true), (10, false)] {
+        let log = (0..lines)
+            .map(|i| format!("L{i} working\n"))
+            .collect::<Vec<_>>()
+            .concat();
+        let mock = MockApi::new()
+            .get(
+                "/api/v1/namespaces/shop/pods/web-1",
+                pod("shop", "web-1", "Running", None, 0),
+            )
+            .get("/api/v1/namespaces/shop/pods/web-1/log", json!(log))
+            .start();
+        let env = k8s_mcp_tools::get_logs(
+            &ctx(&mock, Policy::permissive()),
+            GetLogsInput {
+                pod: Some("web-1".into()),
+                grep: Some("^L99999 ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            env.summary.contains("older lines were not searched"),
+            full,
+            "{}",
+            env.summary
+        );
+        assert_eq!(env.truncated, full, "{lines} lines");
+    }
+}
+
 #[tokio::test]
 async fn get_logs_shapes_and_reports_missing_previous_instance() {
     let mock = MockApi::new()

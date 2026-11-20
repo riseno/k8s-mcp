@@ -49,6 +49,7 @@ pub use changes::{RecentChangesInput, RolloutHistoryInput, recent_changes, rollo
     feature = "provider-aks"
 ))]
 pub use cloud::{IdentityInput, LogsInput, ProviderInput};
+pub use common::missing_namespace;
 pub use diagnose::{
     DiagnoseNodeInput, DiagnosePodInput, DiagnoseWorkloadInput, FindProblemsInput, diagnose_node,
     diagnose_pod, diagnose_workload, find_problems,

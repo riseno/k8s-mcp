@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-20
+
 ### Changed
 - Confirm tokens bind each object without its status (ADR 0016): a status update since the
   plan, such as ready counts or a restarting container, no longer voids it, so plans for

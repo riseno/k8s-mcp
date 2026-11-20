@@ -1704,6 +1704,10 @@ pub async fn check_permissions(ctx: &Ctx, input: CheckPermissionsInput) -> Resul
         false,
     )
     .await?;
+    // Access reviews answer for any namespace name, existing or not (riseno/k8s-mcp#121).
+    if input.namespace.is_some() {
+        ensure_namespace(&sc).await?;
+    }
     let ns = sc.namespace.clone().unwrap_or_default();
     let client = sc.target.client.clone();
     let mut checks: Vec<(String, &str, String, String, bool)> = vec![

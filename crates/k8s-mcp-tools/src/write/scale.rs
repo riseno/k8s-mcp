@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{Change, check_confirm, run, writable_kind};
+use super::{Change, check_confirm, run, state, writable_kind};
 use crate::common::{check_name, scope};
 use crate::{Ctx, Envelope};
 
@@ -89,7 +89,7 @@ pub async fn scale_workload(ctx: &Ctx, input: ScaleWorkloadInput) -> Result<Enve
         ));
     }
     let args = json!({"kind": kind, "name": name, "namespace": ns, "replicas": input.replicas});
-    let targets = [(format!("{kind}/{ns}/{name}"), rv.clone())];
+    let targets = [(format!("{kind}/{ns}/{name}"), Some(state(&scale)))];
     let (api, ns_ref) = (&api, ns.as_str());
     run(
         ctx,

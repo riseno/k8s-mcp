@@ -87,14 +87,14 @@ Container logs for a `pod` or a `workload` (kind/name; failing pods first). Opti
 | `container` | string | Container name (default: every container when `all_containers`, else the first). |
 | `context` | string | Kubeconfig context. |
 | `context_lines` | integer | Lines of context around each grep match (default 0, max 10). |
-| `errors_only` | boolean | Keep only lines matching a built-in error pattern set. |
-| `grep` | string | Case-insensitive regex filter. |
+| `errors_only` | boolean | Keep only lines matching a built-in error pattern set, searched in the last 2000 lines of each container, like `grep`. |
+| `grep` | string | Case-insensitive regex filter, applied to the last 2000 lines of each container (older lines are not searched; the summary says when the window was full). |
 | `max_pods` | integer | Max pods for `workload` (default 3, max 10). |
 | `namespace` | string | Namespace (default: the context's namespace). |
 | `pod` | string | Pod name. Give either `pod` or `workload`. |
 | `previous` | boolean | Logs of the previous (crashed) instance. |
 | `since` | string | Only lines newer than this, e.g. `10m`, `1h`. |
-| `tail` | integer | Last N lines (default 200, max 2000). |
+| `tail` | integer | Last N lines to return (default 200, max 2000). |
 | `workload` | string | Workload as `kind/name`, e.g. `deployment/checkout`; logs come from up to `max_pods` pods, failing pods first. |
 
 ### `top`

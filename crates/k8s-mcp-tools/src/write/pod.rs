@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{Change, check_confirm, run};
+use super::{Change, check_confirm, run, state};
 use crate::common::{check_name, scope};
 use crate::{Ctx, Envelope};
 
@@ -94,7 +94,7 @@ pub async fn delete_pod(ctx: &Ctx, input: DeletePodInput) -> Result<Envelope> {
         uid: meta.uid.clone(),
     };
     let args = json!({"name": name, "namespace": ns, "allow_unowned": allow_unowned});
-    let targets = [(format!("Pod/{ns}/{name}"), meta.resource_version.clone())];
+    let targets = [(format!("Pod/{ns}/{name}"), Some(state(&pod)))];
     let (api, ns_ref) = (&api, ns.as_str());
     run(
         ctx,

@@ -131,8 +131,11 @@ async fn a_restart_is_planned_as_a_dry_run_and_applied_only_with_its_token() {
     assert_eq!(done.next[0].tool, "diagnose_workload");
 }
 
+/// The token binds the objects without their status (ADR 0016, issue #122): a status update
+/// since the plan still confirms, with the current resourceVersion as the write's
+/// precondition; a spec change voids the token.
 #[tokio::test]
-async fn a_token_is_void_once_the_object_changed() {
+async fn a_token_is_void_once_the_object_changed_but_not_by_status() {
     let before = mock("41");
     let c = ctx(&before);
     let plan = k8s_mcp_tools::restart_workload(&c, restart(None, None))
@@ -142,14 +145,33 @@ async fn a_token_is_void_once_the_object_changed() {
         .as_str()
         .unwrap()
         .to_owned();
-    // Same server process (same confirmer), but the Deployment was written since the plan.
-    let after = mock("42");
-    let mut c2 = ctx(&after);
-    c2.confirm = c.confirm.clone();
-    let err = k8s_mcp_tools::restart_workload(&c2, restart(Some(false), Some(&token)))
-        .await
-        .unwrap_err()
-        .to_string();
+    let confirm = |m: &Mock| {
+        // Same server process (same confirmer), the Deployment read again.
+        let mut c2 = ctx(m);
+        c2.confirm = c.confirm.clone();
+        let token = token.clone();
+        async move { k8s_mcp_tools::restart_workload(&c2, restart(Some(false), Some(&token))).await }
+    };
+
+    // Only the status changed (a controller's update): the change is made, conditional on 42.
+    let mut status_only = deployment("42");
+    status_only["status"] = json!({"replicas": 3, "readyReplicas": 1, "observedGeneration": 7});
+    let after = MockApi::new()
+        .get(WEB, status_only.clone())
+        .route("PATCH", WEB, 200, status_only)
+        .start();
+    confirm(&after).await.unwrap();
+    let sent = writes(&after);
+    assert!(
+        sent.len() == 1 && !dry(&sent[0]) && sent[0].contains(r#""resourceVersion":"42""#),
+        "{sent:?}"
+    );
+
+    // The spec changed: rejected, nothing sent.
+    let mut respec = deployment("43");
+    respec["spec"]["replicas"] = json!(5);
+    let after = MockApi::new().get(WEB, respec).start();
+    let err = confirm(&after).await.unwrap_err().to_string();
     assert!(
         err.contains("changed since the plan") && err.contains("Nothing was changed"),
         "{err}"

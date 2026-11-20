@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::node::check_node_write;
-use super::{Change, check_confirm, run};
+use super::{Change, check_confirm, run, state};
 use crate::common::{check_name, check_namespace_name, clean, scope};
 use crate::discovery::{api_resource, resolve};
 use crate::{Ctx, Envelope};
@@ -59,7 +59,8 @@ struct Object {
     body: Value,
     /// The live object, cleaned for display (`None`: it does not exist yet).
     live: Option<Value>,
-    rv: Option<String>,
+    /// The live object's [`state`] for the confirm token.
+    live_state: Option<String>,
 }
 
 /// Server-side apply a manifest.
@@ -101,7 +102,7 @@ pub async fn apply_manifest(ctx: &Ctx, input: ApplyManifestInput) -> Result<Enve
     let args = json!({"manifest": input.manifest, "namespace": default_ns});
     let targets: Vec<(String, Option<String>)> = objects
         .iter()
-        .map(|o| (format!("{}/{}", o.kind, o.id), o.rv.clone()))
+        .map(|o| (format!("{}/{}", o.kind, o.id), o.live_state.clone()))
         .collect();
     let objects = &objects;
     run(
@@ -268,6 +269,7 @@ async fn prepare(
     let rv = live
         .as_ref()
         .and_then(|l| l.metadata.resource_version.clone());
+    let live_state = live.as_ref().map(state);
     // The live resourceVersion (the one the confirm token is checked against) makes the apply
     // conditional: an object changed after this read gets a conflict instead of the apply.
     if let (Some(rv), Some(meta)) = (&rv, doc.get_mut("metadata").and_then(Value::as_object_mut)) {
@@ -287,7 +289,7 @@ async fn prepare(
         name,
         body: doc,
         live,
-        rv,
+        live_state,
     })
 }
 

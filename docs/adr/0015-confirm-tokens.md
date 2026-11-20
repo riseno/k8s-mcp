@@ -1,6 +1,6 @@
 # ADR 0015: Confirm tokens for write tools
 
-- Status: accepted (v0.4)
+- Status: accepted (v0.4); what the token binds per object changed in [0016](0016-confirm-tokens-ignore-status.md)
 - Date: 2026-11-18
 
 ## Context

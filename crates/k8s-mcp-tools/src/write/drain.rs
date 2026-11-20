@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::node::check_node_write;
-use super::{Change, Mode, check_confirm, run};
+use super::{Change, Mode, check_confirm, run, state};
 use crate::common::{check_name, scope};
 use crate::{Ctx, Envelope};
 
@@ -37,7 +37,8 @@ pub struct DrainNodeInput {
 struct Placed {
     namespace: String,
     name: String,
-    rv: Option<String>,
+    /// The pod's [`state`] for the confirm token.
+    state: String,
     /// `Err(why)` for a pod the drain leaves alone.
     action: std::result::Result<String, String>,
 }
@@ -139,18 +140,18 @@ pub async fn drain_node(ctx: &Ctx, input: DrainNodeInput) -> Result<Envelope> {
         placed.push(Placed {
             namespace: p.metadata.namespace.clone().unwrap_or_default(),
             name: p.metadata.name.clone().unwrap_or_default(),
-            rv: p.metadata.resource_version.clone(),
+            state: state(p),
             action: classify(p, ignore_daemonsets)?,
         });
     }
     placed.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
-    let mut targets = vec![(format!("Node/{name}"), node_rv.clone())];
-    targets.extend(
-        placed
-            .iter()
-            .filter(|p| p.action.is_ok())
-            .map(|p| (format!("Pod/{}/{}", p.namespace, p.name), p.rv.clone())),
-    );
+    let mut targets = vec![(format!("Node/{name}"), Some(state(&node)))];
+    targets.extend(placed.iter().filter(|p| p.action.is_ok()).map(|p| {
+        (
+            format!("Pod/{}/{}", p.namespace, p.name),
+            Some(p.state.clone()),
+        )
+    }));
     let args = json!({"name": name, "ignore_daemonsets": ignore_daemonsets});
     let (nodes, placed, client) = (&nodes, &placed, &client);
     run(

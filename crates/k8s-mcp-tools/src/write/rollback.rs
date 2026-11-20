@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Change, check_confirm, run};
+use super::{Change, check_confirm, run, state};
 use crate::changes::{revisions, template_diff};
 use crate::common::{check_name, scope};
 use crate::{Ctx, Envelope};
@@ -59,6 +59,7 @@ pub async fn rollback_workload(ctx: &Ctx, input: RollbackWorkloadInput) -> Resul
         .get(name)
         .await
         .map_err(|e| Error::kube(format!("get Deployment {ns}/{name}"), &e))?;
+    let dep_state = state(&dep);
     let spec = dep
         .spec
         .as_mut()
@@ -133,11 +134,10 @@ pub async fn rollback_workload(ctx: &Ctx, input: RollbackWorkloadInput) -> Resul
     );
     spec.template = template;
     let to = target.number;
-    let rv = dep.metadata.resource_version.clone();
     let args = json!({"name": name, "namespace": ns, "to_revision": to});
     // The source revision too: a confirm after it was edited would apply another template.
     let targets = [
-        (format!("Deployment/{ns}/{name}"), rv),
+        (format!("Deployment/{ns}/{name}"), Some(dep_state)),
         target.source.clone(),
     ];
     let (api, ns_ref) = (&api, ns.as_str());

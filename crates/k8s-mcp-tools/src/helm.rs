@@ -19,7 +19,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::common::{Scope, check_name, envelope, list_meta_scoped, scope, soft};
+use crate::common::{Scope, check_name, ensure_namespace, envelope, list_meta_scoped, scope, soft};
 use crate::read::add_notes;
 use crate::{Ctx, Envelope};
 
@@ -230,6 +230,9 @@ pub async fn helm_releases(ctx: &Ctx, input: HelmReleasesInput) -> Result<Envelo
     )
     .await?;
     let (all, mut notes) = records(ctx, &sc, "owner=helm").await?;
+    if all.is_empty() {
+        ensure_namespace(&sc).await?;
+    }
     let mut latest: BTreeMap<(String, String), Record> = BTreeMap::new();
     for r in all {
         let key = (r.namespace.clone(), r.release.clone());
@@ -317,6 +320,7 @@ pub async fn helm_release(ctx: &Ctx, input: HelmReleaseInput) -> Result<Envelope
         records(ctx, &sc, &format!("owner=helm,name={}", input.name)).await?;
     revs.retain(|r| r.release == input.name);
     if revs.is_empty() {
+        ensure_namespace(&sc).await?;
         return Err(Error::NotFound(format!(
             "no Helm release {:?} in namespace {ns}: helm_releases lists the releases",
             input.name

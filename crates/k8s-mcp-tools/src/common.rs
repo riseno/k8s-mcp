@@ -97,6 +97,14 @@ pub async fn ensure_namespace(scope: &Scope) -> Result<()> {
     }
 }
 
+/// For a call that failed with NotFound and named `namespace`: the "namespace does not exist"
+/// error when that is the reason, so a mistyped namespace does not read as a missing object
+/// (riseno/k8s-mcp#121). `None` when the namespace exists or cannot be checked.
+pub async fn missing_namespace(ctx: &Ctx, context: Option<&str>, namespace: &str) -> Option<Error> {
+    let sc = scope(ctx, context, Some(namespace), false).await.ok()?;
+    ensure_namespace(&sc).await.err()
+}
+
 /// Resolve context and namespace, enforcing the context allow-list and namespace policy.
 pub async fn scope(
     ctx: &Ctx,

@@ -5,7 +5,20 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Confirm tokens bind each object without its status (ADR 0016): a status update since the
+  plan, such as ready counts or a restarting container, no longer voids it, so plans for
+  rolling-out or crash-looping workloads stay confirmable; spec, label, annotation or UID
+  changes still do, and the write still carries the current resourceVersion (#122).
+
 ### Fixed
+- `get_logs` with `grep` or `errors_only` says when it searched a full 2000-line window
+  (older lines were not searched) and marks the result truncated, instead of a clean
+  "no match"; the window is documented on both arguments (#120).
+- A call naming a namespace that does not exist fails with "namespace does not exist" in every
+  tool: `helm_releases` and `helm_release` no longer report "0 releases", `check_permissions`
+  no longer answers for it, and lookups by name no longer say only "not found"; a test runs
+  every namespaced tool against a missing namespace (#121).
 - Release: the container job checks the chart's default image with `auth.allowAnyCaller`
   set, since the defaults alone no longer render (`auth.allowedCallers` is required); 1.0.0's
   chart, provenance attestation and SBOMs were not published because of it. The job also

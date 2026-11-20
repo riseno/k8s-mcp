@@ -1,5 +1,6 @@
 //! `get_logs`: shaped container logs (PROPOSAL §7.7 rule 4).
 
+use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use k8s_mcp_core::envelope::Section;
@@ -41,15 +42,17 @@ pub struct GetLogsInput {
     /// Logs of the previous (crashed) instance.
     #[serde(default)]
     pub previous: bool,
-    /// Last N lines (default 200, max 2000).
+    /// Last N lines to return (default 200, max 2000).
     pub tail: Option<i64>,
     /// Only lines newer than this, e.g. `10m`, `1h`.
     pub since: Option<String>,
-    /// Case-insensitive regex filter.
+    /// Case-insensitive regex filter, applied to the last 2000 lines of each container (older
+    /// lines are not searched; the summary says when the window was full).
     pub grep: Option<String>,
     /// Lines of context around each grep match (default 0, max 10).
     pub context_lines: Option<usize>,
-    /// Keep only lines matching a built-in error pattern set.
+    /// Keep only lines matching a built-in error pattern set, searched in the last 2000 lines
+    /// of each container, like `grep`.
     #[serde(default)]
     pub errors_only: bool,
     /// All containers of each pod.
@@ -125,6 +128,8 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
     let mut e = envelope(&sc, String::new());
     let mut notes = Vec::new();
     let mut total = 0;
+    // Containers whose filtered search filled the whole window: older lines went unsearched.
+    let mut window_full = 0;
     // (container, lines, pod) of every output already returned.
     let mut seen: Vec<(String, Vec<String>, String)> = Vec::new();
     for pod in &pods {
@@ -202,6 +207,10 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
                 });
                 continue;
             }
+            let filtering = grep.is_some() || input.errors_only;
+            if filtering && raw.lines().count() >= usize::try_from(MAX_TAIL).unwrap_or(usize::MAX) {
+                window_full += 1;
+            }
             let (lines, omitted) = shape(
                 ctx,
                 &raw,
@@ -270,6 +279,13 @@ pub async fn get_logs(ctx: &Ctx, input: GetLogsInput) -> Result<Envelope> {
             ""
         }
     );
+    if window_full > 0 {
+        e.truncated = true;
+        let _ = write!(
+            e.summary,
+            " Searched only the last {MAX_TAIL} lines of {window_full} container(s): older lines were not searched, so an earlier match would not show."
+        );
+    }
     add_notes(&mut e, &notes);
     Ok(e)
 }

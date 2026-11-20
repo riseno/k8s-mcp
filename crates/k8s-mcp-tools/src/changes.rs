@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use jiff::{SignedDuration, Timestamp};
+use k8s_mcp_core::confirm::state;
 use k8s_mcp_core::envelope::Section;
 use k8s_mcp_core::text::{age, parse_duration};
 use k8s_mcp_core::{Error, Result};
@@ -48,7 +49,7 @@ const MAX_SINCE: SignedDuration = SignedDuration::from_hours(7 * 24);
 pub(crate) struct Revision {
     pub(crate) number: i64,
     /// The object holding the revision (`ReplicaSet/<ns>/<name>` or `ControllerRevision/...`)
-    /// and its resourceVersion.
+    /// and its confirm-token state.
     pub(crate) source: (String, Option<String>),
     created: Option<Timestamp>,
     pub(crate) template: PodTemplateSpec,
@@ -64,7 +65,7 @@ fn revision_of_rs(rs: &ReplicaSet) -> Option<Revision> {
             .get("deployment.kubernetes.io/revision")?
             .parse()
             .ok()?,
-        source: source("ReplicaSet", &rs.metadata),
+        source: source("ReplicaSet", &rs.metadata, state(rs)),
         created: created(&rs.metadata),
         template: rs.spec.as_ref()?.template.clone()?,
         change_cause: ann.and_then(|a| a.get("kubernetes.io/change-cause").cloned()),
@@ -85,7 +86,7 @@ fn revision_of_cr(cr: &ControllerRevision) -> Option<Revision> {
     let data = cr.data.as_ref()?;
     Some(Revision {
         number: cr.revision,
-        source: source("ControllerRevision", &cr.metadata),
+        source: source("ControllerRevision", &cr.metadata, state(cr)),
         created: created(&cr.metadata),
         template: serde_json::from_value(data.0["spec"]["template"].clone()).ok()?,
         change_cause: cr
@@ -97,14 +98,14 @@ fn revision_of_cr(cr: &ControllerRevision) -> Option<Revision> {
     })
 }
 
-fn source(kind: &str, meta: &ObjectMeta) -> (String, Option<String>) {
+fn source(kind: &str, meta: &ObjectMeta, state: String) -> (String, Option<String>) {
     (
         format!(
             "{kind}/{}/{}",
             meta.namespace.as_deref().unwrap_or_default(),
             meta.name.as_deref().unwrap_or_default()
         ),
-        meta.resource_version.clone(),
+        Some(state),
     )
 }
 
